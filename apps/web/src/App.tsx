@@ -5,6 +5,8 @@ import { LiveProvider } from './lib/live.jsx';
 import { useMe } from './lib/queries.js';
 import { DashboardPage } from './pages/Dashboard.jsx';
 import { LoginPage } from './pages/Login.jsx';
+import { LorePage } from './pages/Lore.jsx';
+import { LoreEntryPage } from './pages/LoreEntry.jsx';
 import { ProjectDetailPage, ProjectOverview } from './pages/ProjectDetail.jsx';
 import { ProjectsPage } from './pages/Projects.jsx';
 import { ShrinePage } from './pages/Shrine.jsx';
@@ -55,6 +57,8 @@ export function App() {
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:projectRef" element={<ProjectDetailPage />}>
             <Route index element={<ProjectOverview />} />
+            <Route path="lore" element={<LorePage />} />
+            <Route path="lore/:memoryKey" element={<LoreEntryPage />} />
           </Route>
           <Route path="shrine" element={<ShrinePage />} />
           <Route path="*" element={<NotFound />} />

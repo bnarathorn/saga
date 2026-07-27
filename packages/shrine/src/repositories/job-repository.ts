@@ -211,18 +211,22 @@ export class PgJobRepository implements JobRepository {
           ORDER BY priority DESC, run_after, created_at
           LIMIT $3
           FOR UPDATE SKIP LOCKED
+       ), claimed AS (
+         UPDATE shrine.jobs j
+            SET state = 'claimed',
+                claimed_by = $1,
+                claim_token = 'clm_' || replace(gen_random_uuid()::text, '-', ''),
+                claimed_at = now(),
+                lease_expires_at = now() + make_interval(secs => $2::double precision),
+                attempts = j.attempts + 1,
+                updated_at = now()
+           FROM claimable
+          WHERE j.id = claimable.id
+        RETURNING ${PREFIXED('j')}
        )
-       UPDATE shrine.jobs j
-          SET state = 'claimed',
-              claimed_by = $1,
-              claim_token = 'clm_' || replace(gen_random_uuid()::text, '-', ''),
-              claimed_at = now(),
-              lease_expires_at = now() + make_interval(secs => $2::double precision),
-              attempts = j.attempts + 1,
-              updated_at = now()
-         FROM claimable
-        WHERE j.id = claimable.id
-       RETURNING ${PREFIXED('j')}`,
+       -- RETURNING row order is unspecified, so the batch is re-sorted here: a worker must
+       -- still start the highest-priority job first within a single claim.
+       SELECT * FROM claimed ORDER BY priority DESC, run_after, created_at`,
       [input.workerId, input.leaseSeconds, input.limit, types],
     );
     return result.rows.map((row) => toJob(row) as ClaimedJob);

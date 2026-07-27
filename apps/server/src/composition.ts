@@ -13,7 +13,20 @@ import {
   type OutboxRepository,
   type ProjectRepository,
 } from '@saga/core';
-import { createPool, migrationStatus, type SagaPool } from '@saga/database';
+import { createPool, migrationStatus, withTransaction, type SagaPool } from '@saga/database';
+import {
+  ContextService,
+  LinkRepository,
+  LoreService,
+  MemoryRepository,
+  SearchRepository,
+  SearchService,
+  SnapshotRepository,
+  createEmbeddingProvider,
+  type EmbeddingProvider,
+  type MemoryLink,
+} from '@saga/lore';
+import type { MemoryRelation } from '@saga/contracts';
 import {
   AuditService,
   HealthRegistry,
@@ -55,6 +68,10 @@ export interface AppContext {
     jobs: JobRepository;
     services: ServiceInstanceRepository;
     events: SystemEventRepository;
+    memory: MemoryRepository;
+    snapshots: SnapshotRepository;
+    links: LinkRepository;
+    search: SearchRepository;
   };
 
   services: {
@@ -63,7 +80,20 @@ export interface AppContext {
     jobs: JobService;
     audit: AuditService;
     metrics: MetricsService;
+    lore: LoreService;
+    loreSearch: SearchService;
+    context: ContextService;
+    createLink(input: {
+      projectId: string;
+      fromMemoryItemId: string;
+      relation: MemoryRelation;
+      toMemoryItemId: string;
+      metadata: Record<string, unknown>;
+    }): Promise<MemoryLink>;
+    deleteLink(id: string): Promise<boolean>;
   };
+
+  embeddings: EmbeddingProvider;
 
   health: HealthRegistry;
   metricsContributors: MetricsContributors;
@@ -108,6 +138,10 @@ export function buildContext(options: BuildContextOptions): AppContext {
     jobs: new PgJobRepository(),
     services: new PgServiceInstanceRepository(),
     events: new PgSystemEventRepository(),
+    memory: new MemoryRepository(),
+    snapshots: new SnapshotRepository(),
+    links: new LinkRepository(),
+    search: new SearchRepository(),
   };
 
   const projects = new ProjectService({
@@ -137,6 +171,49 @@ export function buildContext(options: BuildContextOptions): AppContext {
 
   const audit = new AuditService(pool);
   const metricsContributors: MetricsContributors = {};
+
+  const embeddings = createEmbeddingProvider({
+    provider: config.embedding.provider,
+    dimensions: config.embedding.dimensions,
+    model: config.embedding.model,
+    ollamaUrl: config.embedding.ollamaUrl,
+    timeoutMs: config.embedding.timeoutMs,
+  });
+
+  const lore = new LoreService({
+    pool,
+    memory: repositories.memory,
+    snapshots: repositories.snapshots,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+    jobs,
+    coreContextTokens: config.context.coreTokens,
+  });
+
+  const loreSearch = new SearchService({
+    pool,
+    search: repositories.search,
+    memory: repositories.memory,
+    links: repositories.links,
+    embeddings,
+    logger,
+  });
+
+  const context = new ContextService({
+    pool,
+    memory: repositories.memory,
+    snapshots: repositories.snapshots,
+    search: loreSearch,
+    budgets: {
+      core: config.context.coreTokens,
+      task: config.context.taskTokens,
+      continuation: config.context.continuationTokens,
+      party: config.context.partyTokens,
+    },
+  });
+
+  // Lore counters are contributed to Shrine rather than queried by it (ADR-0001).
+  metricsContributors.lore = async () => repositories.memory.totals(pool);
 
   const metrics = new MetricsService({
     pool,
@@ -187,6 +264,24 @@ export function buildContext(options: BuildContextOptions): AppContext {
     }),
   );
   health.register(devAuthBypassContributor(config.security.devAuthBypass));
+  health.register({
+    name: 'embedding_provider',
+    // Not a readiness check: text search keeps working without embeddings, so an outage here
+    // is `degraded`, never a reason to take the API out of rotation (acceptance criterion 20).
+    readiness: false,
+    async check() {
+      const health = await embeddings.healthCheck();
+      return {
+        name: 'embedding_provider',
+        status: health.status === 'unhealthy' ? 'degraded' : health.status,
+        message:
+          health.status === 'unhealthy'
+            ? `${health.message} Vector search is unavailable; full-text and trigram search continue to work.`
+            : health.message,
+        detail: { provider: embeddings.name, ...health.detail },
+      };
+    },
+  });
 
   return {
     config,
@@ -194,7 +289,19 @@ export function buildContext(options: BuildContextOptions): AppContext {
     logger,
     startedAt: new Date(),
     repositories,
-    services: { projects, auth, jobs, audit, metrics },
+    embeddings,
+    services: {
+      projects,
+      auth,
+      jobs,
+      audit,
+      metrics,
+      lore,
+      loreSearch,
+      context,
+      createLink: (input) => withTransaction(pool, (tx) => repositories.links.create(tx, input)),
+      deleteLink: (id) => withTransaction(pool, (tx) => repositories.links.delete(tx, id)),
+    },
     health,
     metricsContributors,
     schemaVersion,

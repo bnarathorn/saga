@@ -174,6 +174,138 @@ async function main(): Promise<number> {
   );
   check('schema is up to date', schema.body.schema.up_to_date, schema.body.schema);
 
+  section('Lore — propose, publish, search, context');
+  const loreEntries = [
+    {
+      memory_key: 'project.overview',
+      category: 'overview',
+      kind: 'fact',
+      body: 'An ERP back office for order and invoice management.',
+      confidence: 0.95,
+      verification_state: 'observed',
+      importance: 95,
+    },
+    {
+      memory_key: 'run.api.local',
+      category: 'running',
+      kind: 'procedure',
+      body: 'Start PostgreSQL and Redis before starting the API.',
+      data: { commands: ['docker compose up -d postgres redis', 'pnpm --filter api dev'] },
+      evidence: [{ path: 'package.json', content_hash: `sha256:${'a'.repeat(64)}` }],
+      confidence: 0.9,
+      verification_state: 'observed',
+    },
+    {
+      memory_key: 'warning.migrations',
+      category: 'warning',
+      kind: 'warning',
+      body: 'Never run the destructive reset migration against a production database.',
+      confidence: 1,
+      verification_state: 'verified',
+      importance: 100,
+    },
+  ];
+
+  const beforeLore = await api.post(`/api/projects/${projectId}/context`, {});
+  check(
+    'a project with no Lore reports bootstrap_required with a plan',
+    (beforeLore.body as { bootstrap_required: boolean }).bootstrap_required === true &&
+      (beforeLore.body as { bootstrap_plan: { rules: string[] } }).bootstrap_plan.rules.length > 0,
+    beforeLore.body,
+  );
+
+  const remembered = await api.post<{ update: { id: string; state: string } }>(
+    `/api/projects/${projectId}/lore/remember`,
+    { entries: loreEntries, summary: 'Record initial project knowledge' },
+  );
+  check('agent-style remember creates a candidate update', remembered.status === 202, remembered.body);
+
+  const publishedUpdate = await api.waitFor(
+    'the worker to validate, embed and publish the Lore update',
+    async () => {
+      const result = await api.get<{ update: { state: string } }>(
+        `/api/lore/updates/${remembered.body.update.id}`,
+      );
+      return result.body.update.state === 'published' ? result.body.update : null;
+    },
+    60_000,
+  );
+  check('the worker published the update automatically', publishedUpdate.state === 'published');
+
+  const entries = await api.get<{ items: { memory_key: string; current_version: { embedding_state: string } }[]; memory_revision: number }>(
+    `/api/projects/${projectId}/lore`,
+  );
+  check('the project Lore revision advanced to 1', entries.body.memory_revision === 1, entries.body.memory_revision);
+  check('all three entries are published', entries.body.items.length === 3, entries.body.items.length);
+
+  const embedded = await api.waitFor(
+    'embeddings to become ready',
+    async () => {
+      const result = await api.get<{ items: { current_version: { embedding_state: string } }[] }>(
+        `/api/projects/${projectId}/lore`,
+      );
+      return result.body.items.every((item) => item.current_version.embedding_state === 'ready')
+        ? result.body.items
+        : null;
+    },
+    60_000,
+  );
+  check('every published version was embedded by the worker', embedded.length === 3);
+
+  const searched = await api.post<{ hits: { memory_key: string }[]; mode: string }>(
+    `/api/projects/${projectId}/lore/search`,
+    { query: 'how do I start the API locally', limit: 5 },
+  );
+  check('hybrid search finds the right entry first', searched.body.hits[0]?.memory_key === 'run.api.local', searched.body.hits);
+  check('search reports full (not degraded) mode', searched.body.mode === 'full');
+
+  const context = await api.post<{
+    core_context: string;
+    task_context: string | null;
+    bootstrap_required: boolean;
+    token_counts: { core: number };
+  }>(`/api/projects/${projectId}/context`, { task: 'Fix the local API startup', mode: 'new_work' });
+  check('core context is compiled and non-empty', context.body.core_context.length > 0);
+  check('warnings are present in core context', context.body.core_context.includes('warning.migrations'));
+  check('task context selects the relevant entry', context.body.task_context?.includes('run.api.local') === true);
+  check('bootstrap is no longer required', context.body.bootstrap_required === false);
+
+  const secretAttempt = await api.post(`/api/projects/${projectId}/lore/remember`, {
+    summary: 'accidental secret',
+    entries: [
+      {
+        memory_key: 'config.production',
+        category: 'config',
+        kind: 'fact',
+        body: 'DATABASE_URL=postgres://saga:hunter2xyz@prod.internal:5432/saga',
+        confidence: 0.9,
+        verification_state: 'observed',
+      },
+    ],
+  });
+  check(
+    'a candidate containing a credential is rejected',
+    (secretAttempt.body as { error: { code: string } }).error?.code === 'MEMORY_SECRET_DETECTED',
+    secretAttempt.body,
+  );
+  check(
+    'the rejection never echoes the secret',
+    !JSON.stringify(secretAttempt.body).includes('hunter2xyz'),
+  );
+
+  const evidence = await api.post<{ drifted: unknown[]; marked_stale: string[] }>(
+    `/api/projects/${projectId}/lore/evidence/check`,
+    { observations: [{ path: 'package.json', content_hash: `sha256:${'b'.repeat(64)}` }] },
+  );
+  check('drifted evidence marks the entry stale', evidence.body.marked_stale.includes('run.api.local'), evidence.body);
+
+  const afterStale = await api.post<{ warnings: string[] }>(`/api/projects/${projectId}/context`, {});
+  check(
+    'context warns about stale knowledge',
+    afterStale.body.warnings.some((warning) => warning.includes('stale')),
+    afterStale.body.warnings,
+  );
+
   section('Security — CSRF and scopes');
   const noCsrf = await fetch(new URL('/api/projects', BASE_URL), {
     method: 'POST',

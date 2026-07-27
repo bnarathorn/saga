@@ -9,6 +9,14 @@ import {
 } from '@saga/core';
 import { createPool, type SagaPool } from '@saga/database';
 import {
+  LinkRepository,
+  LoreService,
+  MemoryRepository,
+  SnapshotRepository,
+  createEmbeddingProvider,
+  type EmbeddingProvider,
+} from '@saga/lore';
+import {
   JobHandlerRegistry,
   JobService,
   PgJobRepository,
@@ -38,8 +46,12 @@ export interface WorkerContext {
     jobs: JobRepository;
     services: ServiceInstanceRepository;
     events: SystemEventRepository;
+    memory: MemoryRepository;
+    snapshots: SnapshotRepository;
+    links: LinkRepository;
   };
-  services: { jobs: JobService; projects: ProjectService };
+  services: { jobs: JobService; projects: ProjectService; lore: LoreService };
+  embeddings: EmbeddingProvider;
   handlers: JobHandlerRegistry;
   dispatchers: OutboxDispatcherRegistry;
   shutdown(): Promise<void>;
@@ -74,6 +86,9 @@ export function buildWorkerContext(options: {
     jobs: new PgJobRepository(),
     services: new PgServiceInstanceRepository(),
     events: new PgSystemEventRepository(),
+    memory: new MemoryRepository(),
+    snapshots: new SnapshotRepository(),
+    links: new LinkRepository(),
   };
 
   const jobs = new JobService({
@@ -90,12 +105,31 @@ export function buildWorkerContext(options: {
     outbox: repositories.outbox,
   });
 
+  const embeddings = createEmbeddingProvider({
+    provider: config.embedding.provider,
+    dimensions: config.embedding.dimensions,
+    model: config.embedding.model,
+    ollamaUrl: config.embedding.ollamaUrl,
+    timeoutMs: config.embedding.timeoutMs,
+  });
+
+  const lore = new LoreService({
+    pool,
+    memory: repositories.memory,
+    snapshots: repositories.snapshots,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+    jobs,
+    coreContextTokens: config.context.coreTokens,
+  });
+
   return {
     config,
     pool,
     logger,
     repositories,
-    services: { jobs, projects },
+    embeddings,
+    services: { jobs, projects, lore },
     handlers: new JobHandlerRegistry(),
     dispatchers: new OutboxDispatcherRegistry(),
     async shutdown() {

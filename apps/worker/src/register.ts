@@ -3,6 +3,12 @@ import type { WorkerContext } from './context.js';
 import { createCleanupHandler } from './handlers/cleanup.js';
 import { noopHandler } from './handlers/noop.js';
 import { createOutboxDeliveryHandler } from './handlers/outbox-delivery.js';
+import {
+  createContextSnapshotHandler,
+  createEmbeddingHandler,
+  createMemoryValidationHandler,
+  createStaleDetectionHandler,
+} from './handlers/lore.js';
 
 const CLEANUP_INTERVAL_MS = 60 * 60_000;
 
@@ -15,6 +21,39 @@ export function registerHandlers(ctx: WorkerContext): void {
       outbox: ctx.repositories.outbox,
       events: ctx.repositories.events,
       registry: ctx.dispatchers,
+    }),
+  );
+  ctx.handlers.register(
+    createEmbeddingHandler({
+      pool: ctx.pool,
+      memory: ctx.repositories.memory,
+      provider: ctx.embeddings,
+    }),
+  );
+  ctx.handlers.register(
+    createMemoryValidationHandler({
+      pool: ctx.pool,
+      lore: ctx.services.lore,
+      memory: ctx.repositories.memory,
+      projects: ctx.repositories.projects,
+    }),
+  );
+  ctx.handlers.register(
+    createContextSnapshotHandler({
+      pool: ctx.pool,
+      lore: ctx.services.lore,
+      projects: ctx.repositories.projects,
+      memory: ctx.repositories.memory,
+      snapshots: ctx.repositories.snapshots,
+      coreContextTokens: ctx.config.context.coreTokens,
+    }),
+  );
+  ctx.handlers.register(
+    createStaleDetectionHandler({
+      pool: ctx.pool,
+      lore: ctx.services.lore,
+      memory: ctx.repositories.memory,
+      projects: ctx.repositories.projects,
     }),
   );
   ctx.handlers.register(

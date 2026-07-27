@@ -10,6 +10,7 @@ import { registerAuth } from './plugins/auth.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerLoreRoutes } from './routes/lore.js';
 import { registerProjectRoutes, type ProjectStatsContributors } from './routes/projects.js';
 import { registerShrineRoutes } from './routes/shrine.js';
 
@@ -88,8 +89,13 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   registerHealthRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
-  registerProjectRoutes(app, ctx, options.projectStats ?? {});
+  registerProjectRoutes(app, ctx, {
+    // Each domain contributes its own per-project counters (ADR-0001).
+    lore: (projectIds) => ctx.repositories.memory.countsForProjects(ctx.pool, projectIds),
+    ...options.projectStats,
+  });
   registerShrineRoutes(app, ctx);
+  registerLoreRoutes(app, ctx);
 
   for (const register of options.extraRoutes ?? []) {
     await register(app, ctx);

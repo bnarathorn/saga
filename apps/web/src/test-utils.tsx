@@ -1,20 +1,31 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, type RenderResult } from '@testing-library/react';
 import type { ReactElement } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi } from 'vitest';
 
 export function renderWithProviders(
   ui: ReactElement,
-  options: { route?: string } = {},
+  options: { route?: string; path?: string } = {},
 ): RenderResult & { queryClient: QueryClient } {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
   });
 
+  // When `path` is given the component is mounted under a matching route, so components that
+  // read `useParams()` receive real values instead of undefined.
+  const tree =
+    options.path === undefined ? (
+      ui
+    ) : (
+      <Routes>
+        <Route path={options.path} element={ui} />
+      </Routes>
+    );
+
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[options.route ?? '/']}>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[options.route ?? '/']}>{tree}</MemoryRouter>
     </QueryClientProvider>,
   );
 

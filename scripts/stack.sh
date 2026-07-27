@@ -18,12 +18,15 @@ stop_one() {
     local pid
     pid="$(cat "$pidfile")"
     if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null || true
-      for _ in $(seq 1 30); do
+      # `setsid` makes the child a process-group leader, so signalling the negative pid
+      # reaches the node process too. Killing only the pid would leave a grandchild holding
+      # the API port and silently serving stale code.
+      kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+      for _ in $(seq 1 40); do
         kill -0 "$pid" 2>/dev/null || break
-        sleep 0.2
+        sleep 0.25
       done
-      kill -9 "$pid" 2>/dev/null || true
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
     fi
     rm -f "$pidfile"
   fi
@@ -34,7 +37,9 @@ start_one() {
   stop_one "$name"
   # setsid + </dev/null fully detaches the child, so a caller that pipes this script's
   # output (`scripts/stack.sh up | tail`) is not left waiting on an inherited pipe.
-  ( cd "$ROOT" && setsid nohup npx tsx "$entry" >"$RUN_DIR/$name.log" 2>&1 </dev/null & echo $! >"$RUN_DIR/$name.pid" )
+  # `node --import tsx` rather than `npx tsx`: one process instead of three, so the pid in
+  # the pidfile is the process that actually holds the port.
+  ( cd "$ROOT" && setsid nohup node --import tsx "$entry" >"$RUN_DIR/$name.log" 2>&1 </dev/null & echo $! >"$RUN_DIR/$name.pid" )
 }
 
 case "${1:-up}" in
