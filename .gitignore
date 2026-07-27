@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.tsbuildinfo
+.env
+.env.local
+.env.*.local
+playwright-report/
+test-results/
+.vite/
+.saga/
+*.log
+.saga-run/

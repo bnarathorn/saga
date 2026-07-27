@@ -1,0 +1,106 @@
+name: saga
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-saga}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-saga}
+      POSTGRES_DB: ${POSTGRES_DB:-saga}
+    ports:
+      - '${SAGA_POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - saga-postgres:/var/lib/postgresql/data
+      # Creates the test database alongside the development one on first boot.
+      - ./deploy/docker/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-saga} -d ${POSTGRES_DB:-saga}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    command: ['node', 'apps/server/dist/migrate-main.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-saga}:${POSTGRES_PASSWORD:-saga}@postgres:5432/${POSTGRES_DB:-saga}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    command: ['node', 'apps/server/dist/main.js']
+    environment:
+      NODE_ENV: production
+      SAGA_API_HOST: 0.0.0.0
+      SAGA_API_PORT: '4319'
+      SAGA_PUBLIC_URL: ${SAGA_PUBLIC_URL:-http://localhost:8080}
+      SAGA_COOKIE_SECURE: ${SAGA_COOKIE_SECURE:-false}
+      SAGA_SESSION_SECRET: ${SAGA_SESSION_SECRET:?set SAGA_SESSION_SECRET in .env}
+      DATABASE_URL: postgres://${POSTGRES_USER:-saga}:${POSTGRES_PASSWORD:-saga}@postgres:5432/${POSTGRES_DB:-saga}
+      SAGA_EMBEDDING_PROVIDER: ${SAGA_EMBEDDING_PROVIDER:-fake}
+      SAGA_OLLAMA_URL: http://ollama:11434
+      PARTY_MODE: ${PARTY_MODE:-advisory}
+      SAGA_BOOTSTRAP_ADMIN_EMAIL: ${SAGA_BOOTSTRAP_ADMIN_EMAIL:-}
+      SAGA_BOOTSTRAP_ADMIN_PASSWORD: ${SAGA_BOOTSTRAP_ADMIN_PASSWORD:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    command: ['node', 'apps/worker/dist/main.js']
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-saga}:${POSTGRES_PASSWORD:-saga}@postgres:5432/${POSTGRES_DB:-saga}
+      SAGA_SESSION_SECRET: ${SAGA_SESSION_SECRET:?set SAGA_SESSION_SECRET in .env}
+      SAGA_COOKIE_SECURE: ${SAGA_COOKIE_SECURE:-false}
+      SAGA_EMBEDDING_PROVIDER: ${SAGA_EMBEDDING_PROVIDER:-fake}
+      SAGA_OLLAMA_URL: http://ollama:11434
+      SAGA_WORKER_CONCURRENCY: ${SAGA_WORKER_CONCURRENCY:-2}
+      PARTY_MODE: ${PARTY_MODE:-advisory}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+    ports:
+      - '${SAGA_WEB_PORT:-8080}:80'
+    # Guild Hall is intentionally *not* dependent on the API being healthy: static assets must
+    # keep loading so the console can report that the API is unreachable.
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # Optional local embedding provider. Start with:  docker compose --profile ollama up -d
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ['ollama']
+    ports:
+      - '${SAGA_OLLAMA_PORT:-11434}:11434'
+    volumes:
+      - saga-ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  saga-postgres:
+  saga-ollama:

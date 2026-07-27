@@ -1,0 +1,40 @@
+[Unit]
+Description=Saga database migrations (one-shot)
+Documentation=https://github.com/bnarathorn/saga/blob/main/docs/operations.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+User=saga
+Group=saga
+WorkingDirectory=/opt/saga
+EnvironmentFile=/etc/saga/saga.env
+ExecStart=/usr/bin/node apps/server/dist/migrate-main.js
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=saga-migrate
+
+# Migrations are forward-only and take an advisory lock, so a second concurrent start is safe.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+UMask=0077
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

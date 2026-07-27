@@ -1,0 +1,31 @@
+{
+  "name": "@saga/quest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Work items, sessions, checkpoints and handoffs.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean"
+  },
+  "dependencies": {
+    "@saga/contracts": "workspace:*",
+    "@saga/core": "workspace:*",
+    "@saga/database": "workspace:*",
+    "@saga/shared": "workspace:*",
+    "@saga/shrine": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

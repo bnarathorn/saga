@@ -1,0 +1,44 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/testing/**"
+  ],
+  "references": [
+    {
+      "path": "../../packages/shared"
+    },
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/database"
+    },
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/shrine"
+    },
+    {
+      "path": "../../packages/quest"
+    },
+    {
+      "path": "../../packages/lore"
+    },
+    {
+      "path": "../../packages/party"
+    }
+  ]
+}

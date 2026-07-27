@@ -1,0 +1,23 @@
+{
+  "name": "@saga/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The `saga` command line interface and MCP stdio server.",
+  "main": "dist/main.js",
+  "bin": {
+    "saga": "dist/main.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "@saga/agent-sdk": "workspace:*",
+    "@saga/contracts": "workspace:*",
+    "@saga/shared": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

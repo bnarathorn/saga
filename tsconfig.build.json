@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/contracts" },
+    { "path": "packages/database" },
+    { "path": "packages/core" },
+    { "path": "packages/shrine" },
+    { "path": "packages/quest" },
+    { "path": "packages/lore" },
+    { "path": "packages/party" },
+    { "path": "packages/agent-sdk" },
+    { "path": "apps/server" },
+    { "path": "apps/worker" },
+    { "path": "apps/cli" }
+  ]
+}

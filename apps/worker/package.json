@@ -1,0 +1,25 @@
+{
+  "name": "@saga/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Saga background worker process.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@saga/contracts": "workspace:*",
+    "@saga/core": "workspace:*",
+    "@saga/database": "workspace:*",
+    "@saga/lore": "workspace:*",
+    "@saga/party": "workspace:*",
+    "@saga/quest": "workspace:*",
+    "@saga/shared": "workspace:*",
+    "@saga/shrine": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

@@ -1,0 +1,59 @@
+[Unit]
+Description=Saga worker
+Documentation=https://github.com/bnarathorn/saga/blob/main/docs/operations.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+# The worker must not claim jobs against an older schema, so it waits for the one-shot
+# migration unit too.
+After=saga-migrate.service
+Requires=saga-migrate.service
+
+[Service]
+Type=simple
+User=saga
+Group=saga
+WorkingDirectory=/opt/saga
+EnvironmentFile=/etc/saga/saga.env
+ExecStart=/usr/bin/node apps/worker/dist/main.js
+
+# Graceful shutdown: main.js drains connections and marks its service instance stopped.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+Restart=always
+RestartSec=5
+
+# Logs go to stdout as structured JSON; journald collects them.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=saga-worker
+
+# --- hardening -------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+# Nothing under /opt/saga needs to be writable at runtime.
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,30 @@
+{
+  "name": "@saga/shrine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Operational domain: service instances, job queue, system events and health.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean"
+  },
+  "dependencies": {
+    "@saga/contracts": "workspace:*",
+    "@saga/core": "workspace:*",
+    "@saga/database": "workspace:*",
+    "@saga/shared": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

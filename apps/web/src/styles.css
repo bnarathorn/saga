@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-parchment-50 text-ink-800 antialiased;
+    @apply dark:bg-night-950 dark:text-parchment-100;
+    font-family: theme('fontFamily.sans');
+  }
+
+  /* Focus must always be visible: Guild Hall is expected to be keyboard-navigable. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-sigil-500 ring-offset-2 ring-offset-parchment-50;
+    @apply dark:ring-sigil-300 dark:ring-offset-night-950;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: theme('fontFamily.display');
+    @apply tracking-tight;
+  }
+
+  ::selection {
+    @apply bg-ember-400/30;
+  }
+}
+
+@layer components {
+  /* A "panel" is Guild Hall's primary surface: a bordered card with a hairline top rule
+     that echoes an illuminated manuscript block without imitating any existing artwork. */
+  .panel {
+    @apply rounded-lg border border-parchment-300 bg-white/70 shadow-panel;
+    @apply dark:border-night-700 dark:bg-night-900/70;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between gap-3 border-b border-parchment-200 px-4 py-3;
+    @apply dark:border-night-800;
+  }
+
+  .panel-title {
+    @apply text-sm font-semibold uppercase tracking-[0.14em] text-ink-600 dark:text-parchment-300;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium;
+    @apply transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn border-sigil-600 bg-sigil-500 text-white hover:bg-sigil-600;
+    @apply dark:border-sigil-400 dark:bg-sigil-500 dark:hover:bg-sigil-400 dark:hover:text-night-950;
+  }
+
+  .btn-secondary {
+    @apply btn border-parchment-300 bg-white text-ink-700 hover:bg-parchment-100;
+    @apply dark:border-night-700 dark:bg-night-800 dark:text-parchment-200 dark:hover:bg-night-700;
+  }
+
+  .btn-danger {
+    @apply btn border-rust-600 bg-rust-500 text-white hover:bg-rust-600;
+  }
+
+  .field-label {
+    @apply mb-1 block text-sm font-medium text-ink-700 dark:text-parchment-200;
+  }
+
+  .field-input {
+    @apply w-full rounded-md border border-parchment-300 bg-white px-3 py-2 text-sm text-ink-800;
+    @apply placeholder:text-ink-500/60;
+    @apply dark:border-night-700 dark:bg-night-850 dark:text-parchment-100 dark:placeholder:text-parchment-300/40;
+  }
+
+  .table-cell {
+    @apply px-4 py-2.5 text-sm;
+  }
+
+  .table-head {
+    @apply px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider;
+    @apply text-ink-500 dark:text-parchment-300/70;
+  }
+
+  .link {
+    @apply rounded-sm font-medium text-sigil-600 underline-offset-2 hover:underline dark:text-sigil-300;
+  }
+
+  .metric-value {
+    @apply font-display text-3xl tabular-nums text-ink-800 dark:text-parchment-100;
+  }
+
+  .metric-label {
+    @apply text-xs font-medium uppercase tracking-wider text-ink-500 dark:text-parchment-300/70;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

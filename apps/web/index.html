@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Guild Hall — the web console for Saga: project memory, work continuity and agent coordination."
+    />
+    <title>Guild Hall — Saga</title>
+    <script>
+      // Applied before first paint so a reload never flashes the wrong theme.
+      (function () {
+        try {
+          var stored = localStorage.getItem('saga.theme');
+          var dark =
+            stored === 'dark' ||
+            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+        } catch (error) {
+          /* localStorage unavailable: fall back to the media query default in CSS */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>Guild Hall requires JavaScript. The Saga API remains usable without it.</noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,38 @@
+import { fileURLToPath } from 'node:url';
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
+
+const resolve = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+const apiTarget = process.env.SAGA_API_URL ?? 'http://127.0.0.1:4319';
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      '@saga/contracts': resolve('../../packages/contracts/src/index.ts'),
+      '@saga/shared': resolve('../../packages/shared/src/index.ts'),
+      '@': resolve('./src'),
+    },
+  },
+  server: {
+    port: Number(process.env.SAGA_WEB_PORT ?? 4320),
+    strictPort: true,
+    proxy: {
+      '/api': { target: apiTarget, changeOrigin: false },
+      '/health': { target: apiTarget, changeOrigin: false },
+    },
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: true,
+  },
+  test: {
+    name: 'web',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: [resolve('./src/test-setup.ts')],
+    css: false,
+  },
+});

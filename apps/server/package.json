@@ -1,0 +1,31 @@
+{
+  "name": "@saga/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Saga Fastify API server.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/helmet": "^13.0.1",
+    "@fastify/rate-limit": "^10.2.2",
+    "@fastify/static": "^8.0.4",
+    "@saga/contracts": "workspace:*",
+    "@saga/core": "workspace:*",
+    "@saga/database": "workspace:*",
+    "@saga/lore": "workspace:*",
+    "@saga/party": "workspace:*",
+    "@saga/quest": "workspace:*",
+    "@saga/shared": "workspace:*",
+    "@saga/shrine": "workspace:*",
+    "fastify": "^5.2.1",
+    "zod": "^3.24.1"
+  }
+}

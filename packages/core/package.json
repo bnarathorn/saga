@@ -1,0 +1,30 @@
+{
+  "name": "@saga/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Project identity, aliases and the transactional outbox.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "@saga/contracts": "workspace:*",
+    "@saga/database": "workspace:*",
+    "@saga/shared": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

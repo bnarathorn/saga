@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "allowImportingTsExtensions": false,
+    "types": ["node"]
+  },
+  "include": ["db/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "eslint.config.js"],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/contracts" },
+    { "path": "packages/database" },
+    { "path": "packages/core" },
+    { "path": "packages/shrine" },
+    { "path": "packages/quest" },
+    { "path": "packages/lore" },
+    { "path": "packages/party" },
+    { "path": "packages/agent-sdk" }
+  ]
+}
