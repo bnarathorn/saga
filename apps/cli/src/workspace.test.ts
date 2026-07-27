@@ -1,0 +1,231 @@
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderMcpConfig, writeMcpConfig } from './mcp-config.js';
+import {
+  detectWorkspace,
+  findBinding,
+  readProjectFile,
+  upsertBinding,
+  writeProjectFile,
+  type SagaCliConfig,
+} from './workspace.js';
+
+let root: string;
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'saga-ws-'));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/**
+ * These are the acceptance tests for spec 21.5: all three local project forms must connect
+ * identically, and none of them may become project identity.
+ */
+describe('workspace detection — all three project forms', () => {
+  it('detects a plain folder with no version control at all', () => {
+    const info = detectWorkspace(root);
+    expect(info.kind).toBe('plain');
+    expect(info.root).toBe(root);
+    expect(info.workspaceKey).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it('detects a Git working copy that has no remote', () => {
+    // Deliberately only `.git/` with no config and no remote: Saga must not care.
+    mkdirSync(join(root, '.git'), { recursive: true });
+    const info = detectWorkspace(root);
+    expect(info.kind).toBe('git');
+    expect(info.root).toBe(root);
+  });
+
+  it('detects an SVN working copy', () => {
+    mkdirSync(join(root, '.svn'), { recursive: true });
+    const info = detectWorkspace(root);
+    expect(info.kind).toBe('svn');
+  });
+
+  it('detects a Mercurial working copy', () => {
+    mkdirSync(join(root, '.hg'), { recursive: true });
+    expect(detectWorkspace(root).kind).toBe('mercurial');
+  });
+
+  it('produces the same shape of identity for every project form', () => {
+    const plain = detectWorkspace(root);
+
+    const gitRoot = mkdtempSync(join(tmpdir(), 'saga-git-'));
+    mkdirSync(join(gitRoot, '.git'), { recursive: true });
+    const git = detectWorkspace(gitRoot);
+
+    const svnRoot = mkdtempSync(join(tmpdir(), 'saga-svn-'));
+    mkdirSync(join(svnRoot, '.svn'), { recursive: true });
+    const svn = detectWorkspace(svnRoot);
+
+    for (const info of [plain, git, svn]) {
+      expect(info.workspaceKey).toMatch(/^[0-9a-f]{32}$/);
+      expect(info.workspaceLabel).toMatch(/^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+$/);
+      // No VCS value is ever part of identity.
+      expect(info.vcsRevision).toBeNull();
+      expect(JSON.stringify(info)).not.toContain('remote');
+      expect(JSON.stringify(info)).not.toContain('branch');
+    }
+  });
+
+  it('never exposes the absolute path in the workspace label', () => {
+    const info = detectWorkspace(root);
+    expect(info.workspaceLabel).not.toContain('/');
+    expect(info.workspaceLabel).not.toContain(root);
+  });
+
+  it('walks up to the project root from a subdirectory', () => {
+    mkdirSync(join(root, '.git'), { recursive: true });
+    const nested = join(root, 'services', 'api', 'src');
+    mkdirSync(nested, { recursive: true });
+    expect(detectWorkspace(nested).root).toBe(root);
+  });
+
+  it('walks up to a .saga binding even without version control', () => {
+    mkdirSync(join(root, '.saga'), { recursive: true });
+    writeFileSync(join(root, '.saga', 'project.yaml'), 'version: 1\nproject: Test\n');
+    const nested = join(root, 'deep', 'nested');
+    mkdirSync(nested, { recursive: true });
+    expect(detectWorkspace(nested).root).toBe(root);
+  });
+
+  it('gives the same workspace key for the same folder and a different one otherwise', () => {
+    const a = detectWorkspace(root);
+    const b = detectWorkspace(root);
+    expect(a.workspaceKey).toBe(b.workspaceKey);
+
+    const other = mkdtempSync(join(tmpdir(), 'saga-other-'));
+    expect(detectWorkspace(other).workspaceKey).not.toBe(a.workspaceKey);
+  });
+});
+
+describe('project file', () => {
+  it('round-trips the project name', () => {
+    writeProjectFile(root, 'ERP Backoffice');
+    expect(readProjectFile(root)).toEqual({ project: 'ERP Backoffice' });
+  });
+
+  it('quotes a name that needs it', () => {
+    writeProjectFile(root, 'Payments: EU & UK');
+    expect(readProjectFile(root)).toEqual({ project: 'Payments: EU & UK' });
+  });
+
+  it('records inspection hints and never a secret', () => {
+    const path = writeProjectFile(root, 'ERP Backoffice');
+    const contents = readFileSync(path, 'utf8');
+    expect(contents).toContain('inspection:');
+    expect(contents).toContain('.env*');
+    expect(contents).toContain('Never put tokens');
+    // The warning names them; no line may actually *assign* one.
+    const assignments = contents
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('#'))
+      .filter((line) => /^\s*\S*(token|password|secret|credential)\S*\s*:\s*\S/i.test(line));
+    expect(assignments).toEqual([]);
+  });
+
+  it('returns null when there is no project file', () => {
+    expect(readProjectFile(root)).toBeNull();
+  });
+});
+
+describe('bindings', () => {
+  const base: SagaCliConfig = {
+    version: 1,
+    serverUrl: 'https://saga.test',
+    bindings: [],
+    preferences: { defaultClient: 'saga-cli', json: false },
+  };
+
+  it('adds and replaces a binding for the same root', () => {
+    const first = upsertBinding(base, {
+      root: '/a',
+      projectId: 'p1',
+      projectName: 'One',
+      serverUrl: 'https://saga.test',
+      workspaceKey: 'k1',
+      boundAt: new Date().toISOString(),
+    });
+    expect(first.bindings).toHaveLength(1);
+
+    const replaced = upsertBinding(first, {
+      root: '/a',
+      projectId: 'p2',
+      projectName: 'Two',
+      serverUrl: 'https://saga.test',
+      workspaceKey: 'k1',
+      boundAt: new Date().toISOString(),
+    });
+    expect(replaced.bindings).toHaveLength(1);
+    expect(findBinding(replaced, '/a')?.projectId).toBe('p2');
+  });
+
+  it('keeps bindings for different roots side by side', () => {
+    let config = base;
+    for (const root of ['/a', '/b']) {
+      config = upsertBinding(config, {
+        root,
+        projectId: `p${root}`,
+        projectName: root,
+        serverUrl: 'https://saga.test',
+        workspaceKey: 'k',
+        boundAt: new Date().toISOString(),
+      });
+    }
+    expect(config.bindings).toHaveLength(2);
+    expect(findBinding(config, '/b')?.projectName).toBe('/b');
+  });
+});
+
+describe('MCP configuration', () => {
+  it('writes project-local configuration for Claude Code and Codex', () => {
+    const written = writeMcpConfig({
+      root,
+      serverUrl: 'https://saga.test',
+      projectRef: 'project-uuid',
+    });
+    expect(written).toHaveLength(2);
+
+    const claude = JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8'));
+    expect(claude.mcpServers.saga).toMatchObject({
+      command: 'saga',
+      args: ['mcp'],
+      env: { SAGA_SERVER_URL: 'https://saga.test', SAGA_PROJECT: 'project-uuid' },
+    });
+
+    const codex = JSON.parse(readFileSync(join(root, '.codex', 'config.json'), 'utf8'));
+    expect(codex.mcpServers.saga.command).toBe('saga');
+  });
+
+  it('never writes a token into MCP configuration', () => {
+    writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+    const contents = readFileSync(join(root, '.mcp.json'), 'utf8');
+    expect(contents).not.toMatch(/token|password|secret/i);
+  });
+
+  it('preserves other MCP servers already configured', () => {
+    writeFileSync(
+      join(root, '.mcp.json'),
+      JSON.stringify({ mcpServers: { other: { command: 'other' } } }),
+    );
+    writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+    const claude = JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8'));
+    expect(claude.mcpServers.other).toEqual({ command: 'other' });
+    expect(claude.mcpServers.saga).toBeDefined();
+  });
+
+  it('renders the same configuration for a user to paste', () => {
+    const rendered = renderMcpConfig({
+      root,
+      serverUrl: 'https://saga.test',
+      projectRef: 'p',
+    });
+    expect(JSON.parse(rendered).mcpServers.saga.args).toEqual(['mcp']);
+  });
+});

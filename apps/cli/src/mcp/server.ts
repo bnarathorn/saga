@@ -1,0 +1,508 @@
+import { SagaClient, RETRY_GUIDANCE } from '@saga/agent-sdk';
+import { SagaError, errorMessage, isSagaError } from '@saga/shared';
+import { z } from 'zod';
+import { detectWorkspace, findBinding, loadConfig, newIdempotencyKey } from '../workspace.js';
+import { CredentialStore } from '../credentials.js';
+
+/**
+ * MCP tool surface (spec 14).
+ *
+ * The tools are deliberately shaped around the session lifecycle rather than around the HTTP
+ * API: an agent should be able to follow the integration policy without knowing any URLs.
+ */
+
+export interface McpSession {
+  sessionId: string | null;
+  agentRunId: string | null;
+  questId: string | null;
+  questRevision: number;
+  projectRef: string;
+  client: string;
+}
+
+export interface McpToolContext {
+  client: SagaClient;
+  session: McpSession;
+  workspace: { root: string; kind: string; workspaceKey: string; workspaceLabel: string };
+}
+
+export interface McpToolResult {
+  content: { type: 'text'; text: string }[];
+  isError?: boolean;
+}
+
+export interface McpTool {
+  name: string;
+  description: string;
+  inputSchema: z.ZodTypeAny;
+  handler(args: Record<string, unknown>, context: McpToolContext): Promise<unknown>;
+}
+
+// --- schemas ---------------------------------------------------------------
+
+const workStateSchema = z.object({
+  goal: z.string().min(1),
+  completed: z.array(z.string()).default([]),
+  in_progress: z.array(z.string()).default([]),
+  next_steps: z.array(z.string()).default([]),
+  blockers: z
+    .array(z.object({ description: z.string(), suggested_action: z.string().optional() }))
+    .default([]),
+  decisions: z
+    .array(z.object({ decision: z.string(), reason: z.string().optional() }))
+    .default([]),
+  changed_files: z
+    .array(
+      z.object({
+        path: z.string(),
+        base_hash: z.string().optional(),
+        current_hash: z.string().optional(),
+      }),
+    )
+    .default([]),
+  commands: z
+    .array(
+      z.object({
+        command: z.string(),
+        status: z.enum(['succeeded', 'failed', 'skipped', 'running']).optional(),
+        summary: z.string().optional(),
+      }),
+    )
+    .default([]),
+  tests: z
+    .array(
+      z.object({
+        name: z.string(),
+        status: z.enum(['passed', 'failed', 'blocked', 'skipped', 'running']),
+        summary: z.string().optional(),
+      }),
+    )
+    .default([]),
+});
+
+const scopeSchema = z.object({
+  modules: z.array(z.string()).optional(),
+  components: z.array(z.string()).optional(),
+  apis: z.array(z.string()).optional(),
+  databases: z.array(z.string()).optional(),
+  files: z.array(z.string()).optional(),
+  issue_keys: z.array(z.string()).optional(),
+});
+
+// --- tools -----------------------------------------------------------------
+
+export const TOOLS: McpTool[] = [
+  {
+    name: 'saga_start_session',
+    description:
+      'Open a Saga session for this folder. Returns short Core Context and whether Lore bootstrap is required. Call this first, before reading any files. It does NOT attach a Quest and does NOT load any handoff — that happens in saga_activate_task once you know what the user wants.',
+    inputSchema: z.object({
+      agent: z.string().optional().describe('Agent name, e.g. "claude" or "codex".'),
+    }),
+    async handler(args, ctx) {
+      const started = await ctx.client.startSession(
+        {
+          project: ctx.session.projectRef,
+          client: ctx.session.client,
+          agent: (args.agent as string | undefined) ?? undefined,
+          workspace_key: ctx.workspace.workspaceKey,
+          workspace_label: ctx.workspace.workspaceLabel,
+        },
+        { idempotencyKey: newIdempotencyKey() },
+      );
+
+      ctx.session.sessionId = started.session_id;
+      ctx.session.agentRunId = started.agent_run_id;
+
+      return {
+        session_id: started.session_id,
+        state: started.state,
+        project: started.project,
+        project_revision: started.project_revision,
+        core_context: started.core_context,
+        bootstrap_required: started.bootstrap_required,
+        bootstrap_plan: started.bootstrap_plan,
+        open_quests: started.open_quests,
+        next_step:
+          'Wait for the first user task, then call saga_activate_task. Do not load a handoff before that.',
+      };
+    },
+  },
+
+  {
+    name: 'saga_activate_task',
+    description:
+      'Report the first user task. Saga classifies it as new_work, resume_work or inquiry, creates or attaches a Quest, and returns Core, Task and (for resume_work) Continuation context. Read the returned context before editing any file.',
+    inputSchema: z.object({
+      task: z.string().min(1).describe('The user request, verbatim where possible.'),
+      mode_hint: z.enum(['auto', 'new_work', 'resume_work', 'inquiry']).optional(),
+      requested_quest_id: z.string().optional().describe('Set when the user names a Quest.'),
+      scope: scopeSchema.optional().describe('Modules, files and APIs you expect to touch.'),
+    }),
+    async handler(args, ctx) {
+      requireSession(ctx);
+      const result = await ctx.client.activateSession(ctx.session.sessionId!, {
+        task: args.task as string,
+        mode_hint: args.mode_hint as never,
+        requested_quest_id: (args.requested_quest_id as string | undefined) ?? null,
+        scope: args.scope as never,
+      });
+
+      ctx.session.questId = result.quest?.id ?? null;
+      ctx.session.questRevision = result.quest?.revision ?? 0;
+
+      return {
+        activation_mode: result.activation_mode,
+        quest: result.quest,
+        context: result.context,
+        related_quests: result.related_quests,
+        next_step:
+          result.activation_mode === 'inquiry'
+            ? 'No Quest was created. If this turns into real work, call saga_activate_task again with mode_hint "new_work".'
+            : `Record checkpoints with saga_checkpoint using expected_quest_revision ${result.quest?.revision ?? 0}.`,
+      };
+    },
+  },
+
+  {
+    name: 'saga_get_context',
+    description:
+      'Refresh context for the current task: Core, Task, Continuation and Party layers, plus the project memory revision and any stale-Lore warnings. Call this when the project or parallel work has changed materially, or before a risky operation.',
+    inputSchema: z.object({
+      task: z.string().optional(),
+      token_budget: z.number().int().min(500).max(60_000).optional(),
+    }),
+    async handler(args, ctx) {
+      const context = await ctx.client.context(ctx.session.projectRef, {
+        task: args.task as string | undefined,
+        mode: ctx.session.questId === null ? 'inquiry' : 'resume_work',
+        quest_id: ctx.session.questId ?? undefined,
+        session_id: ctx.session.sessionId ?? undefined,
+        token_budget: args.token_budget as number | undefined,
+      });
+      return context;
+    },
+  },
+
+  {
+    name: 'saga_search_lore',
+    description:
+      'Search this project’s durable knowledge. Returns Lore keys, concise content, relevance, verification state, freshness and evidence summaries. Prefer this over guessing, and over re-reading the whole repository.',
+    inputSchema: z.object({
+      query: z.string().min(1),
+      limit: z.number().int().min(1).max(50).optional(),
+      categories: z.array(z.string()).optional(),
+      states: z.array(z.enum(['active', 'stale', 'archived'])).optional(),
+      relation_depth: z.number().int().min(0).max(2).optional(),
+    }),
+    async handler(args, ctx) {
+      return ctx.client.searchLore(ctx.session.projectRef, {
+        query: args.query as string,
+        limit: args.limit as number | undefined,
+        relation_depth: args.relation_depth as number | undefined,
+        filters: {
+          categories: args.categories as never,
+          states: (args.states as never) ?? undefined,
+        },
+      });
+    },
+  },
+
+  {
+    name: 'saga_checkpoint',
+    description:
+      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
+    inputSchema: z.object({
+      kind: z.enum(['automatic', 'milestone', 'final_handoff']).default('automatic'),
+      summary: z.string().min(1),
+      work_state: workStateSchema,
+      expected_quest_revision: z
+        .number()
+        .int()
+        .optional()
+        .describe('Defaults to the revision this session last observed.'),
+    }),
+    async handler(args, ctx) {
+      requireSession(ctx);
+      if (ctx.session.questId === null) {
+        throw new SagaError(
+          'SESSION_STATE_INVALID',
+          'This session has no Quest. Call saga_activate_task with mode_hint "new_work" before recording a checkpoint.',
+        );
+      }
+
+      const expected =
+        (args.expected_quest_revision as number | undefined) ?? ctx.session.questRevision;
+
+      const result = await ctx.client.checkpoint(
+        ctx.session.sessionId!,
+        {
+          expected_quest_revision: expected,
+          kind: args.kind as never,
+          summary: args.summary as string,
+          work_state: args.work_state as never,
+        },
+        { idempotencyKey: newIdempotencyKey() },
+      );
+
+      ctx.session.questRevision = result.quest_revision;
+      return {
+        checkpoint_id: result.checkpoint.id,
+        quest_revision: result.quest_revision,
+        next_step: `Use expected_quest_revision ${result.quest_revision} for the next checkpoint.`,
+      };
+    },
+  },
+
+  {
+    name: 'saga_remember',
+    description:
+      'Propose durable project knowledge as one or more Lore Entries. Use only for knowledge that stays true beyond this task — never for transient task state, and never for credentials. This creates a candidate; it never overwrites current Lore directly.',
+    inputSchema: z.object({
+      summary: z.string().min(1).describe('Why these entries are being recorded.'),
+      entries: z
+        .array(
+          z.object({
+            memory_key: z.string().describe('Lowercase dot-separated, e.g. run.api.local'),
+            category: z.string(),
+            kind: z.string(),
+            body: z.string().min(1),
+            data: z.record(z.unknown()).optional(),
+            evidence: z
+              .array(z.object({ path: z.string(), content_hash: z.string().optional() }))
+              .optional(),
+            confidence: z.number().min(0).max(1),
+            verification_state: z.enum(['observed', 'inferred', 'verified']),
+            importance: z.number().int().min(0).max(100).optional(),
+            volatility: z.enum(['stable', 'operational']).optional(),
+          }),
+        )
+        .min(1),
+    }),
+    async handler(args, ctx) {
+      const result = await ctx.client.remember(
+        ctx.session.projectRef,
+        {
+          summary: args.summary as string,
+          entries: args.entries as never,
+          session_id: ctx.session.sessionId ?? undefined,
+        },
+        { idempotencyKey: newIdempotencyKey() },
+      );
+      return {
+        update_id: result.update.id,
+        state: result.update.state,
+        approval_mode: result.approval_mode,
+        message: result.message,
+      };
+    },
+  },
+
+  {
+    name: 'saga_claim_resource',
+    description:
+      'Claim a resource before a risky or exclusive operation: a migration sequence, a test database reset, a deployment, a service restart or production configuration. On conflict you receive the owning Quest and its lease expiry — do NOT proceed without the claim.',
+    inputSchema: z.object({
+      resource_type: z.enum([
+        'module',
+        'file',
+        'database_schema',
+        'migration_sequence',
+        'environment',
+        'service',
+        'deployment',
+        'test_environment',
+        'service_restart',
+        'production_config',
+      ]),
+      resource_key: z.string().min(1),
+      mode: z.enum(['shared', 'exclusive']).default('exclusive'),
+      base_fingerprint: z.string().optional(),
+    }),
+    async handler(args, ctx) {
+      requireSession(ctx);
+      if (ctx.session.agentRunId === null) {
+        throw new SagaError(
+          'PARTY_DISABLED',
+          'No agent run is active for this session, so claims are unavailable. Coordination may be disabled on this server.',
+        );
+      }
+      if (ctx.session.questId === null) {
+        throw new SagaError(
+          'SESSION_STATE_INVALID',
+          'A claim belongs to a Quest. Call saga_activate_task first.',
+        );
+      }
+
+      const result = await ctx.client.claim({
+        agent_run_id: ctx.session.agentRunId,
+        work_item_id: ctx.session.questId,
+        resource_type: args.resource_type as never,
+        resource_key: args.resource_key as string,
+        mode: args.mode as never,
+        base_fingerprint: (args.base_fingerprint as string | undefined) ?? null,
+      });
+      return { claim: result.claim, warnings: result.warnings };
+    },
+  },
+
+  {
+    name: 'saga_release_claim',
+    description:
+      'Release a claim you hold, as soon as the protected operation finishes. Idempotent: releasing an already released claim is not an error.',
+    inputSchema: z.object({
+      claim_id: z.string().min(1),
+      reason: z.string().optional(),
+    }),
+    async handler(args, ctx) {
+      if (ctx.session.agentRunId === null) {
+        throw new SagaError('PARTY_DISABLED', 'No agent run is active for this session.');
+      }
+      const result = await ctx.client.releaseClaim(
+        args.claim_id as string,
+        ctx.session.agentRunId,
+        args.reason as string | undefined,
+      );
+      return { claim: result.claim };
+    },
+  },
+
+  {
+    name: 'saga_end_session',
+    description:
+      'End the session cleanly: record a final handoff for the Quest, end the durable session, end the agent run and release its claims. Always call this before you stop, so the next session can continue from where you left off.',
+    inputSchema: z.object({
+      summary: z.string().optional().describe('Required when a Quest is attached.'),
+      work_state: workStateSchema.optional(),
+    }),
+    async handler(args, ctx) {
+      requireSession(ctx);
+
+      const hasQuest = ctx.session.questId !== null;
+      if (hasQuest && (args.summary === undefined || args.work_state === undefined)) {
+        throw new SagaError(
+          'CHECKPOINT_INVALID',
+          'This session owns a Quest, so a final handoff is required. Supply summary and work_state describing what is done, what is in progress, blockers and next steps.',
+        );
+      }
+
+      const result = await ctx.client.endSession(ctx.session.sessionId!, {
+        handoff: hasQuest
+          ? {
+              expected_quest_revision: ctx.session.questRevision,
+              summary: args.summary as string,
+              work_state: args.work_state as never,
+            }
+          : undefined,
+      });
+
+      ctx.session.sessionId = null;
+      ctx.session.agentRunId = null;
+      ctx.session.questId = null;
+
+      return {
+        session_state: result.session.state,
+        handoff_id: result.handoff?.id ?? null,
+        quest_revision: result.quest_revision,
+        released_claims: result.released_claims,
+      };
+    },
+  },
+];
+
+function requireSession(ctx: McpToolContext): void {
+  if (ctx.session.sessionId === null) {
+    throw new SagaError(
+      'SESSION_NOT_FOUND',
+      'No Saga session is open. Call saga_start_session first.',
+    );
+  }
+}
+
+/** Turn any failure into a result an agent can act on rather than a stack trace. */
+export function toToolError(error: unknown): McpToolResult {
+  if (isSagaError(error)) {
+    const guidance = RETRY_GUIDANCE[error.code];
+    const body = {
+      error: error.code,
+      message: error.message,
+      details: error.details,
+      what_to_do:
+        guidance ??
+        (error.retryable
+          ? 'This looks transient. Retrying shortly is safe.'
+          : 'Fix the request before retrying.'),
+    };
+    return { content: [{ type: 'text', text: JSON.stringify(body, null, 2) }], isError: true };
+  }
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(
+          {
+            error: 'INTERNAL_ERROR',
+            message: errorMessage(error),
+            what_to_do: 'Retry once; if it persists, run `saga doctor`.',
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+    isError: true,
+  };
+}
+
+export interface BuildContextResult {
+  context: McpToolContext;
+  problems: string[];
+}
+
+/** Resolve the project binding, credentials and workspace for this folder. */
+export async function buildToolContext(clientName: string): Promise<BuildContextResult> {
+  const problems: string[] = [];
+  const workspace = detectWorkspace();
+  const config = loadConfig();
+  const binding = findBinding(config, workspace.root);
+
+  const serverUrl =
+    process.env.SAGA_SERVER_URL ?? binding?.serverUrl ?? config.serverUrl ?? 'http://localhost:4319';
+  const projectRef = process.env.SAGA_PROJECT ?? binding?.projectId ?? null;
+
+  if (projectRef === null) {
+    problems.push(
+      'This folder is not bound to a Saga project. Run `saga connect` in the project root.',
+    );
+  }
+
+  const token = await new CredentialStore().get(serverUrl);
+  if (token === null) {
+    problems.push(`No credentials stored for ${serverUrl}. Run \`saga connect\`.`);
+  }
+
+  return {
+    context: {
+      client: new SagaClient({
+        baseUrl: serverUrl,
+        token: token ?? '',
+        client: clientName,
+      }),
+      session: {
+        sessionId: null,
+        agentRunId: null,
+        questId: null,
+        questRevision: 0,
+        projectRef: projectRef ?? '',
+        client: clientName,
+      },
+      workspace: {
+        root: workspace.root,
+        kind: workspace.kind,
+        workspaceKey: workspace.workspaceKey,
+        workspaceLabel: workspace.workspaceLabel,
+      },
+    },
+    problems,
+  };
+}

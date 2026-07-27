@@ -9,7 +9,7 @@ import type {
   WorkState,
 } from '@saga/contracts';
 import type { Queryable } from '@saga/database';
-import { isUniqueViolation } from '@saga/database';
+import { isUniqueViolation, toVectorLiteral } from '@saga/database';
 import { SagaError } from '@saga/shared';
 
 // ---------------------------------------------------------------------------
@@ -402,6 +402,27 @@ export class QuestRepository {
       throw new SagaError('QUEST_NOT_FOUND', 'The Quest no longer exists.');
     }
     return toQuest(result.rows[0]);
+  }
+
+  /** Worker-owned write: the embedding fields are the only part of a Quest the worker sets. */
+  async setEmbedding(
+    q: Queryable,
+    id: string,
+    embedding: readonly number[],
+  ): Promise<boolean> {
+    const result = await q.query(
+      `UPDATE quest.work_items SET embedding = $2::vector, embedding_state = 'ready' WHERE id = $1`,
+      [id, toVectorLiteral(embedding)],
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
+  async setEmbeddingState(
+    q: Queryable,
+    id: string,
+    state: 'queued' | 'claimed' | 'ready' | 'failed',
+  ): Promise<void> {
+    await q.query(`UPDATE quest.work_items SET embedding_state = $2 WHERE id = $1`, [id, state]);
   }
 
   async touch(tx: Queryable, id: string): Promise<void> {

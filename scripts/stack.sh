@@ -11,6 +11,24 @@ mkdir -p "$RUN_DIR"
 
 api_port="${SAGA_API_PORT:-4319}"
 
+# Kill whatever is listening on the API port. Used by `down` so an orphan from a crashed or
+# externally started run cannot keep answering health checks with stale code.
+kill_port_holder() {
+  local port="$1"
+  local pids
+  pids="$(ss -ltnpH "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)"
+  [[ -z "$pids" ]] && return 0
+  for pid in $pids; do
+    echo "stopping stale process $pid holding port $port"
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  for _ in $(seq 1 30); do
+    ss -ltnH "sport = :$port" 2>/dev/null | grep -q . || return 0
+    sleep 0.2
+  done
+  for pid in $pids; do kill -KILL "$pid" 2>/dev/null || true; done
+}
+
 stop_one() {
   local name="$1"
   local pidfile="$RUN_DIR/$name.pid"
@@ -74,6 +92,7 @@ case "${1:-up}" in
   down)
     stop_one api
     stop_one worker
+    kill_port_holder "$api_port"
     echo "saga stack down"
     ;;
   restart)

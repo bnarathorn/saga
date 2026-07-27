@@ -561,6 +561,40 @@ describe('lifecycle', () => {
   });
 });
 
+describe('embedding jobs', () => {
+  it('enqueues an embedding job whose payload the worker handler understands', async () => {
+    // Regression: Quest creation enqueued { work_item_id } while the embedding handler only
+    // accepted { memory_version_id }, so every Quest embedding failed permanently and
+    // semantic Quest matching could never work.
+    const quest = await quests.create({ project, title: 'Add CSV report export' });
+    const jobs = await pool.query<{ payload: Record<string, unknown> }>(
+      `SELECT payload FROM shrine.jobs WHERE job_type = 'embedding' AND entity_id = $1`,
+      [quest.id],
+    );
+    expect(jobs.rows).toHaveLength(1);
+    expect(jobs.rows[0]!.payload).toEqual({ work_item_id: quest.id });
+
+    const { createEmbeddingHandler } = await import('../../../../apps/worker/src/handlers/lore.js');
+    const { DeterministicFakeEmbeddingProvider, MemoryRepository } = await import('@saga/lore');
+    const handler = createEmbeddingHandler({
+      pool,
+      memory: new MemoryRepository(),
+      quests: repo,
+      provider: new DeterministicFakeEmbeddingProvider(768),
+    });
+
+    const result = (await handler.handle({
+      job: { payload: jobs.rows[0]!.payload } as never,
+      logger: { debug: () => {} } as never,
+      signal: new AbortController().signal,
+      renewLease: async () => true,
+    })) as { work_item_id: string };
+
+    expect(result.work_item_id).toBe(quest.id);
+    expect((await quests.get(quest.id)).embeddingState).toBe('ready');
+  });
+});
+
 describe('session reaping', () => {
   it('abandons a session that stopped reporting', async () => {
     const started = await sessions.start({ project, client: 'claude-code' });

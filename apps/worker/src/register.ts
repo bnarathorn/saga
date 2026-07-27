@@ -29,6 +29,7 @@ export function registerHandlers(ctx: WorkerContext): void {
     createEmbeddingHandler({
       pool: ctx.pool,
       memory: ctx.repositories.memory,
+      quests: ctx.repositories.quests,
       provider: ctx.embeddings,
     }),
   );

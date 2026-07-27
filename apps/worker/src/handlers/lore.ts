@@ -1,4 +1,5 @@
 import type { ProjectRepository } from '@saga/core';
+import type { QuestRepository } from '@saga/quest';
 import type { SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
 import type {
@@ -16,11 +17,20 @@ import { z } from 'zod';
 // embedding
 // ---------------------------------------------------------------------------
 
-const embeddingPayload = z.object({ memory_version_id: z.string().uuid() });
+/**
+ * One handler serves both embeddable entities. Quests are embedded so that activation can
+ * use semantic similarity when matching a task to existing work; Lore versions are embedded
+ * for hybrid search.
+ */
+const embeddingPayload = z.union([
+  z.object({ memory_version_id: z.string().uuid() }),
+  z.object({ work_item_id: z.string().uuid() }),
+]);
 
 export interface EmbeddingHandlerDeps {
   pool: SagaPool;
   memory: MemoryRepository;
+  quests: QuestRepository;
   provider: EmbeddingProvider;
 }
 
@@ -32,7 +42,7 @@ export function createEmbeddingHandler(deps: EmbeddingHandlerDeps): JobHandler {
   return {
     type: 'embedding',
     describe: {
-      input: '{ memory_version_id: uuid }',
+      input: '{ memory_version_id: uuid } | { work_item_id: uuid }',
       idempotency:
         'Re-running overwrites the same version row with an identical vector; the deterministic provider makes that a no-op in practice.',
       retryPolicy:
@@ -46,6 +56,10 @@ export function createEmbeddingHandler(deps: EmbeddingHandlerDeps): JobHandler {
       const parsed = embeddingPayload.safeParse(job.payload);
       if (!parsed.success) {
         throw JobHandlerError.permanent('The embedding payload does not match its schema.');
+      }
+
+      if ('work_item_id' in parsed.data) {
+        return embedQuest(deps, parsed.data.work_item_id, logger);
       }
       const versionId = parsed.data.memory_version_id;
 
@@ -90,6 +104,44 @@ export function createEmbeddingHandler(deps: EmbeddingHandlerDeps): JobHandler {
       };
     },
   };
+}
+
+/** Embed a Quest title, objective and declared scope so activation can match semantically. */
+async function embedQuest(
+  deps: EmbeddingHandlerDeps,
+  workItemId: string,
+  logger: { debug: (payload: object, message: string) => void },
+): Promise<Record<string, unknown>> {
+  const quest = await deps.quests.findById(deps.pool, workItemId);
+  if (quest === null) {
+    throw JobHandlerError.permanent('QUEST_NOT_FOUND: the Quest no longer exists.');
+  }
+  if (quest.embeddingState === 'ready') {
+    return { work_item_id: workItemId, skipped: true };
+  }
+
+  const text = [quest.title, quest.objective ?? '', ...Object.values(quest.scope).flat().map(String)]
+    .filter((part) => part.length > 0)
+    .join('\n');
+
+  let vector: number[] | undefined;
+  try {
+    [vector] = await deps.provider.embed([text]);
+  } catch (error) {
+    await deps.quests.setEmbeddingState(deps.pool, workItemId, 'failed');
+    if (isSagaError(error) && error.code === 'EMBEDDING_DIMENSION_MISMATCH') {
+      throw JobHandlerError.permanent(error.message, error.details);
+    }
+    throw JobHandlerError.retryable(errorMessage(error));
+  }
+  if (vector === undefined) {
+    await deps.quests.setEmbeddingState(deps.pool, workItemId, 'failed');
+    throw JobHandlerError.retryable('The embedding provider returned no vector.');
+  }
+
+  await deps.quests.setEmbedding(deps.pool, workItemId, vector);
+  logger.debug({ work_item_id: workItemId }, 'quest embedding stored');
+  return { work_item_id: workItemId, dimensions: deps.provider.dimensions };
 }
 
 // ---------------------------------------------------------------------------
