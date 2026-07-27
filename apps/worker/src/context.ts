@@ -9,6 +9,11 @@ import {
 } from '@saga/core';
 import { createPool, type SagaPool } from '@saga/database';
 import {
+  QuestRepository,
+  QuestService,
+  SessionService,
+} from '@saga/quest';
+import {
   LinkRepository,
   LoreService,
   MemoryRepository,
@@ -49,8 +54,15 @@ export interface WorkerContext {
     memory: MemoryRepository;
     snapshots: SnapshotRepository;
     links: LinkRepository;
+    quests: QuestRepository;
   };
-  services: { jobs: JobService; projects: ProjectService; lore: LoreService };
+  services: {
+    jobs: JobService;
+    projects: ProjectService;
+    lore: LoreService;
+    quests: QuestService;
+    sessions: SessionService;
+  };
   embeddings: EmbeddingProvider;
   handlers: JobHandlerRegistry;
   dispatchers: OutboxDispatcherRegistry;
@@ -89,6 +101,7 @@ export function buildWorkerContext(options: {
     memory: new MemoryRepository(),
     snapshots: new SnapshotRepository(),
     links: new LinkRepository(),
+    quests: new QuestRepository(),
   };
 
   const jobs = new JobService({
@@ -123,13 +136,31 @@ export function buildWorkerContext(options: {
     coreContextTokens: config.context.coreTokens,
   });
 
+  const questService = new QuestService({
+    pool,
+    quests: repositories.quests,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+    jobs,
+  });
+
+  const sessionService = new SessionService({
+    pool,
+    quests: repositories.quests,
+    questService,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+    party: {},
+    abandonAfterMinutes: config.party.sessionAbandonAfterMinutes,
+  });
+
   return {
     config,
     pool,
     logger,
     repositories,
     embeddings,
-    services: { jobs, projects, lore },
+    services: { jobs, projects, lore, quests: questService, sessions: sessionService },
     handlers: new JobHandlerRegistry(),
     dispatchers: new OutboxDispatcherRegistry(),
     async shutdown() {

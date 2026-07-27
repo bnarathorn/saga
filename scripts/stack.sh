@@ -46,9 +46,17 @@ case "${1:-up}" in
   up)
     start_one api apps/server/src/main.ts
     start_one worker apps/worker/src/main.ts
+    api_pid="$(cat "$RUN_DIR/api.pid")"
     for _ in $(seq 1 60); do
+      # A stale process from an earlier run would answer /health/live with old code, so the
+      # readiness check also requires *this* process to still be alive.
+      if ! kill -0 "$api_pid" 2>/dev/null; then
+        echo "api process $api_pid exited during startup; last log lines:" >&2
+        tail -20 "$RUN_DIR/api.log" >&2
+        exit 1
+      fi
       if curl -fsS "http://127.0.0.1:$api_port/health/live" >/dev/null 2>&1; then
-        echo "saga stack up (api pid $(cat "$RUN_DIR/api.pid"), worker pid $(cat "$RUN_DIR/worker.pid"))"
+        echo "saga stack up (api pid $api_pid, worker pid $(cat "$RUN_DIR/worker.pid"))"
         exit 0
       fi
       sleep 0.5

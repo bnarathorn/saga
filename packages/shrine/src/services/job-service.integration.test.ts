@@ -95,6 +95,34 @@ describe('deduplication', () => {
   });
 });
 
+describe('enqueue inside a caller transaction', () => {
+  it('does not abort the caller transaction when a dedupe key collides', async () => {
+    // Regression: raising a unique violation inside a transaction aborts it in PostgreSQL,
+    // so catching the error in JavaScript would still roll back the caller's domain
+    // mutation at COMMIT. `enqueue` therefore uses ON CONFLICT DO NOTHING.
+    const { withTransaction } = await import('@saga/database');
+    await jobs.enqueue({ jobType: 'cleanup', payload: {}, dedupeKey: 'collide' });
+
+    const projectName = `Enqueue Guard ${Date.now()}`;
+    await withTransaction(pool, async (tx) => {
+      await tx.query(`INSERT INTO core.projects (name, name_key) VALUES ($1, $2)`, [
+        projectName,
+        projectName.toLowerCase(),
+      ]);
+      const duplicate = await jobs.enqueueIn(tx, {
+        jobType: 'cleanup',
+        payload: {},
+        dedupeKey: 'collide',
+      });
+      expect(duplicate).toBeNull();
+    });
+
+    // The unrelated write in the same transaction must have survived.
+    const project = await pool.query(`SELECT 1 FROM core.projects WHERE name = $1`, [projectName]);
+    expect(project.rowCount).toBe(1);
+  });
+});
+
 describe('claim tokens', () => {
   it('rejects a completion from a worker whose claim was recovered', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {} });

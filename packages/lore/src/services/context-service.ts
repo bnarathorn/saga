@@ -52,7 +52,25 @@ export interface ContextServiceDeps {
 }
 
 export class ContextService {
-  constructor(private readonly deps: ContextServiceDeps) {}
+  private continuationProvider: ContinuationProvider | undefined;
+  private partyProvider: PartyContextProvider | undefined;
+
+  constructor(private readonly deps: ContextServiceDeps) {
+    this.continuationProvider = deps.continuation;
+    this.partyProvider = deps.party;
+  }
+
+  /**
+   * Registered by the application once Quest exists. Lore never imports Quest; it asks for
+   * the continuation layer through this hook (ADR-0001).
+   */
+  setContinuationProvider(provider: ContinuationProvider): void {
+    this.continuationProvider = provider;
+  }
+
+  setPartyProvider(provider: PartyContextProvider): void {
+    this.partyProvider = provider;
+  }
 
   /**
    * Compose the three layers (spec 8.6).
@@ -86,8 +104,8 @@ export class ContextService {
     }
 
     let continuation: ContextResponse['continuation'] = null;
-    if (request.mode === 'resume_work' && this.deps.continuation !== undefined) {
-      continuation = await this.deps.continuation({
+    if (request.mode === 'resume_work' && this.continuationProvider !== undefined) {
+      continuation = await this.continuationProvider({
         projectId: project.id,
         questId: request.quest_id ?? null,
         sessionId: request.session_id ?? null,
@@ -102,8 +120,8 @@ export class ContextService {
 
     let party: Record<string, unknown> = {};
     let partyTokens = 0;
-    if (this.deps.party !== undefined) {
-      const result = await this.deps.party({
+    if (this.partyProvider !== undefined) {
+      const result = await this.partyProvider({
         projectId: project.id,
         questId: request.quest_id ?? null,
         sessionId: request.session_id ?? null,

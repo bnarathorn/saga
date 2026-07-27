@@ -9,6 +9,8 @@ import { LorePage } from './pages/Lore.jsx';
 import { LoreEntryPage } from './pages/LoreEntry.jsx';
 import { ProjectDetailPage, ProjectOverview } from './pages/ProjectDetail.jsx';
 import { ProjectsPage } from './pages/Projects.jsx';
+import { QuestBoardPage } from './pages/QuestBoard.jsx';
+import { QuestDetailPage } from './pages/QuestDetail.jsx';
 import { ShrinePage } from './pages/Shrine.jsx';
 
 export function App() {
@@ -59,6 +61,8 @@ export function App() {
             <Route index element={<ProjectOverview />} />
             <Route path="lore" element={<LorePage />} />
             <Route path="lore/:memoryKey" element={<LoreEntryPage />} />
+            <Route path="quests" element={<QuestBoardPage />} />
+            <Route path="quests/:questId" element={<QuestDetailPage />} />
           </Route>
           <Route path="shrine" element={<ShrinePage />} />
           <Route path="*" element={<NotFound />} />

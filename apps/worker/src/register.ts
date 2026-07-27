@@ -3,6 +3,7 @@ import type { WorkerContext } from './context.js';
 import { createCleanupHandler } from './handlers/cleanup.js';
 import { noopHandler } from './handlers/noop.js';
 import { createOutboxDeliveryHandler } from './handlers/outbox-delivery.js';
+import { createSessionReaperHandler } from './handlers/quest.js';
 import {
   createContextSnapshotHandler,
   createEmbeddingHandler,
@@ -11,6 +12,7 @@ import {
 } from './handlers/lore.js';
 
 const CLEANUP_INTERVAL_MS = 60 * 60_000;
+const REAPER_INTERVAL_MS = 5 * 60_000;
 
 /** Register every job handler this build knows how to run. */
 export function registerHandlers(ctx: WorkerContext): void {
@@ -56,6 +58,7 @@ export function registerHandlers(ctx: WorkerContext): void {
       projects: ctx.repositories.projects,
     }),
   );
+  ctx.handlers.register(createSessionReaperHandler({ sessions: ctx.services.sessions }));
   ctx.handlers.register(
     createCleanupHandler({
       pool: ctx.pool,
@@ -148,9 +151,31 @@ export function startMaintenance(ctx: WorkerContext): () => void {
   const cleanupTimer = setInterval(() => void enqueueCleanup(), CLEANUP_INTERVAL_MS);
   cleanupTimer.unref();
 
+  const enqueueReapers = async (): Promise<void> => {
+    for (const jobType of ['session_reaper', 'party_reaper'] as const) {
+      if (ctx.handlers.get(jobType) === undefined) continue;
+      try {
+        await ctx.services.jobs.enqueue({
+          jobType,
+          payload: {},
+          dedupeKey: 'periodic',
+          priority: -5,
+          maxAttempts: 3,
+        });
+      } catch (error) {
+        ctx.logger.error({ err: error, job_type: jobType }, 'could not enqueue a reaper job');
+      }
+    }
+  };
+
+  void enqueueReapers();
+  const reaperTimer = setInterval(() => void enqueueReapers(), REAPER_INTERVAL_MS);
+  reaperTimer.unref();
+
   return () => {
     abort.abort();
     clearInterval(outboxTimer);
     clearInterval(cleanupTimer);
+    clearInterval(reaperTimer);
   };
 }

@@ -1,5 +1,4 @@
 import type { Queryable } from '@saga/database';
-import { isUniqueViolation } from '@saga/database';
 import type { JobState, JobType } from '@saga/contracts';
 import type { ClaimedJob, EnqueueJobInput, Job } from '../domain/job.js';
 
@@ -117,33 +116,36 @@ export interface JobRepository {
 }
 
 export class PgJobRepository implements JobRepository {
-  /** Returns `null` when an identical job is already outstanding under the same dedupe key. */
+  /**
+   * Returns `null` when an identical job is already outstanding under the same dedupe key.
+   *
+   * `ON CONFLICT DO NOTHING` rather than catching the unique violation: enqueue is called
+   * *inside* domain transactions, and in PostgreSQL a raised constraint violation aborts the
+   * whole transaction. Catching it in JavaScript does not un-abort it, so the caller's
+   * domain mutation would be silently rolled back at COMMIT.
+   */
   async enqueue(q: Queryable, input: EnqueueJobInput): Promise<Job | null> {
-    try {
-      const result = await q.query<JobRow>(
-        `INSERT INTO shrine.jobs
-           (project_id, job_type, entity_type, entity_id, dedupe_key, priority, payload,
-            max_attempts, run_after, correlation_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, COALESCE($9, now()), $10)
-         RETURNING ${COLUMNS}`,
-        [
-          input.projectId ?? null,
-          input.jobType,
-          input.entityType ?? null,
-          input.entityId ?? null,
-          input.dedupeKey ?? null,
-          input.priority ?? 0,
-          JSON.stringify(input.payload),
-          input.maxAttempts ?? 5,
-          input.runAfter ?? null,
-          input.correlationId ?? null,
-        ],
-      );
-      return toJob(result.rows[0]!);
-    } catch (error) {
-      if (isUniqueViolation(error, 'jobs_dedupe_active_uniq')) return null;
-      throw error;
-    }
+    const result = await q.query<JobRow>(
+      `INSERT INTO shrine.jobs
+         (project_id, job_type, entity_type, entity_id, dedupe_key, priority, payload,
+          max_attempts, run_after, correlation_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, COALESCE($9, now()), $10)
+       ON CONFLICT DO NOTHING
+       RETURNING ${COLUMNS}`,
+      [
+        input.projectId ?? null,
+        input.jobType,
+        input.entityType ?? null,
+        input.entityId ?? null,
+        input.dedupeKey ?? null,
+        input.priority ?? 0,
+        JSON.stringify(input.payload),
+        input.maxAttempts ?? 5,
+        input.runAfter ?? null,
+        input.correlationId ?? null,
+      ],
+    );
+    return result.rows[0] === undefined ? null : toJob(result.rows[0]);
   }
 
   async findById(q: Queryable, id: string): Promise<Job | null> {

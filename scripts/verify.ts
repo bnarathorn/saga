@@ -306,6 +306,164 @@ async function main(): Promise<number> {
     afterStale.body.warnings,
   );
 
+  section('Quest — two-phase startup, checkpoints and resume');
+  const firstSession = await api.post<{
+    session_id: string;
+    state: string;
+    open_quests: unknown[];
+    bootstrap_required: boolean;
+  }>('/api/sessions', { project: projectId, client: 'claude-code', agent: 'claude' });
+  check('a new session opens in awaiting_task', firstSession.body.state === 'awaiting_task', firstSession.body);
+  check(
+    'phase one carries no continuation at all',
+    !Object.prototype.hasOwnProperty.call(firstSession.body, 'continuation'),
+  );
+
+  const activated = await api.post<{
+    activation_mode: string;
+    quest: { id: string; title: string; revision: number; status: string };
+    context: { continuation: unknown; task: string | null };
+  }>(`/api/sessions/${firstSession.body.session_id}/activate`, {
+    task: 'Add CSV report export',
+    scope: { modules: ['services/api/src/reports'] },
+  });
+  check('the first task creates new work', activated.body.activation_mode === 'new_work', activated.body);
+  check('a Quest was created and started', activated.body.quest.status === 'in_progress');
+  check('no continuation is loaded for new work', activated.body.context.continuation === null);
+
+  const questId = activated.body.quest.id;
+
+  const checkpoint = await api.post<{ quest_revision: number; checkpoint: { sequence: number } }>(
+    `/api/sessions/${firstSession.body.session_id}/checkpoints`,
+    {
+      expected_quest_revision: 0,
+      kind: 'milestone',
+      summary: 'Implemented the CSV generator and unit tests',
+      work_state: {
+        goal: 'Add CSV report export',
+        completed: ['Implemented CSV serialization'],
+        in_progress: ['Add API endpoint'],
+        next_steps: ['Wire the endpoint to the report service'],
+        blockers: [],
+        decisions: [],
+        changed_files: [],
+        commands: [],
+        tests: [],
+      },
+    },
+  );
+  check('a checkpoint advances the Quest revision', checkpoint.body.quest_revision === 1, checkpoint.body);
+
+  const staleCheckpoint = await api.post(
+    `/api/sessions/${firstSession.body.session_id}/checkpoints`,
+    {
+      expected_quest_revision: 0,
+      kind: 'automatic',
+      summary: 'stale',
+      work_state: {
+        goal: 'x',
+        completed: [],
+        in_progress: [],
+        next_steps: [],
+        blockers: [],
+        decisions: [],
+        changed_files: [],
+        commands: [],
+        tests: [],
+      },
+    },
+  );
+  check(
+    'a stale expected revision is refused with 409',
+    staleCheckpoint.status === 409 &&
+      (staleCheckpoint.body as { error: { code: string } }).error.code === 'QUEST_REVISION_CONFLICT',
+    staleCheckpoint.body,
+  );
+
+  const ended = await api.post<{ session: { state: string }; handoff: { kind: string } }>(
+    `/api/sessions/${firstSession.body.session_id}/end`,
+    {
+      handoff: {
+        expected_quest_revision: 1,
+        summary: 'Stopping for the day; the endpoint is not wired yet',
+        work_state: {
+          goal: 'Add CSV report export',
+          completed: ['Implemented CSV serialization', 'Added unit tests'],
+          in_progress: ['Wiring the API endpoint'],
+          next_steps: ['Wire POST /v1/reports/export', 'Add an integration test'],
+          blockers: [
+            {
+              description: 'The report service lacks a streaming interface',
+              suggested_action: 'Add ReportService.stream() first',
+            },
+          ],
+          decisions: [{ decision: 'Stream rather than buffer', reason: 'Reports can be large' }],
+          changed_files: [{ path: 'services/api/src/reports/csv.ts', current_hash: 'sha256:abc' }],
+          commands: [{ command: 'pnpm test:unit', status: 'succeeded' }],
+          tests: [{ name: 'csv serialization', status: 'passed' }],
+        },
+      },
+    },
+  );
+  check('the session ends with a final handoff', ended.body.handoff.kind === 'final_handoff', ended.body);
+
+  const unrelatedSession = await api.post<{ session_id: string }>('/api/sessions', {
+    project: projectId,
+    client: 'codex',
+  });
+  const unrelated = await api.post<{
+    activation_mode: string;
+    quest: { id: string };
+    context: { continuation: unknown };
+  }>(`/api/sessions/${unrelatedSession.body.session_id}/activate`, {
+    task: 'Fix the login page layout',
+  });
+  check(
+    'an unrelated new session does not inherit the handoff',
+    unrelated.body.context.continuation === null && unrelated.body.quest.id !== questId,
+    unrelated.body,
+  );
+
+  const resumeSession = await api.post<{ session_id: string }>('/api/sessions', {
+    project: projectId,
+    client: 'codex',
+  });
+  const resumed = await api.post<{
+    activation_mode: string;
+    quest: { id: string; revision: number };
+    context: {
+      continuation: {
+        next_steps: string[];
+        blockers: { description: string }[];
+        recovered_from_interrupted_session: boolean;
+        rendered: string;
+      } | null;
+    };
+  }>(`/api/sessions/${resumeSession.body.session_id}/activate`, {
+    task: 'Continue the CSV report export work',
+    requested_quest_id: questId,
+  });
+  check('an explicit resume attaches the same Quest', resumed.body.quest.id === questId);
+  check('resume mode is reported', resumed.body.activation_mode === 'resume_work');
+  check(
+    'the handoff next steps are loaded',
+    resumed.body.context.continuation?.next_steps.includes('Wire POST /v1/reports/export') === true,
+    resumed.body.context.continuation,
+  );
+  check(
+    'the blockers are loaded',
+    resumed.body.context.continuation?.blockers[0]?.description.includes('streaming interface') === true,
+  );
+  check(
+    'the continuation is not labelled as recovered, because a clean handoff exists',
+    resumed.body.context.continuation?.recovered_from_interrupted_session === false,
+  );
+
+  const board = await api.get<{ items: { id: string; status: string }[] }>(
+    `/api/projects/${projectId}/quests`,
+  );
+  check('both Quests appear on the board', board.body.items.length === 2, board.body.items.length);
+
   section('Security — CSRF and scopes');
   const noCsrf = await fetch(new URL('/api/projects', BASE_URL), {
     method: 'POST',

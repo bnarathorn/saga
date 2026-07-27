@@ -27,6 +27,7 @@ import {
   type MemoryLink,
 } from '@saga/lore';
 import type { MemoryRelation } from '@saga/contracts';
+import { QuestRepository, QuestService, SessionService, type PartyHooks } from '@saga/quest';
 import {
   AuditService,
   HealthRegistry,
@@ -72,6 +73,7 @@ export interface AppContext {
     snapshots: SnapshotRepository;
     links: LinkRepository;
     search: SearchRepository;
+    quests: QuestRepository;
   };
 
   services: {
@@ -83,6 +85,8 @@ export interface AppContext {
     lore: LoreService;
     loreSearch: SearchService;
     context: ContextService;
+    quests: QuestService;
+    sessions: SessionService;
     createLink(input: {
       projectId: string;
       fromMemoryItemId: string;
@@ -94,6 +98,8 @@ export interface AppContext {
   };
 
   embeddings: EmbeddingProvider;
+  /** Mutable so Party can register its hooks when it is enabled. */
+  partyHooks: PartyHooks;
 
   health: HealthRegistry;
   metricsContributors: MetricsContributors;
@@ -142,6 +148,7 @@ export function buildContext(options: BuildContextOptions): AppContext {
     snapshots: new SnapshotRepository(),
     links: new LinkRepository(),
     search: new SearchRepository(),
+    quests: new QuestRepository(),
   };
 
   const projects = new ProjectService({
@@ -212,8 +219,43 @@ export function buildContext(options: BuildContextOptions): AppContext {
     },
   });
 
-  // Lore counters are contributed to Shrine rather than queried by it (ADR-0001).
+  const questService = new QuestService({
+    pool,
+    quests: repositories.quests,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+    jobs,
+  });
+
+  // Party registers its hooks at route-composition time; with Party absent or disabled,
+  // sessions and checkpoints keep working exactly as they are (acceptance criterion 16).
+  const partyHooks: PartyHooks = {};
+
+  const sessionService = new SessionService({
+    pool,
+    quests: repositories.quests,
+    questService,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+    party: partyHooks,
+    abandonAfterMinutes: config.party.sessionAbandonAfterMinutes,
+  });
+
+  // Continuation context is produced by Quest and handed to Lore's context builder, so Lore
+  // never reads quest tables directly (ADR-0001).
+  context.setContinuationProvider(async ({ questId, sessionId, tokenBudget }) => {
+    let workItemId = questId;
+    if (workItemId === null && sessionId !== null) {
+      const session = await repositories.quests.findSessionById(pool, sessionId);
+      workItemId = session?.workItemId ?? null;
+    }
+    if (workItemId === null) return null;
+    return questService.continuation(workItemId, tokenBudget);
+  });
+
+  // Domain counters are contributed to Shrine rather than queried by it (ADR-0001).
   metricsContributors.lore = async () => repositories.memory.totals(pool);
+  metricsContributors.quest = async () => repositories.quests.totals(pool);
 
   const metrics = new MetricsService({
     pool,
@@ -290,6 +332,7 @@ export function buildContext(options: BuildContextOptions): AppContext {
     startedAt: new Date(),
     repositories,
     embeddings,
+    partyHooks,
     services: {
       projects,
       auth,
@@ -299,6 +342,8 @@ export function buildContext(options: BuildContextOptions): AppContext {
       lore,
       loreSearch,
       context,
+      quests: questService,
+      sessions: sessionService,
       createLink: (input) => withTransaction(pool, (tx) => repositories.links.create(tx, input)),
       deleteLink: (id) => withTransaction(pool, (tx) => repositories.links.delete(tx, id)),
     },
