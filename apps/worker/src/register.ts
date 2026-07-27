@@ -3,7 +3,7 @@ import type { WorkerContext } from './context.js';
 import { createCleanupHandler } from './handlers/cleanup.js';
 import { noopHandler } from './handlers/noop.js';
 import { createOutboxDeliveryHandler } from './handlers/outbox-delivery.js';
-import { createSessionReaperHandler } from './handlers/quest.js';
+import { createPartyReaperHandler, createSessionReaperHandler } from './handlers/quest.js';
 import {
   createContextSnapshotHandler,
   createEmbeddingHandler,
@@ -59,6 +59,9 @@ export function registerHandlers(ctx: WorkerContext): void {
     }),
   );
   ctx.handlers.register(createSessionReaperHandler({ sessions: ctx.services.sessions }));
+  if (ctx.services.party.enabled) {
+    ctx.handlers.register(createPartyReaperHandler({ party: ctx.services.party }));
+  }
   ctx.handlers.register(
     createCleanupHandler({
       pool: ctx.pool,

@@ -28,6 +28,7 @@ import {
 } from '@saga/lore';
 import type { MemoryRelation } from '@saga/contracts';
 import { QuestRepository, QuestService, SessionService, type PartyHooks } from '@saga/quest';
+import { PartyRepository, PartyService } from '@saga/party';
 import {
   AuditService,
   HealthRegistry,
@@ -74,6 +75,7 @@ export interface AppContext {
     links: LinkRepository;
     search: SearchRepository;
     quests: QuestRepository;
+    party: PartyRepository;
   };
 
   services: {
@@ -87,6 +89,7 @@ export interface AppContext {
     context: ContextService;
     quests: QuestService;
     sessions: SessionService;
+    party: PartyService;
     createLink(input: {
       projectId: string;
       fromMemoryItemId: string;
@@ -149,6 +152,7 @@ export function buildContext(options: BuildContextOptions): AppContext {
     links: new LinkRepository(),
     search: new SearchRepository(),
     quests: new QuestRepository(),
+    party: new PartyRepository(),
   };
 
   const projects = new ProjectService({
@@ -227,9 +231,35 @@ export function buildContext(options: BuildContextOptions): AppContext {
     jobs,
   });
 
-  // Party registers its hooks at route-composition time; with Party absent or disabled,
-  // sessions and checkpoints keep working exactly as they are (acceptance criterion 16).
-  const partyHooks: PartyHooks = {};
+  const partyService = new PartyService({
+    pool,
+    party: repositories.party,
+    quests: repositories.quests,
+    outbox: repositories.outbox,
+    mode: config.party.mode,
+    agentRunLeaseSeconds: config.party.agentRunLeaseSeconds,
+    claimLeaseSeconds: config.party.claimLeaseSeconds,
+  });
+
+  // Quest calls into Party through these hooks rather than importing it, so PARTY_MODE=off
+  // leaves sessions and checkpoints working exactly as they are (acceptance criterion 16).
+  const partyHooks: PartyHooks = partyService.enabled
+    ? {
+        startAgentRun: async ({ projectId, sessionId, client, workspaceKey, workspaceLabel }) => {
+          const run = await partyService.startRun({
+            projectId,
+            sessionId,
+            agentInstanceId: `${client}:${sessionId.slice(0, 8)}`,
+            client,
+            workspaceKey,
+            workspaceLabel,
+          });
+          return { agentRunId: run.id };
+        },
+        attachQuest: ({ sessionId, workItemId }) => partyService.attachQuest(sessionId, workItemId),
+        endAgentRun: ({ sessionId }) => partyService.endRunForSession(sessionId),
+      }
+    : {};
 
   const sessionService = new SessionService({
     pool,
@@ -256,6 +286,12 @@ export function buildContext(options: BuildContextOptions): AppContext {
   // Domain counters are contributed to Shrine rather than queried by it (ADR-0001).
   metricsContributors.lore = async () => repositories.memory.totals(pool);
   metricsContributors.quest = async () => repositories.quests.totals(pool);
+  metricsContributors.party = async () => partyService.counts();
+
+  // Party contributes the coordination layer of agent context.
+  context.setPartyProvider(async ({ projectId, sessionId, questId }) =>
+    partyService.contextFor({ projectId, sessionId, workItemId: questId }),
+  );
 
   const metrics = new MetricsService({
     pool,
@@ -344,6 +380,7 @@ export function buildContext(options: BuildContextOptions): AppContext {
       context,
       quests: questService,
       sessions: sessionService,
+      party: partyService,
       createLink: (input) => withTransaction(pool, (tx) => repositories.links.create(tx, input)),
       deleteLink: (id) => withTransaction(pool, (tx) => repositories.links.delete(tx, id)),
     },

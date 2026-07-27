@@ -12,6 +12,7 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerLoreRoutes } from './routes/lore.js';
 import { registerProjectRoutes, type ProjectStatsContributors } from './routes/projects.js';
+import { registerPartyRoutes } from './routes/party.js';
 import { registerQuestRoutes } from './routes/quest.js';
 import { registerShrineRoutes } from './routes/shrine.js';
 
@@ -94,11 +95,16 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     // Each domain contributes its own per-project counters (ADR-0001).
     lore: (projectIds) => ctx.repositories.memory.countsForProjects(ctx.pool, projectIds),
     quest: (projectIds) => ctx.repositories.quests.counts(ctx.pool, projectIds),
+    party: async (projectIds) => {
+      const counts = await ctx.repositories.party.countLiveByProject(ctx.pool, projectIds);
+      return new Map([...counts].map(([id, activeAgents]) => [id, { activeAgents }]));
+    },
     ...options.projectStats,
   });
   registerShrineRoutes(app, ctx);
   registerLoreRoutes(app, ctx);
   registerQuestRoutes(app, ctx);
+  registerPartyRoutes(app, ctx);
 
   for (const register of options.extraRoutes ?? []) {
     await register(app, ctx);

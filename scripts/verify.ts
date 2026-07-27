@@ -464,6 +464,125 @@ async function main(): Promise<number> {
   );
   check('both Quests appear on the board', board.body.items.length === 2, board.body.items.length);
 
+  section('Party — two agents, overlap, exclusive conflict, lease expiry');
+  const partyStatusBefore = await api.get<{ mode: string }>(
+    `/api/projects/${projectId}/party/status`,
+  );
+  const partyEnabled = partyStatusBefore.body.mode !== 'off';
+  check('Party reports its configured mode', typeof partyStatusBefore.body.mode === 'string');
+
+  if (partyEnabled) {
+    const agentA = await api.post<{ session_id: string; agent_run_id: string }>('/api/sessions', {
+      project: projectId,
+      client: 'claude-code',
+      workspace_key: 'machine-a:verify',
+      workspace_label: 'machine-a:verify',
+    });
+    const questA = await api.post<{ quest: { id: string } }>(
+      `/api/sessions/${agentA.body.session_id}/activate`,
+      { task: 'Add the token-family migration', scope: { modules: ['packages/database'] } },
+    );
+
+    const agentB = await api.post<{ session_id: string; agent_run_id: string }>('/api/sessions', {
+      project: projectId,
+      client: 'codex',
+      workspace_key: 'machine-a:verify',
+      workspace_label: 'machine-a:verify',
+    });
+    const questB = await api.post<{ quest: { id: string } }>(
+      `/api/sessions/${agentB.body.session_id}/activate`,
+      { task: 'Add the report tables migration', scope: { modules: ['packages/database'] } },
+    );
+
+    check(
+      'both sessions received their own agent run',
+      agentA.body.agent_run_id !== null && agentB.body.agent_run_id !== agentA.body.agent_run_id,
+    );
+
+    const status = await api.get<{
+      active_agents: { client: string }[];
+      overlaps: { kind: string; severity: string; same_workspace: boolean }[];
+    }>(`/api/projects/${projectId}/party/status`);
+    // Earlier sections in this run also leave live agent runs behind, so the assertion is
+    // that *these two* are present rather than an exact total.
+    const clients = status.body.active_agents.map((entry) => entry.client);
+    check(
+      'Party shows both of these agent runs as active',
+      clients.filter((client) => client === 'claude-code').length >= 1 &&
+        clients.filter((client) => client === 'codex').length >= 1,
+      clients,
+    );
+    check(
+      'a shared workspace is reported as critical',
+      status.body.overlaps.some(
+        (overlap) => overlap.kind === 'workspace' && overlap.severity === 'critical',
+      ),
+      status.body.overlaps,
+    );
+    check(
+      'the shared module is reported as an overlap',
+      status.body.overlaps.some((overlap) => overlap.kind === 'module'),
+      status.body.overlaps.map((o) => o.kind),
+    );
+
+    const claimBody = {
+      resource_type: 'migration_sequence',
+      resource_key: 'packages/database/migrations',
+      mode: 'exclusive',
+    };
+    const claimA = await api.post<{ claim: { id: string; state: string } }>('/api/party/claims', {
+      ...claimBody,
+      agent_run_id: agentA.body.agent_run_id,
+      work_item_id: questA.body.quest.id,
+    });
+    check('the first exclusive claim is granted', claimA.status === 201, claimA.body);
+
+    const claimB = await api.post('/api/party/claims', {
+      ...claimBody,
+      agent_run_id: agentB.body.agent_run_id,
+      work_item_id: questB.body.quest.id,
+    });
+    const conflict = (claimB.body as { error: { code: string; details: Record<string, unknown> } }).error;
+    check('the second exclusive claim is refused with 409', claimB.status === 409, claimB.body);
+    check('the conflict names the owning Quest and lease', conflict?.details?.owner_quest_title !== undefined && conflict?.details?.lease_expires_at !== undefined, conflict?.details);
+
+    // Agent B stops without ending cleanly: its lease is left to expire.
+    const heartbeat = await api.post<{ renewed_claims: number }>(
+      `/api/party/runs/${agentA.body.agent_run_id}/heartbeat`,
+      {},
+    );
+    check('a heartbeat renews the run and its claims', heartbeat.body.renewed_claims === 1, heartbeat.body);
+
+    const released = await api.post<{ claim: { state: string } }>(
+      `/api/party/claims/${claimA.body.claim.id}/release`,
+      { agent_run_id: agentA.body.agent_run_id, reason: 'verification run' },
+    );
+    check('releasing a claim frees the resource', released.body.claim.state === 'released');
+
+    const afterRelease = await api.post<{ claim: { state: string } }>('/api/party/claims', {
+      ...claimBody,
+      agent_run_id: agentB.body.agent_run_id,
+      work_item_id: questB.body.quest.id,
+    });
+    check(
+      'the other agent can now take the resource',
+      afterRelease.body.claim?.state === 'active',
+      afterRelease.body,
+    );
+
+    const revoked = await api.post<{ claim: { state: string } }>(
+      `/api/party/claims/${afterRelease.body.claim === undefined ? 'missing' : (afterRelease.body as { claim: { id: string } }).claim.id}/revoke`,
+      { reason: 'verification run', confirm: true },
+    );
+    check('an administrator can revoke a claim with a reason', revoked.body.claim?.state === 'revoked', revoked.body);
+
+    const auditAfter = await api.get<{ items: { action: string }[] }>('/api/shrine/audit?limit=40');
+    check(
+      'the revocation is in the audit log',
+      auditAfter.body.items.some((entry) => entry.action === 'party.claim_revoked'),
+    );
+  }
+
   section('Security — CSRF and scopes');
   const noCsrf = await fetch(new URL('/api/projects', BASE_URL), {
     method: 'POST',

@@ -8,6 +8,7 @@ import {
   type ProjectRepository,
 } from '@saga/core';
 import { createPool, type SagaPool } from '@saga/database';
+import { PartyRepository, PartyService } from '@saga/party';
 import {
   QuestRepository,
   QuestService,
@@ -55,6 +56,7 @@ export interface WorkerContext {
     snapshots: SnapshotRepository;
     links: LinkRepository;
     quests: QuestRepository;
+    party: PartyRepository;
   };
   services: {
     jobs: JobService;
@@ -62,6 +64,7 @@ export interface WorkerContext {
     lore: LoreService;
     quests: QuestService;
     sessions: SessionService;
+    party: PartyService;
   };
   embeddings: EmbeddingProvider;
   handlers: JobHandlerRegistry;
@@ -102,6 +105,7 @@ export function buildWorkerContext(options: {
     snapshots: new SnapshotRepository(),
     links: new LinkRepository(),
     quests: new QuestRepository(),
+    party: new PartyRepository(),
   };
 
   const jobs = new JobService({
@@ -154,13 +158,30 @@ export function buildWorkerContext(options: {
     abandonAfterMinutes: config.party.sessionAbandonAfterMinutes,
   });
 
+  const partyService = new PartyService({
+    pool,
+    party: repositories.party,
+    quests: repositories.quests,
+    outbox: repositories.outbox,
+    mode: config.party.mode,
+    agentRunLeaseSeconds: config.party.agentRunLeaseSeconds,
+    claimLeaseSeconds: config.party.claimLeaseSeconds,
+  });
+
   return {
     config,
     pool,
     logger,
     repositories,
     embeddings,
-    services: { jobs, projects, lore, quests: questService, sessions: sessionService },
+    services: {
+      jobs,
+      projects,
+      lore,
+      quests: questService,
+      sessions: sessionService,
+      party: partyService,
+    },
     handlers: new JobHandlerRegistry(),
     dispatchers: new OutboxDispatcherRegistry(),
     async shutdown() {

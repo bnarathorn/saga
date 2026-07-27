@@ -8,6 +8,7 @@ import { LoginPage } from './pages/Login.jsx';
 import { LorePage } from './pages/Lore.jsx';
 import { LoreEntryPage } from './pages/LoreEntry.jsx';
 import { ProjectDetailPage, ProjectOverview } from './pages/ProjectDetail.jsx';
+import { PartyPage } from './pages/Party.jsx';
 import { ProjectsPage } from './pages/Projects.jsx';
 import { QuestBoardPage } from './pages/QuestBoard.jsx';
 import { QuestDetailPage } from './pages/QuestDetail.jsx';
@@ -63,6 +64,7 @@ export function App() {
             <Route path="lore/:memoryKey" element={<LoreEntryPage />} />
             <Route path="quests" element={<QuestBoardPage />} />
             <Route path="quests/:questId" element={<QuestDetailPage />} />
+            <Route path="party" element={<PartyPage />} />
           </Route>
           <Route path="shrine" element={<ShrinePage />} />
           <Route path="*" element={<NotFound />} />

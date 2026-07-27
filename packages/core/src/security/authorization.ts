@@ -64,6 +64,10 @@ const OPERATOR: Permission[] = [
   'lore:publish',
   'lore:archive',
   'quest:write',
+  // An operator must not be *less* capable inside a project than an agent token issued for
+  // it: driving a coordination flow by hand is part of operating the system.
+  'party:heartbeat',
+  'party:claim',
   'party:revoke',
   'shrine:operate',
 ];

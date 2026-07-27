@@ -44,6 +44,12 @@ start_one() {
 
 case "${1:-up}" in
   up)
+    # A leftover process holding the port would answer /health/live with stale code and make
+    # the readiness check below pass against the wrong build.
+    if curl -fsS "http://127.0.0.1:$api_port/health/live" >/dev/null 2>&1; then
+      echo "port $api_port is already serving; run '$0 down' first (or kill the stale process)" >&2
+      exit 1
+    fi
     start_one api apps/server/src/main.ts
     start_one worker apps/worker/src/main.ts
     api_pid="$(cat "$RUN_DIR/api.pid")"
