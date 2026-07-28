@@ -106,8 +106,10 @@ that no unit test would have: Quest embedding jobs whose payload the handler cou
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs every suite on push to `main` and on every pull request, in
-this order: `lint`, `typecheck`, `openapi:check`, `test`, `build`, `test:integration`,
-`test:api`, `test:e2e`. The OpenAPI step is what spec 22.3 requires — generated artifacts must
+this order: `lint`, `typecheck`, `openapi:check`, `test`, `test:web`, `build`,
+`test:integration`, `test:api`, `test:e2e` — every suite, each as its own step rather than a
+single `test:all`, because the integration and api projects truncate shared tables and must
+not run concurrently. The OpenAPI step is what spec 22.3 requires — generated artifacts must
 never drift from the Zod contracts they come from.
 
 PostgreSQL comes from a `pgvector/pgvector:pg16` service container. Two databases are created,

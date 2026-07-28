@@ -71,6 +71,10 @@ jobs:
 
       - run: pnpm test
 
+      # A separate step, not `test:all`: the integration and api projects truncate shared
+      # tables, so they must not run concurrently with each other.
+      - run: pnpm test:web
+
       - run: pnpm build
 
       - run: pnpm test:integration
