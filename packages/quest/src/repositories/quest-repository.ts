@@ -356,7 +356,8 @@ export class QuestRepository {
     if (fields.title !== undefined) push((i) => `title = $${i}`, fields.title);
     if (fields.objective !== undefined) push((i) => `objective = $${i}`, fields.objective);
     if (fields.priority !== undefined) push((i) => `priority = $${i}`, fields.priority);
-    if (fields.scope !== undefined) push((i) => `scope = $${i}::jsonb`, JSON.stringify(fields.scope));
+    if (fields.scope !== undefined)
+      push((i) => `scope = $${i}::jsonb`, JSON.stringify(fields.scope));
     if (fields.parentWorkItemId !== undefined) {
       push((i) => `parent_work_item_id = $${i}`, fields.parentWorkItemId);
     }
@@ -405,11 +406,7 @@ export class QuestRepository {
   }
 
   /** Worker-owned write: the embedding fields are the only part of a Quest the worker sets. */
-  async setEmbedding(
-    q: Queryable,
-    id: string,
-    embedding: readonly number[],
-  ): Promise<boolean> {
+  async setEmbedding(q: Queryable, id: string, embedding: readonly number[]): Promise<boolean> {
     const result = await q.query(
       `UPDATE quest.work_items SET embedding = $2::vector, embedding_state = 'ready' WHERE id = $1`,
       [id, toVectorLiteral(embedding)],

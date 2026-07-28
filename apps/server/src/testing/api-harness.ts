@@ -1,7 +1,12 @@
 import type { FastifyInstance, InjectOptions } from 'fastify';
 import type { SagaPool } from '@saga/database';
 import type { SagaConfig } from '@saga/shared/config';
-import { createTestPool, createTestServices, testConfig, truncateAll } from '../../../../testing/harness.js';
+import {
+  createTestPool,
+  createTestServices,
+  testConfig,
+  truncateAll,
+} from '../../../../testing/harness.js';
 import { buildApp, type BuildAppOptions } from '../app.js';
 import { buildContext, type AppContext } from '../composition.js';
 

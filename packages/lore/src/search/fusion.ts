@@ -41,7 +41,10 @@ export function fuseByReciprocalRank(
   weights: Record<SearchChannel, number> = DEFAULT_CHANNEL_WEIGHTS,
   k: number = RRF_K,
 ): FusedResult[] {
-  const accumulator = new Map<string, { score: number; matchedBy: SearchChannel[]; bestRank: number }>();
+  const accumulator = new Map<
+    string,
+    { score: number; matchedBy: SearchChannel[]; bestRank: number }
+  >();
 
   for (const result of results) {
     const weight = weights[result.channel] ?? 0;
@@ -65,9 +68,7 @@ export function fuseByReciprocalRank(
     .map(([id, value]) => ({ id, ...value }))
     .sort(
       (a, b) =>
-        b.score - a.score ||
-        a.bestRank - b.bestRank ||
-        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+        b.score - a.score || a.bestRank - b.bestRank || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
     );
 }
 

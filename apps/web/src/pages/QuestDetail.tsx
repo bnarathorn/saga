@@ -41,9 +41,17 @@ export function QuestDetailPage() {
   const [reopenReason, setReopenReason] = useState<string | null>(null);
 
   if (detail.isPending) return <LoadingState label="Loading Quest…" />;
-  if (detail.isError) return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
+  if (detail.isError)
+    return <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />;
 
-  const { quest, children, dependencies, checkpoints, sessions, latest_handoff: handoff } = detail.data;
+  const {
+    quest,
+    children,
+    dependencies,
+    checkpoints,
+    sessions,
+    latest_handoff: handoff,
+  } = detail.data;
   const closed = quest.status === 'completed' || quest.status === 'cancelled';
 
   return (
@@ -70,31 +78,31 @@ export function QuestDetailPage() {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {can('quest:write') && (
-          <>
-          <label className="sr-only" htmlFor="quest-status">
-            Change status
-          </label>
-          <select
-            id="quest-status"
-            className="field-input w-40 py-1 text-xs"
-            value={quest.status}
-            disabled={update.isPending}
-            onChange={(event) =>
-              update.mutate({ questId, status: event.target.value as QuestStatus })
-            }
-          >
-            {STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-          {closed && (
-            <button type="button" className="btn-secondary" onClick={() => setReopenReason('')}>
-              Reopen
-            </button>
-          )}
-          </>
+            <>
+              <label className="sr-only" htmlFor="quest-status">
+                Change status
+              </label>
+              <select
+                id="quest-status"
+                className="field-input w-40 py-1 text-xs"
+                value={quest.status}
+                disabled={update.isPending}
+                onChange={(event) =>
+                  update.mutate({ questId, status: event.target.value as QuestStatus })
+                }
+              >
+                {STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+              {closed && (
+                <button type="button" className="btn-secondary" onClick={() => setReopenReason('')}>
+                  Reopen
+                </button>
+              )}
+            </>
           )}
         </div>
         {update.isError && <ErrorState error={update.error} />}
@@ -295,9 +303,7 @@ function HandoffPanel({ handoff }: { handoff: CheckpointDto }) {
           <span className="metric-label">Goal</span> — {state.goal}
         </p>
 
-        {state.next_steps.length > 0 && (
-          <ListBlock title="Next steps" items={state.next_steps} />
-        )}
+        {state.next_steps.length > 0 && <ListBlock title="Next steps" items={state.next_steps} />}
         {state.blockers.length > 0 && (
           <div>
             <h4 className="metric-label mb-1">Blockers</h4>
@@ -316,7 +322,9 @@ function HandoffPanel({ handoff }: { handoff: CheckpointDto }) {
             </ul>
           </div>
         )}
-        {state.in_progress.length > 0 && <ListBlock title="In progress" items={state.in_progress} />}
+        {state.in_progress.length > 0 && (
+          <ListBlock title="In progress" items={state.in_progress} />
+        )}
         {state.completed.length > 0 && <ListBlock title="Completed" items={state.completed} />}
       </div>
     </Panel>

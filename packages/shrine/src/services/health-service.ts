@@ -91,7 +91,11 @@ export function databaseHealthContributor(pool: SagaPool): HealthContributor {
         name: 'database',
         status: 'healthy',
         message: 'PostgreSQL is reachable.',
-        detail: { pool_total: pool.totalCount, pool_idle: pool.idleCount, pool_waiting: pool.waitingCount },
+        detail: {
+          pool_total: pool.totalCount,
+          pool_idle: pool.idleCount,
+          pool_waiting: pool.waitingCount,
+        },
       };
     },
   };
@@ -102,9 +106,7 @@ export interface SchemaHealthInput {
   expectedVersion: number;
 }
 
-export function schemaHealthContributor(
-  load: () => Promise<SchemaHealthInput>,
-): HealthContributor {
+export function schemaHealthContributor(load: () => Promise<SchemaHealthInput>): HealthContributor {
   return {
     name: 'schema',
     readiness: true,
@@ -192,7 +194,12 @@ export function queueHealthContributor(
         problems.push(`${failed} job(s) have failed`);
       }
       if (problems.length === 0) {
-        return { name: 'job_queue', status: 'healthy', message: 'The job queue is keeping up.', detail };
+        return {
+          name: 'job_queue',
+          status: 'healthy',
+          message: 'The job queue is keeping up.',
+          detail,
+        };
       }
       return {
         name: 'job_queue',
@@ -223,16 +230,18 @@ export function devAuthBypassContributor(enabled: boolean): HealthContributor {
   };
 }
 
-export function configHealthContributor(
-  problems: () => readonly string[],
-): HealthContributor {
+export function configHealthContributor(problems: () => readonly string[]): HealthContributor {
   return {
     name: 'configuration',
     readiness: true,
     async check(): Promise<HealthCheckResult> {
       const issues = problems();
       if (issues.length === 0) {
-        return { name: 'configuration', status: 'healthy', message: 'Required configuration is present.' };
+        return {
+          name: 'configuration',
+          status: 'healthy',
+          message: 'Required configuration is present.',
+        };
       }
       return {
         name: 'configuration',

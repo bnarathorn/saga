@@ -1,8 +1,4 @@
-import type {
-  BootstrapPlan,
-  ContextRequest,
-  ContextResponse,
-} from '@saga/contracts';
+import type { BootstrapPlan, ContextRequest, ContextResponse } from '@saga/contracts';
 import type { Project } from '@saga/core';
 import type { SagaPool } from '@saga/database';
 import { estimateTokens, truncateToTokens } from '@saga/shared';
@@ -96,7 +92,11 @@ export class ContextService {
     const coreContext = snapshot?.renderedContext ?? '';
 
     let taskContext: string | null = null;
-    if (request.task !== undefined && request.task.trim().length > 0 && request.mode !== 'inquiry') {
+    if (
+      request.task !== undefined &&
+      request.task.trim().length > 0 &&
+      request.mode !== 'inquiry'
+    ) {
       taskContext = await this.buildTaskContext(project, request.task, budgets.task, warnings);
     } else if (request.task !== undefined && request.mode === 'inquiry') {
       // Inquiry sessions still benefit from relevant knowledge; they simply create no Quest.
@@ -186,7 +186,10 @@ export class ContextService {
       .filter((item) => wanted.has(item.id))
       .map((item) => ({
         ...item,
-        importance: Math.min(100, Math.round((relevance.get(item.id) ?? 0) * (100 / Math.max(1, ids.length)))),
+        importance: Math.min(
+          100,
+          Math.round((relevance.get(item.id) ?? 0) * (100 / Math.max(1, ids.length))),
+        ),
       }));
 
     const built = buildSections({

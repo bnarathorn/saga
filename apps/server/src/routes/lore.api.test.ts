@@ -122,10 +122,9 @@ describe('publication', () => {
 
     const listed = await admin.get(`/api/projects/${projectRef}/lore`);
     expect(listed.body.memory_revision).toBe(1);
-    expect(listed.body.items.map((item: { memory_key: string }) => item.memory_key).sort()).toEqual([
-      'project.overview',
-      'run.api.local',
-    ]);
+    expect(listed.body.items.map((item: { memory_key: string }) => item.memory_key).sort()).toEqual(
+      ['project.overview', 'run.api.local'],
+    );
     for (const item of listed.body.items) {
       expect(item.current_version).not.toBeNull();
       expect(item.state).toBe('active');
@@ -244,9 +243,9 @@ describe('search', () => {
       query: 'PostgreSQL',
       filters: { categories: ['testing'] },
     });
-    expect(response.body.hits.every((hit: { category: string }) => hit.category === 'testing')).toBe(
-      true,
-    );
+    expect(
+      response.body.hits.every((hit: { category: string }) => hit.category === 'testing'),
+    ).toBe(true);
   });
 
   it('returns an empty result set rather than an error for a nonsense query', async () => {
@@ -264,10 +263,9 @@ describe('stale and archive', () => {
   });
 
   it('marks an entry stale with a reason and warns in context', async () => {
-    const response = await admin.post(
-      `/api/projects/${projectRef}/lore/run.api.local/mark-stale`,
-      { reason: 'the start command changed' },
-    );
+    const response = await admin.post(`/api/projects/${projectRef}/lore/run.api.local/mark-stale`, {
+      reason: 'the start command changed',
+    });
     expect(response.status).toBe(200);
     expect(response.body.entry.state).toBe('stale');
     expect(response.body.entry.stale_reason).toBe('the start command changed');
@@ -276,13 +274,16 @@ describe('stale and archive', () => {
     expect(context.body.warnings.join(' ')).toContain('stale');
 
     const audit = await admin.get('/api/shrine/audit?limit=20');
-    expect(audit.body.items.some((entry: { action: string }) => entry.action === 'lore.marked_stale')).toBe(
-      true,
-    );
+    expect(
+      audit.body.items.some((entry: { action: string }) => entry.action === 'lore.marked_stale'),
+    ).toBe(true);
   });
 
   it('requires a reason to mark an entry stale', async () => {
-    const response = await admin.post(`/api/projects/${projectRef}/lore/run.api.local/mark-stale`, {});
+    const response = await admin.post(
+      `/api/projects/${projectRef}/lore/run.api.local/mark-stale`,
+      {},
+    );
     expect(response.status).toBe(422);
   });
 
@@ -320,7 +321,10 @@ describe('evidence checking', () => {
 
   it('marks an entry stale when its evidence disappears', async () => {
     await proposeAndPublish([
-      { ...runLocal, evidence: [{ path: 'docker-compose.yml', content_hash: `sha256:${'c'.repeat(64)}` }] },
+      {
+        ...runLocal,
+        evidence: [{ path: 'docker-compose.yml', content_hash: `sha256:${'c'.repeat(64)}` }],
+      },
     ]);
     const response = await admin.post(`/api/projects/${projectRef}/lore/evidence/check`, {
       observations: [{ path: 'docker-compose.yml', content_hash: null }],
@@ -330,7 +334,9 @@ describe('evidence checking', () => {
 
   it('reports no drift when the hashes still match', async () => {
     const hash = `sha256:${'d'.repeat(64)}`;
-    await proposeAndPublish([{ ...runLocal, evidence: [{ path: 'package.json', content_hash: hash }] }]);
+    await proposeAndPublish([
+      { ...runLocal, evidence: [{ path: 'package.json', content_hash: hash }] },
+    ]);
     const response = await admin.post(`/api/projects/${projectRef}/lore/evidence/check`, {
       observations: [{ path: 'package.json', content_hash: hash }],
     });
@@ -456,9 +462,9 @@ describe('authorization', () => {
     });
     const agent = harness.withAgentToken(issued.body.raw_token);
 
-    expect((await agent.post(`/api/projects/${projectRef}/lore/search`, { query: 'ERP' })).status).toBe(
-      200,
-    );
+    expect(
+      (await agent.post(`/api/projects/${projectRef}/lore/search`, { query: 'ERP' })).status,
+    ).toBe(200);
     const denied = await agent.post(`/api/projects/${projectRef}/lore/remember`, {
       entries: [overview],
       summary: 'nope',

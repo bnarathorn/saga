@@ -31,7 +31,12 @@ describe('Projects page', () => {
       '/api/projects': {
         status: 500,
         body: {
-          error: { code: 'INTERNAL_ERROR', message: 'Database unavailable.', details: {}, request_id: 'req_x' },
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Database unavailable.',
+            details: {},
+            request_id: 'req_x',
+          },
         },
       },
     });
@@ -114,7 +119,11 @@ describe('Projects page', () => {
     stubFetch({
       '/api/projects': { body: { items: [], next_cursor: null, has_more: false } },
       '/api/projects?status=archived': {
-        body: { items: [projectSummary({ status: 'archived' })], next_cursor: null, has_more: false },
+        body: {
+          items: [projectSummary({ status: 'archived' })],
+          next_cursor: null,
+          has_more: false,
+        },
       },
     });
     renderWithProviders(<ProjectsPage />);

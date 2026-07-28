@@ -32,5 +32,5 @@ gate.
 
 - Updates touching disjoint entries publish concurrently (acceptance criterion 6).
 - Updates touching the same entry from the same base produce exactly one winner (criterion 7).
-- A snapshot must be built *before* publication so the pointer flip stays inside one short
+- A snapshot must be built _before_ publication so the pointer flip stays inside one short
   transaction (criterion 8).

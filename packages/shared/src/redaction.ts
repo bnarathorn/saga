@@ -29,7 +29,10 @@ const SAGA_TOKEN_RE = /\bsaga_[a-z0-9]{2,16}_[a-z2-7]{20,}\b/gi;
 export function redactText(input: string): string {
   return input
     .replace(PEM_RE, `${REDACTED} (PEM private key)`)
-    .replace(CREDENTIAL_URL_RE, (_m, scheme: string, user: string) => `${scheme}${user}:${REDACTED}@`)
+    .replace(
+      CREDENTIAL_URL_RE,
+      (_m, scheme: string, user: string) => `${scheme}${user}:${REDACTED}@`,
+    )
     .replace(BEARER_RE, (_m, prefix: string) => `${prefix}${REDACTED}`)
     .replace(SAGA_TOKEN_RE, REDACTED);
 }

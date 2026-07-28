@@ -2,7 +2,12 @@ import type { SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
 import { SagaError, buildPage, decodeCursor, type Page } from '@saga/shared';
 import { isUuid } from '@saga/shared/ids';
-import type { LoreApprovalMode, Project, ProjectStatus, ProjectWithAliases } from '../domain/project.js';
+import type {
+  LoreApprovalMode,
+  Project,
+  ProjectStatus,
+  ProjectWithAliases,
+} from '../domain/project.js';
 import { assertValidProjectName, normalizeProjectName } from '../normalization.js';
 import type { OutboxRepository } from '../repositories/outbox-repository.js';
 import type { ProjectRepository } from '../repositories/project-repository.js';
@@ -139,9 +144,13 @@ export class ProjectService {
         if (nameKey !== locked.nameKey) {
           const nameOwner = await this.deps.projects.findByNameKey(tx, nameKey);
           if (nameOwner !== null && nameOwner.id !== locked.id) {
-            throw new SagaError('PROJECT_NAME_CONFLICT', `A project named "${name}" already exists.`, {
-              details: { name },
-            });
+            throw new SagaError(
+              'PROJECT_NAME_CONFLICT',
+              `A project named "${name}" already exists.`,
+              {
+                details: { name },
+              },
+            );
           }
           const aliasOwner = await this.deps.projects.findByAliasKey(tx, nameKey);
           if (aliasOwner !== null && aliasOwner.id !== locked.id) {

@@ -48,9 +48,7 @@ const workStateSchema = z.object({
   blockers: z
     .array(z.object({ description: z.string(), suggested_action: z.string().optional() }))
     .default([]),
-  decisions: z
-    .array(z.object({ decision: z.string(), reason: z.string().optional() }))
-    .default([]),
+  decisions: z.array(z.object({ decision: z.string(), reason: z.string().optional() })).default([]),
   changed_files: z
     .array(
       z.object({
@@ -467,7 +465,10 @@ export async function buildToolContext(clientName: string): Promise<BuildContext
   const binding = findBinding(config, workspace.root);
 
   const serverUrl =
-    process.env.SAGA_SERVER_URL ?? binding?.serverUrl ?? config.serverUrl ?? 'http://localhost:4319';
+    process.env.SAGA_SERVER_URL ??
+    binding?.serverUrl ??
+    config.serverUrl ??
+    'http://localhost:4319';
   const projectRef = process.env.SAGA_PROJECT ?? binding?.projectId ?? null;
 
   if (projectRef === null) {

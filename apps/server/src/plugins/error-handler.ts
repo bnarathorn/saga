@@ -35,7 +35,8 @@ export function registerErrorHandler(app: FastifyInstance, exposeInternals: bool
 
     const envelope = sagaError.toEnvelope(request.id);
     if (sagaError.status >= 500 && !exposeInternals) {
-      envelope.error.message = 'An internal error occurred. The request id identifies it in the logs.';
+      envelope.error.message =
+        'An internal error occurred. The request id identifies it in the logs.';
       envelope.error.details = {};
     }
 

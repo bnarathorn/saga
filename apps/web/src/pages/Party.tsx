@@ -37,7 +37,10 @@ export function PartyPage() {
   const status = useQuery({
     queryKey: ['party', 'status', projectRef],
     queryFn: ({ signal }) =>
-      api.get<PartyStatusDto>(`/api/projects/${encodeURIComponent(projectRef)}/party/status`, signal),
+      api.get<PartyStatusDto>(
+        `/api/projects/${encodeURIComponent(projectRef)}/party/status`,
+        signal,
+      ),
     // Party is live state, so it refreshes faster than durable views.
     refetchInterval: POLL.fast,
     enabled: projectRef.length > 0,
@@ -66,7 +69,8 @@ export function PartyPage() {
   const [reason, setReason] = useState('');
 
   if (status.isPending) return <LoadingState label="Loading Party…" />;
-  if (status.isError) return <ErrorState error={status.error} onRetry={() => void status.refetch()} />;
+  if (status.isError)
+    return <ErrorState error={status.error} onRetry={() => void status.refetch()} />;
 
   const data = status.data;
 
@@ -133,7 +137,10 @@ export function PartyPage() {
                   <span className="text-xs text-ink-500 dark:text-parchment-300/60">
                     heartbeat <RelativeTime value={agent.heartbeat_at} />
                     {agent.lease_expires_at !== null && (
-                      <> · lease expires <RelativeTime value={agent.lease_expires_at} /></>
+                      <>
+                        {' '}
+                        · lease expires <RelativeTime value={agent.lease_expires_at} />
+                      </>
                     )}
                   </span>
                 </div>
@@ -146,7 +153,10 @@ export function PartyPage() {
                   <p className="mt-1 text-xs text-ink-500 dark:text-parchment-300/60">
                     Scope:{' '}
                     {Object.entries(agent.scope)
-                      .map(([field, values]) => `${field} ${(values as string[]).slice(0, 3).join(', ')}`)
+                      .map(
+                        ([field, values]) =>
+                          `${field} ${(values as string[]).slice(0, 3).join(', ')}`,
+                      )
                       .join(' · ')}
                   </p>
                 )}
@@ -169,9 +179,7 @@ export function PartyPage() {
         {history.data === undefined || history.data.items.length === 0 ? (
           <EmptyState title="No claims recorded" />
         ) : (
-          <Table
-            headers={['Resource', 'Policy', 'Mode', 'Owner', 'State', 'Lease', 'Actions']}
-          >
+          <Table headers={['Resource', 'Policy', 'Mode', 'Owner', 'State', 'Lease', 'Actions']}>
             {history.data.items.map((claim) => (
               <tr key={claim.id}>
                 <td className="table-cell font-mono text-xs">

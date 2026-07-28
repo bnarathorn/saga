@@ -86,9 +86,15 @@ describe('authentication', () => {
   it('locks an account after repeated failures', async () => {
     await harness.loginAs('operator');
     const client = harness.anonymous();
-    let last = await client.post('/api/auth/login', { email: 'operator@saga.test', password: 'wrong' });
+    let last = await client.post('/api/auth/login', {
+      email: 'operator@saga.test',
+      password: 'wrong',
+    });
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      last = await client.post('/api/auth/login', { email: 'operator@saga.test', password: 'wrong' });
+      last = await client.post('/api/auth/login', {
+        email: 'operator@saga.test',
+        password: 'wrong',
+      });
     }
     expect(last.body.error.code).toBe('ACCOUNT_LOCKED');
   });
@@ -115,7 +121,11 @@ describe('CSRF protection', () => {
 
   it('refuses a CSRF header that does not match the cookie', async () => {
     const admin = await harness.loginAs('admin');
-    const response = await admin.post('/api/projects', { name: 'Nope' }, { 'x-saga-csrf': 'forged-value' });
+    const response = await admin.post(
+      '/api/projects',
+      { name: 'Nope' },
+      { 'x-saga-csrf': 'forged-value' },
+    );
     expect(response.status).toBe(403);
     expect(response.body.error.code).toBe('CSRF_TOKEN_INVALID');
   });
@@ -205,13 +215,17 @@ describe('project API', () => {
   it('archives and restores with an audit reason', async () => {
     const admin = await harness.loginAs('admin');
     await admin.post('/api/projects', { name: 'Retired' });
-    expect((await admin.post('/api/projects/Retired/archive', { reason: 'shut down' })).status).toBe(200);
+    expect(
+      (await admin.post('/api/projects/Retired/archive', { reason: 'shut down' })).status,
+    ).toBe(200);
 
     const blocked = await admin.patch('/api/projects/Retired', { description: 'x' });
     expect(blocked.status).toBe(422);
     expect(blocked.body.error.code).toBe('PROJECT_ARCHIVED');
 
-    expect((await admin.post('/api/projects/Retired/restore', { reason: 'back' })).status).toBe(200);
+    expect((await admin.post('/api/projects/Retired/restore', { reason: 'back' })).status).toBe(
+      200,
+    );
     const audit = await admin.get('/api/shrine/audit?limit=50');
     const actions = audit.body.items.map((entry: { action: string }) => entry.action);
     expect(actions).toContain('project.archived');
@@ -227,7 +241,9 @@ describe('project API', () => {
     expect(first.body.items).toHaveLength(2);
     expect(first.body.has_more).toBe(true);
 
-    const second = await admin.get(`/api/projects?limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`);
+    const second = await admin.get(
+      `/api/projects?limit=2&cursor=${encodeURIComponent(first.body.next_cursor)}`,
+    );
     expect(second.body.items).toHaveLength(1);
     expect(second.body.has_more).toBe(false);
     expect(second.body.items[0].name).toBe('Charlie');
@@ -442,7 +458,9 @@ describe('development auth bypass', () => {
       expect(created.status).toBe(201);
 
       const health = await anonymous.get('/api/shrine/health');
-      const authMode = health.body.checks.find((check: { name: string }) => check.name === 'auth_mode');
+      const authMode = health.body.checks.find(
+        (check: { name: string }) => check.name === 'auth_mode',
+      );
       expect(authMode.status).toBe('degraded');
       expect(health.body.status).toBe('degraded');
     } finally {

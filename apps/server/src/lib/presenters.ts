@@ -71,10 +71,7 @@ export function presentJob(job: Job): JobDto {
   };
 }
 
-export function presentServiceInstance(
-  instance: ServiceInstance,
-  now: Date,
-): ServiceInstanceDto {
+export function presentServiceInstance(instance: ServiceInstance, now: Date): ServiceInstanceDto {
   return {
     id: instance.id,
     role: instance.role,

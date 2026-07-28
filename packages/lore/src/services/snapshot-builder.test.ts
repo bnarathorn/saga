@@ -5,7 +5,9 @@ import { CORE_SECTIONS, buildSections, orderEntries, renderSections } from './sn
 
 let counter = 0;
 
-function entry(overrides: Partial<MemoryItemWithVersion> & { memoryKey: string }): MemoryItemWithVersion {
+function entry(
+  overrides: Partial<MemoryItemWithVersion> & { memoryKey: string },
+): MemoryItemWithVersion {
   counter += 1;
   const created = new Date('2026-01-01T00:00:00Z');
   return {
@@ -139,7 +141,9 @@ describe('section building', () => {
         memoryKey: 'warning.destructive-migration',
         category: 'warning',
         importance: 1,
-        currentVersion: { body: 'Never run the destructive migration against production.' } as never,
+        currentVersion: {
+          body: 'Never run the destructive migration against production.',
+        } as never,
       }),
     ];
     const built = buildSections({ items: noisy, specs: CORE_SECTIONS, tokenBudget: 800 });

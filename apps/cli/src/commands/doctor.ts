@@ -101,12 +101,17 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     });
     return report(checks, flags.json === true);
   }
-  checks.push({ name: 'reachability', status: 'ok', message: `${serverUrl}/health/live answered.` });
+  checks.push({
+    name: 'reachability',
+    status: 'ok',
+    message: `${serverUrl}/health/live answered.`,
+  });
 
   const ready = await fetch(`${serverUrl}/health/ready`).catch(() => null);
-  const readyBody = (await ready?.json().catch(() => null)) as
-    | { status: string; checks: { name: string; status: string; message: string }[] }
-    | null;
+  const readyBody = (await ready?.json().catch(() => null)) as {
+    status: string;
+    checks: { name: string; status: string; message: string }[];
+  } | null;
   if (readyBody !== null) {
     const failing = readyBody.checks.filter((check) => check.status === 'unhealthy');
     checks.push({
@@ -173,7 +178,9 @@ export async function doctorCommand(argv: string[]): Promise<number> {
       headers: { authorization: `Bearer ${token}` },
     })
       .then((response) => response.json())
-      .catch(() => null)) as { checks?: { name: string; status: string; message: string }[] } | null;
+      .catch(() => null)) as {
+      checks?: { name: string; status: string; message: string }[];
+    } | null;
 
     for (const name of ['workers', 'embedding_provider', 'job_queue']) {
       const check = detailed?.checks?.find((entry) => entry.name === name);
@@ -181,7 +188,8 @@ export async function doctorCommand(argv: string[]): Promise<number> {
       checks.push({
         name: `server: ${name}`,
         // A degraded worker or embedding provider is worth knowing about, but Saga still works.
-        status: check.status === 'healthy' ? 'ok' : check.status === 'unhealthy' ? 'failure' : 'warning',
+        status:
+          check.status === 'healthy' ? 'ok' : check.status === 'unhealthy' ? 'failure' : 'warning',
         message: check.message,
       });
     }

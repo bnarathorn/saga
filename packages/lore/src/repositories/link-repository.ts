@@ -65,7 +65,8 @@ export class LinkRepository {
         ],
       );
       const link = await this.findById(tx, inserted.rows[0]!.id);
-      if (link === null) throw new SagaError('INTERNAL_ERROR', 'The link vanished after insertion.');
+      if (link === null)
+        throw new SagaError('INTERNAL_ERROR', 'The link vanished after insertion.');
       return link;
     } catch (error) {
       if (isUniqueViolation(error, 'memory_links_unique')) {

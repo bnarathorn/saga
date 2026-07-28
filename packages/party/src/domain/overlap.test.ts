@@ -84,11 +84,14 @@ describe('overlap detection', () => {
   });
 
   it('reports a claim on the same resource', () => {
-    const claim = { resourceType: 'test_environment', resourceKey: 'integration-db', mode: 'exclusive' };
-    const overlaps = detectOverlaps(
-      agent({ agentRunId: 'a', claims: [claim] }),
-      [agent({ agentRunId: 'b', claims: [claim] })],
-    );
+    const claim = {
+      resourceType: 'test_environment',
+      resourceKey: 'integration-db',
+      mode: 'exclusive',
+    };
+    const overlaps = detectOverlaps(agent({ agentRunId: 'a', claims: [claim] }), [
+      agent({ agentRunId: 'b', claims: [claim] }),
+    ]);
     expect(overlaps[0]?.kind).toBe('claim');
     expect(overlaps[0]?.values).toEqual(['test_environment:integration-db']);
   });
@@ -122,10 +125,9 @@ describe('overlap detection', () => {
 
   it('caps the values it reports so context stays small', () => {
     const many = Array.from({ length: 50 }, (_, index) => `file-${index}.ts`);
-    const overlaps = detectOverlaps(
-      agent({ agentRunId: 'a', changedFiles: many }),
-      [agent({ agentRunId: 'b', changedFiles: many })],
-    );
+    const overlaps = detectOverlaps(agent({ agentRunId: 'a', changedFiles: many }), [
+      agent({ agentRunId: 'b', changedFiles: many }),
+    ]);
     expect(overlaps[0]?.values.length).toBeLessThanOrEqual(10);
   });
 });
@@ -141,11 +143,15 @@ describe('party context rendering', () => {
       client: 'Codex',
       questTitle: 'Implement report API endpoint',
       scope: { modules: ['services/api/src/reports'], apis: ['/v1/reports/export'] },
-      claims: [{ resourceType: 'migration_sequence', resourceKey: 'db/migrations', mode: 'exclusive' }],
+      claims: [
+        { resourceType: 'migration_sequence', resourceKey: 'db/migrations', mode: 'exclusive' },
+      ],
     });
     const rendered = renderPartyContext(
       [peer],
-      detectOverlaps(agent({ agentRunId: 'a', scope: { modules: ['services/api/src/reports'] } }), [peer]),
+      detectOverlaps(agent({ agentRunId: 'a', scope: { modules: ['services/api/src/reports'] } }), [
+        peer,
+      ]),
       [
         {
           resourceType: 'test_environment',

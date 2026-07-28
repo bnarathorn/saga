@@ -166,10 +166,7 @@ export function buildSections(input: BuildSectionsInput): BuiltContext {
   return { sections, rendered, tokenCount: estimateTokens(rendered), omitted };
 }
 
-function allocateBudget(
-  specs: readonly SectionSpec[],
-  budget: number,
-): Map<string, number> {
+function allocateBudget(specs: readonly SectionSpec[], budget: number): Map<string, number> {
   const allocations = new Map<string, number>();
   if (specs.length === 0 || budget <= 0) return allocations;
 

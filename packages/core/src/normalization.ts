@@ -14,11 +14,7 @@ export const MAX_PROJECT_NAME_LENGTH = 200;
  * The display `name` keeps the user's original spelling; only `name_key` is normalized.
  */
 export function normalizeProjectName(input: string): string {
-  return input
-    .normalize('NFKC')
-    .replace(/\s+/gu, ' ')
-    .trim()
-    .toLowerCase();
+  return input.normalize('NFKC').replace(/\s+/gu, ' ').trim().toLowerCase();
 }
 
 /** Trim and collapse whitespace for storage as the display name, without case folding. */

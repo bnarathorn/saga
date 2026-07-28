@@ -158,7 +158,9 @@ describe('claims', () => {
     ]);
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+    const rejected = results.find(
+      (result) => result.status === 'rejected',
+    ) as PromiseRejectedResult;
     expect(rejected.reason).toMatchObject({ code: 'RESOURCE_CLAIM_CONFLICT' });
     // The conflict names the owner so the loser can coordinate.
     expect(rejected.reason.details).toMatchObject({
@@ -358,7 +360,7 @@ describe('lease expiry after an unclean stop', () => {
     // The durable Quest and its checkpoint survive.
     const quest = await quests.get(a.questId);
     expect(quest.revision).toBe(1);
-    expect((await quests.listCheckpoints(a.questId))).toHaveLength(1);
+    expect(await quests.listCheckpoints(a.questId)).toHaveLength(1);
 
     // Another agent can now take the resource.
     const b = await agent('Other migration work', 'codex');

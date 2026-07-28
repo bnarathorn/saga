@@ -54,7 +54,11 @@ export function registerAuth(app: FastifyInstance, options: AuthPluginOptions): 
 
     const provided = request.headers[CSRF_HEADER];
     const cookie = request.cookies[CSRF_COOKIE];
-    if (typeof provided !== 'string' || typeof cookie !== 'string' || !safeEqual(provided, cookie)) {
+    if (
+      typeof provided !== 'string' ||
+      typeof cookie !== 'string' ||
+      !safeEqual(provided, cookie)
+    ) {
       throw new SagaError(
         'CSRF_TOKEN_INVALID',
         `A valid ${CSRF_HEADER} header matching the ${CSRF_COOKIE} cookie is required for this request.`,
@@ -75,7 +79,10 @@ async function resolveActor(request: FastifyRequest, options: AuthPluginOptions)
     if (raw.length > 0) {
       const agent = await options.auth.resolveAgentToken(raw);
       if (agent === null) {
-        throw new SagaError('TOKEN_REVOKED', 'That agent token is not valid, has expired, or was revoked.');
+        throw new SagaError(
+          'TOKEN_REVOKED',
+          'That agent token is not valid, has expired, or was revoked.',
+        );
       }
       return agent;
     }

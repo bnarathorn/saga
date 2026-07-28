@@ -246,7 +246,9 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
 
     const now = new Date();
     const status = await party.status(project.id);
-    const snapshotByRun = new Map(status.snapshots.map((snapshot) => [snapshot.agentRunId, snapshot]));
+    const snapshotByRun = new Map(
+      status.snapshots.map((snapshot) => [snapshot.agentRunId, snapshot]),
+    );
 
     return {
       mode: party.mode,

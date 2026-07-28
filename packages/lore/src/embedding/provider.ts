@@ -120,7 +120,9 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       }
       const body = (await response.json()) as { models?: { name?: string }[] };
       const names = (body.models ?? []).map((entry) => entry.name ?? '');
-      const present = names.some((name) => name === this.model || name.startsWith(`${this.model}:`));
+      const present = names.some(
+        (name) => name === this.model || name.startsWith(`${this.model}:`),
+      );
       if (!present) {
         return {
           status: 'degraded',
@@ -169,7 +171,8 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
 
     const body = (await response.json()) as OllamaEmbedResponse;
-    const vectors = body.embeddings ?? (body.embedding === undefined ? undefined : [body.embedding]);
+    const vectors =
+      body.embeddings ?? (body.embedding === undefined ? undefined : [body.embedding]);
 
     if (vectors === undefined || vectors.length !== texts.length) {
       throw new SagaError(

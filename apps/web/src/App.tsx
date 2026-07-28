@@ -33,8 +33,8 @@ export function App() {
         <Panel title="Saga is unreachable">
           <ErrorState error={me.error} onRetry={() => void me.refetch()} />
           <p className="px-4 pb-4 text-sm text-ink-600 dark:text-parchment-300/80">
-            Guild Hall loaded, but the API did not answer. Static assets are served independently
-            of the API process, so this page stays available while the API is down.
+            Guild Hall loaded, but the API did not answer. Static assets are served independently of
+            the API process, so this page stays available while the API is down.
           </p>
         </Panel>
       </div>

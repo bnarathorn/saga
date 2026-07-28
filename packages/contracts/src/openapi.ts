@@ -172,10 +172,14 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     path: '/health/live',
     tags: ['Shrine'],
     summary: 'Liveness probe',
-    description: 'Answers without touching the database, so a database outage cannot cause restarts.',
+    description:
+      'Answers without touching the database, so a database outage cannot cause restarts.',
     secured: false,
     responses: {
-      200: { description: 'The process is alive.', schema: z.object({ status: z.literal('ok'), uptime_seconds: z.number() }) },
+      200: {
+        description: 'The process is alive.',
+        schema: z.object({ status: z.literal('ok'), uptime_seconds: z.number() }),
+      },
     },
   });
   route({
@@ -242,7 +246,10 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     secured: false,
     request: { query: z.object({ device_code: z.string() }) },
     responses: {
-      200: { description: 'Approved; the token is included once.', schema: deviceStatusResponseSchema },
+      200: {
+        description: 'Approved; the token is included once.',
+        schema: deviceStatusResponseSchema,
+      },
       202: { description: 'Still pending.', schema: deviceStatusResponseSchema },
     },
   });
@@ -291,7 +298,10 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     request: { body: createProjectRequestSchema },
     responses: {
       201: { description: 'Created.', schema: z.object({ project: projectSchema }) },
-      409: { description: 'A project with an equivalent name already exists.', schema: errorEnvelopeSchema },
+      409: {
+        description: 'A project with an equivalent name already exists.',
+        schema: errorEnvelopeSchema,
+      },
     },
   });
   route({
@@ -300,7 +310,9 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     tags: ['Projects'],
     summary: 'Read a project',
     request: { params: projectRef },
-    responses: { 200: { description: 'The project.', schema: z.object({ project: projectSummarySchema }) } },
+    responses: {
+      200: { description: 'The project.', schema: z.object({ project: projectSummarySchema }) },
+    },
   });
   route({
     method: 'patch',
@@ -391,7 +403,11 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     responses: {
       202: {
         description: 'Candidate accepted and queued for validation.',
-        schema: z.object({ update: memoryUpdateSchema, approval_mode: z.string(), message: z.string() }),
+        schema: z.object({
+          update: memoryUpdateSchema,
+          approval_mode: z.string(),
+          message: z.string(),
+        }),
       },
     },
   });
@@ -414,7 +430,12 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
       responses: {
         200: { description: 'Done.', schema: z.object({ update: memoryUpdateSchema }) },
         ...(action === 'publish'
-          ? { 409: { description: 'One or more entries changed since the proposal.', schema: errorEnvelopeSchema } }
+          ? {
+              409: {
+                description: 'One or more entries changed since the proposal.',
+                schema: errorEnvelopeSchema,
+              },
+            }
           : {}),
       },
     });
@@ -426,7 +447,9 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     summary: 'Mark a Lore Entry stale',
     description: 'Nothing is deleted: the entry keeps its content and gains a reason.',
     request: { params: projectRef.extend({ memoryKey: z.string() }), body: markStaleRequestSchema },
-    responses: { 200: { description: 'Marked stale.', schema: z.object({ entry: loreEntrySchema }) } },
+    responses: {
+      200: { description: 'Marked stale.', schema: z.object({ entry: loreEntrySchema }) },
+    },
   });
   route({
     method: 'post',
@@ -471,7 +494,10 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     responses: {
       200: {
         description: 'The active snapshot, or bootstrap guidance when there is none.',
-        schema: z.object({ snapshot: contextSnapshotSchema.nullable(), bootstrap_plan: z.unknown() }),
+        schema: z.object({
+          snapshot: contextSnapshotSchema.nullable(),
+          bootstrap_plan: z.unknown(),
+        }),
       },
     },
   });
@@ -549,7 +575,12 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
       params: z.object({ questId: z.string().uuid() }),
       body: createDependencyRequestSchema,
     },
-    responses: { 201: { description: 'Created.', schema: z.object({ dependencies: z.array(z.record(z.unknown())) }) } },
+    responses: {
+      201: {
+        description: 'Created.',
+        schema: z.object({ dependencies: z.array(z.record(z.unknown())) }),
+      },
+    },
   });
 
   route({
@@ -599,7 +630,10 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     },
     responses: {
       201: { description: 'Recorded.', schema: createCheckpointResponseSchema },
-      409: { description: 'The Quest changed since this checkpoint was prepared.', schema: errorEnvelopeSchema },
+      409: {
+        description: 'The Quest changed since this checkpoint was prepared.',
+        schema: errorEnvelopeSchema,
+      },
     },
   });
   route({
@@ -620,7 +654,10 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     request: { body: startAgentRunRequestSchema },
     responses: {
       201: { description: 'Started.', schema: z.object({ agent_run: agentRunSchema }) },
-      503: { description: 'Coordination is disabled (PARTY_MODE=off).', schema: errorEnvelopeSchema },
+      503: {
+        description: 'Coordination is disabled (PARTY_MODE=off).',
+        schema: errorEnvelopeSchema,
+      },
     },
   });
   route({
@@ -642,7 +679,12 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
       params: z.object({ runId: z.string().uuid() }),
       body: reportFingerprintsRequestSchema,
     },
-    responses: { 200: { description: 'Recorded, with any conflicts.', schema: reportFingerprintsResponseSchema } },
+    responses: {
+      200: {
+        description: 'Recorded, with any conflicts.',
+        schema: reportFingerprintsResponseSchema,
+      },
+    },
   });
   route({
     method: 'post',
@@ -653,7 +695,10 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
       'One transaction: lock the resource, expire stale claims, evaluate the policy, then insert or refuse.',
     request: { body: acquireClaimRequestSchema },
     responses: {
-      201: { description: 'Granted.', schema: z.object({ claim: claimSchema, warnings: z.array(z.string()) }) },
+      201: {
+        description: 'Granted.',
+        schema: z.object({ claim: claimSchema, warnings: z.array(z.string()) }),
+      },
       409: { description: 'Another agent holds the resource.', schema: errorEnvelopeSchema },
     },
   });
@@ -697,7 +742,12 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     tags: ['Shrine'],
     summary: 'Registered API, worker and scheduler instances',
     description: 'Liveness is derived from the lease, not from the stored state column.',
-    responses: { 200: { description: 'Instances.', schema: z.object({ items: z.array(serviceInstanceSchema) }) } },
+    responses: {
+      200: {
+        description: 'Instances.',
+        schema: z.object({ items: z.array(serviceInstanceSchema) }),
+      },
+    },
   });
   route({
     method: 'get',
@@ -759,7 +809,12 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     summary: 'Server-Sent Events stream',
     description:
       'Supports `Last-Event-ID` for resume. Each frame carries the `shrine.system_events.sequence` as its id.',
-    request: { query: z.object({ last_event_id: z.string().optional(), project_id: z.string().uuid().optional() }) },
+    request: {
+      query: z.object({
+        last_event_id: z.string().optional(),
+        project_id: z.string().uuid().optional(),
+      }),
+    },
     responses: { 200: { description: 'An event stream (text/event-stream).' } },
   });
   route({
@@ -768,21 +823,27 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     tags: ['Shrine'],
     summary: 'Sanitized operational configuration',
     description: 'Never contains credentials, full DSNs, session secrets or agent tokens.',
-    responses: { 200: { description: 'Configuration.', schema: z.object({ config: shrineConfigSchema }) } },
+    responses: {
+      200: { description: 'Configuration.', schema: z.object({ config: shrineConfigSchema }) },
+    },
   });
   route({
     method: 'get',
     path: '/api/shrine/schema',
     tags: ['Shrine'],
     summary: 'Current and expected database schema versions',
-    responses: { 200: { description: 'Schema state.', schema: z.object({ schema: schemaVersionSchema }) } },
+    responses: {
+      200: { description: 'Schema state.', schema: z.object({ schema: schemaVersionSchema }) },
+    },
   });
   route({
     method: 'get',
     path: '/api/shrine/metrics-summary',
     tags: ['Shrine'],
     summary: 'Operational metrics summary',
-    responses: { 200: { description: 'Metrics.', schema: z.object({ metrics: metricsSummarySchema }) } },
+    responses: {
+      200: { description: 'Metrics.', schema: z.object({ metrics: metricsSummarySchema }) },
+    },
   });
   route({
     method: 'get',

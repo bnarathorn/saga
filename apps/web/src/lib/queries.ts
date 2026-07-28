@@ -122,7 +122,9 @@ export function useRenameProject(): UseMutationResult<
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ ref, name }) =>
-      api.patch<{ project: ProjectSummaryDto }>(`/api/projects/${encodeURIComponent(ref)}`, { name }),
+      api.patch<{ project: ProjectSummaryDto }>(`/api/projects/${encodeURIComponent(ref)}`, {
+        name,
+      }),
     onSuccess: async () => {
       await client.invalidateQueries();
     },
@@ -153,7 +155,8 @@ export function useHealth(): UseQueryResult<ShrineHealthDto> {
 export function useMetrics(): UseQueryResult<{ metrics: MetricsSummaryDto }> {
   return useQuery({
     queryKey: queryKeys.metrics,
-    queryFn: ({ signal }) => api.get<{ metrics: MetricsSummaryDto }>('/api/shrine/metrics-summary', signal),
+    queryFn: ({ signal }) =>
+      api.get<{ metrics: MetricsSummaryDto }>('/api/shrine/metrics-summary', signal),
     refetchInterval: POLL.fast,
   });
 }
@@ -161,7 +164,8 @@ export function useMetrics(): UseQueryResult<{ metrics: MetricsSummaryDto }> {
 export function useServices(): UseQueryResult<{ items: ServiceInstanceDto[] }> {
   return useQuery({
     queryKey: queryKeys.services,
-    queryFn: ({ signal }) => api.get<{ items: ServiceInstanceDto[] }>('/api/shrine/services', signal),
+    queryFn: ({ signal }) =>
+      api.get<{ items: ServiceInstanceDto[] }>('/api/shrine/services', signal),
     refetchInterval: POLL.fast,
   });
 }
@@ -209,7 +213,8 @@ export function useProbeJob(): UseMutationResult<{ job: JobDto }, Error, { echo?
 export function useEvents(params = ''): UseQueryResult<ListResponse<SystemEventDto>> {
   return useQuery({
     queryKey: queryKeys.events(params),
-    queryFn: ({ signal }) => api.get<ListResponse<SystemEventDto>>(`/api/shrine/events${params}`, signal),
+    queryFn: ({ signal }) =>
+      api.get<ListResponse<SystemEventDto>>(`/api/shrine/events${params}`, signal),
     refetchInterval: POLL.fast,
   });
 }
@@ -233,7 +238,8 @@ export function useSchemaVersion(): UseQueryResult<{ schema: SchemaVersionDto }>
 export function useAuditLog(params = ''): UseQueryResult<ListResponse<AuditLogDto>> {
   return useQuery({
     queryKey: queryKeys.audit(params),
-    queryFn: ({ signal }) => api.get<ListResponse<AuditLogDto>>(`/api/shrine/audit${params}`, signal),
+    queryFn: ({ signal }) =>
+      api.get<ListResponse<AuditLogDto>>(`/api/shrine/audit${params}`, signal),
     refetchInterval: POLL.normal,
   });
 }

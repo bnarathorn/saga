@@ -13,7 +13,9 @@ import {
 
 const NOW = new Date('2026-03-01T12:00:00Z');
 
-function candidate(overrides: Partial<QuestCandidate> & { id: string; title: string }): QuestCandidate {
+function candidate(
+  overrides: Partial<QuestCandidate> & { id: string; title: string },
+): QuestCandidate {
   return {
     objective: null,
     status: 'in_progress',

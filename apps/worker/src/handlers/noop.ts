@@ -45,7 +45,10 @@ export const noopHandler: JobHandler = {
     }
 
     if (payload.fail !== undefined) {
-      throw new JobHandlerError(payload.fail, `NOOP_REQUESTED_FAILURE: ${payload.fail} failure requested by payload.`);
+      throw new JobHandlerError(
+        payload.fail,
+        `NOOP_REQUESTED_FAILURE: ${payload.fail} failure requested by payload.`,
+      );
     }
 
     return { echoed: payload.echo ?? null, slept_ms: sleepMs };

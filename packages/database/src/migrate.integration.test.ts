@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { SagaError } from '@saga/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestPool } from '../../../testing/harness.js';
-import { diffMigrations, loadMigrations, migrate, migrationStatus, readApplied } from './migrate.js';
+import {
+  diffMigrations,
+  loadMigrations,
+  migrate,
+  migrationStatus,
+  readApplied,
+} from './migrate.js';
 import type { SagaPool } from './pool.js';
 
 const REPO_MIGRATIONS = new URL('../../../db/migrations', import.meta.url).pathname;
@@ -58,7 +64,11 @@ describe('migration runner', () => {
     const extensions = await pool.query<{ extname: string }>(
       `SELECT extname FROM pg_extension WHERE extname IN ('pgcrypto','vector','pg_trgm')`,
     );
-    expect(extensions.rows.map((row) => row.extname).sort()).toEqual(['pg_trgm', 'pgcrypto', 'vector']);
+    expect(extensions.rows.map((row) => row.extname).sort()).toEqual([
+      'pg_trgm',
+      'pgcrypto',
+      'vector',
+    ]);
   });
 
   it('has no repository, source or branch identity table anywhere', async () => {
@@ -69,7 +79,15 @@ describe('migration runner', () => {
         WHERE schemaname IN ('core','lore','quest','party','shrine','security')`,
     );
     const names = tables.rows.map((row) => row.tablename);
-    for (const forbidden of ['repositories', 'repository', 'sources', 'source', 'branches', 'branch', 'commits']) {
+    for (const forbidden of [
+      'repositories',
+      'repository',
+      'sources',
+      'source',
+      'branches',
+      'branch',
+      'commits',
+    ]) {
       expect(names, `table ${forbidden} must not exist`).not.toContain(forbidden);
     }
 

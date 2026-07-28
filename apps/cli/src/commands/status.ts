@@ -88,7 +88,8 @@ export async function statusCommand(argv: string[]): Promise<number> {
       name: project.project.name,
       memory_revision: project.project.memory_revision,
       active_context_snapshot_id: project.project.active_context_snapshot_id,
-      bootstrap_required: context?.bootstrap_required ?? project.project.active_context_snapshot_id === null,
+      bootstrap_required:
+        context?.bootstrap_required ?? project.project.active_context_snapshot_id === null,
     };
     if (report.project.bootstrap_required) {
       report.notes.push(
@@ -111,7 +112,10 @@ export async function statusCommand(argv: string[]): Promise<number> {
     if (here.length > 0) {
       report.notes.push(
         `${here.length} agent run${here.length === 1 ? '' : 's'} active in this folder: ${here
-          .map((agent) => `${agent.client}${agent.quest_title === null ? '' : ` on "${agent.quest_title}"`}`)
+          .map(
+            (agent) =>
+              `${agent.client}${agent.quest_title === null ? '' : ` on "${agent.quest_title}"`}`,
+          )
           .join(', ')}.`,
       );
     }

@@ -92,7 +92,9 @@ describe('ollama provider', () => {
   it('normalises the vectors it receives', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ embeddings: [[3, 4, 0, 0]] }), { status: 200 })),
+      vi.fn(
+        async () => new Response(JSON.stringify({ embeddings: [[3, 4, 0, 0]] }), { status: 200 }),
+      ),
     );
     const [vector] = await provider.embed(['x']);
     expect(vector).toEqual([0.6, 0.8, 0, 0]);
@@ -112,7 +114,10 @@ describe('ollama provider', () => {
   });
 
   it('treats a non-2xx response as retryable', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 503 })));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 503 })),
+    );
     await expect(provider.embed(['x'])).rejects.toMatchObject({
       code: 'EMBEDDING_PROVIDER_UNAVAILABLE',
       retryable: true,
@@ -133,7 +138,9 @@ describe('ollama provider', () => {
   it('rejects a response with the wrong number of vectors', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ embeddings: [[1, 0, 0, 0]] }), { status: 200 })),
+      vi.fn(
+        async () => new Response(JSON.stringify({ embeddings: [[1, 0, 0, 0]] }), { status: 200 }),
+      ),
     );
     await expect(provider.embed(['a', 'b'])).rejects.toMatchObject({
       code: 'EMBEDDING_PROVIDER_UNAVAILABLE',
@@ -143,7 +150,9 @@ describe('ollama provider', () => {
   it('reports degraded when the model is not pulled', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify({ models: [{ name: 'llama3' }] }), { status: 200 })),
+      vi.fn(
+        async () => new Response(JSON.stringify({ models: [{ name: 'llama3' }] }), { status: 200 }),
+      ),
     );
     const health = await provider.healthCheck();
     expect(health.status).toBe('degraded');

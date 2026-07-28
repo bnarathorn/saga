@@ -49,7 +49,11 @@ export function createEmbeddingHandler(deps: EmbeddingHandlerDeps): JobHandler {
         'Provider timeouts and outages retry with backoff. A dimension mismatch or a deleted version fails permanently.',
       sideEffects: 'Sets embedding, embedding_state=ready, embedding_model and ready_at.',
       result: '{ memory_version_id, dimensions, model }',
-      failureCodes: ['EMBEDDING_PROVIDER_UNAVAILABLE', 'EMBEDDING_DIMENSION_MISMATCH', 'MEMORY_VERSION_NOT_FOUND'],
+      failureCodes: [
+        'EMBEDDING_PROVIDER_UNAVAILABLE',
+        'EMBEDDING_DIMENSION_MISMATCH',
+        'MEMORY_VERSION_NOT_FOUND',
+      ],
     },
 
     async handle({ job, logger }) {
@@ -66,10 +70,16 @@ export function createEmbeddingHandler(deps: EmbeddingHandlerDeps): JobHandler {
       const version = await deps.memory.findVersionById(deps.pool, versionId);
       if (version === null) {
         // The candidate was cancelled or its update was deleted; nothing to embed.
-        throw JobHandlerError.permanent('MEMORY_VERSION_NOT_FOUND: the memory version no longer exists.');
+        throw JobHandlerError.permanent(
+          'MEMORY_VERSION_NOT_FOUND: the memory version no longer exists.',
+        );
       }
       if (version.embeddingState === 'ready') {
-        return { memory_version_id: versionId, dimensions: deps.provider.dimensions, skipped: true };
+        return {
+          memory_version_id: versionId,
+          dimensions: deps.provider.dimensions,
+          skipped: true,
+        };
       }
 
       await deps.memory.setEmbeddingState(deps.pool, versionId, 'claimed');
@@ -91,9 +101,16 @@ export function createEmbeddingHandler(deps: EmbeddingHandlerDeps): JobHandler {
         throw JobHandlerError.retryable('The embedding provider returned no vector.');
       }
 
-      const updated = await deps.memory.setEmbedding(deps.pool, versionId, vector, deps.provider.name);
+      const updated = await deps.memory.setEmbedding(
+        deps.pool,
+        versionId,
+        vector,
+        deps.provider.name,
+      );
       if (!updated) {
-        throw JobHandlerError.permanent('The memory version disappeared while it was being embedded.');
+        throw JobHandlerError.permanent(
+          'The memory version disappeared while it was being embedded.',
+        );
       }
 
       logger.debug({ memory_version_id: versionId }, 'embedding stored');
@@ -120,7 +137,11 @@ async function embedQuest(
     return { work_item_id: workItemId, skipped: true };
   }
 
-  const text = [quest.title, quest.objective ?? '', ...Object.values(quest.scope).flat().map(String)]
+  const text = [
+    quest.title,
+    quest.objective ?? '',
+    ...Object.values(quest.scope).flat().map(String),
+  ]
     .filter((part) => part.length > 0)
     .join('\n');
 
@@ -176,7 +197,11 @@ export function createMemoryValidationHandler(deps: MemoryValidationDeps): JobHa
       sideEffects:
         'Moves the update through validating → ready, prepares a context snapshot, and in auto mode publishes and activates it.',
       result: '{ memory_update_id, state, memory_revision? }',
-      failureCodes: ['MEMORY_SECRET_DETECTED', 'MEMORY_UPDATE_CONFLICT', 'MEMORY_UPDATE_STATE_INVALID'],
+      failureCodes: [
+        'MEMORY_SECRET_DETECTED',
+        'MEMORY_UPDATE_CONFLICT',
+        'MEMORY_UPDATE_STATE_INVALID',
+      ],
     },
 
     async handle({ job, logger }) {
@@ -349,7 +374,8 @@ export function createStaleDetectionHandler(deps: StaleDetectionDeps): JobHandle
       input: '{ project_id: uuid, observations: [{ path, content_hash | null }] }',
       idempotency: 'Marking an already stale entry stale again is a no-op.',
       retryPolicy: 'Standard backoff.',
-      sideEffects: 'Sets memory_items.state=stale with a reason and emits lore.memory_marked_stale.',
+      sideEffects:
+        'Sets memory_items.state=stale with a reason and emits lore.memory_marked_stale.',
       result: '{ project_id, checked, marked_stale: [memory_key] }',
       failureCodes: ['PROJECT_NOT_FOUND'],
     },
@@ -367,7 +393,11 @@ export function createStaleDetectionHandler(deps: StaleDetectionDeps): JobHandle
       }
 
       const observed = new Map(observations.map((entry) => [entry.path, entry.content_hash]));
-      const items = await deps.memory.listItems(deps.pool, { projectId, state: 'active', limit: 5_000 });
+      const items = await deps.memory.listItems(deps.pool, {
+        projectId,
+        state: 'active',
+        limit: 5_000,
+      });
       const markedStale: string[] = [];
 
       for (const item of items) {
@@ -406,7 +436,12 @@ export function createStaleDetectionHandler(deps: StaleDetectionDeps): JobHandle
 export function evidenceDrift(
   evidence: readonly { path: string; content_hash?: string }[],
   observed: ReadonlyMap<string, string | null>,
-): { path: string; recordedHash: string | null; observedHash: string | null; reason: 'hash_changed' | 'path_missing' } | null {
+): {
+  path: string;
+  recordedHash: string | null;
+  observedHash: string | null;
+  reason: 'hash_changed' | 'path_missing';
+} | null {
   for (const entry of evidence) {
     if (!observed.has(entry.path)) continue;
     const observedHash = observed.get(entry.path) ?? null;

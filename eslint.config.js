@@ -29,7 +29,7 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: "CatchClause[param=undefined] > BlockStatement[body.length=0]",
+          selector: 'CatchClause[param=undefined] > BlockStatement[body.length=0]',
           message: 'Empty catch blocks silently swallow failures.',
         },
       ],

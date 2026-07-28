@@ -22,7 +22,11 @@ const DEFAULTS: Required<BackoffOptions> = {
  *
  * `attempt` is 1-based: the delay before retry #1.
  */
-export function backoffDelayMs(attempt: number, random: number, options: BackoffOptions = {}): number {
+export function backoffDelayMs(
+  attempt: number,
+  random: number,
+  options: BackoffOptions = {},
+): number {
   const { baseMs, maxMs, factor, jitter } = { ...DEFAULTS, ...options };
   const safeAttempt = Math.max(1, Math.floor(attempt));
   const raw = baseMs * factor ** (safeAttempt - 1);

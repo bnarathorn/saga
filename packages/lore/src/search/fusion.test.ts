@@ -105,7 +105,11 @@ describe('quality factor', () => {
 
   it('expires operational knowledge faster than stable knowledge', () => {
     const verifiedAt = new Date('2025-12-01T00:00:00Z'); // 31 days earlier
-    const operational = qualityFactor({ ...base, volatility: 'operational', lastVerifiedAt: verifiedAt });
+    const operational = qualityFactor({
+      ...base,
+      volatility: 'operational',
+      lastVerifiedAt: verifiedAt,
+    });
     const stable = qualityFactor({ ...base, volatility: 'stable', lastVerifiedAt: verifiedAt });
     expect(operational).toBeLessThan(stable);
     expect(stable).toBeCloseTo(1.0, 10);

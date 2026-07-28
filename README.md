@@ -4,7 +4,7 @@
 
 Saga is a shared project-memory, work-continuity and coordination system for Codex, Claude and
 other coding agents. A new agent session should never have to rediscover a project from zero:
-Saga remembers what the project *is*, what was already done, what is in progress, what is
+Saga remembers what the project _is_, what was already done, what is in progress, what is
 blocked, and who else is working right now.
 
 ```text
@@ -118,22 +118,22 @@ comment.
 
 ## Commands
 
-| Command                | What it does                                                     |
-| ---------------------- | ---------------------------------------------------------------- |
-| `pnpm dev`             | API, worker and Guild Hall dev server together                    |
-| `pnpm build`           | Compile every package and build Guild Hall                        |
-| `pnpm lint`            | ESLint across the workspace                                       |
-| `pnpm typecheck`       | `tsc -b` plus the web project                                     |
-| `pnpm test`            | Unit tests (no external services required)                        |
-| `pnpm test:integration`| PostgreSQL integration tests, including real concurrency           |
-| `pnpm test:api`        | Full Fastify app against PostgreSQL                               |
-| `pnpm test:web`        | Guild Hall component tests                                        |
-| `pnpm test:all`        | Every Vitest project                                              |
-| `pnpm test:e2e`        | Playwright browser tests                                          |
-| `pnpm db:migrate`      | Apply pending migrations                                          |
-| `pnpm db:status`       | Show current and expected schema versions                         |
-| `pnpm db:seed`         | Load development seed data                                        |
-| `pnpm db:reset`        | Drop and re-apply the schema (**development and test only**)      |
+| Command                 | What it does                                                 |
+| ----------------------- | ------------------------------------------------------------ |
+| `pnpm dev`              | API, worker and Guild Hall dev server together               |
+| `pnpm build`            | Compile every package and build Guild Hall                   |
+| `pnpm lint`             | ESLint across the workspace                                  |
+| `pnpm typecheck`        | `tsc -b` plus the web project                                |
+| `pnpm test`             | Unit tests (no external services required)                   |
+| `pnpm test:integration` | PostgreSQL integration tests, including real concurrency     |
+| `pnpm test:api`         | Full Fastify app against PostgreSQL                          |
+| `pnpm test:web`         | Guild Hall component tests                                   |
+| `pnpm test:all`         | Every Vitest project                                         |
+| `pnpm test:e2e`         | Playwright browser tests                                     |
+| `pnpm db:migrate`       | Apply pending migrations                                     |
+| `pnpm db:status`        | Show current and expected schema versions                    |
+| `pnpm db:seed`          | Load development seed data                                   |
+| `pnpm db:reset`         | Drop and re-apply the schema (**development and test only**) |
 
 Integration, API and end-to-end tests need `SAGA_TEST_DATABASE_URL` to point at a database
 you are willing to have truncated.
@@ -142,16 +142,16 @@ you are willing to have truncated.
 
 ## Documentation
 
-| Document                                                     | Covers                                          |
-| ------------------------------------------------------------ | ----------------------------------------------- |
-| [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)            | Phase-by-phase status                           |
-| [`docs/architecture.md`](docs/architecture.md)                | Domains, state ownership, boundaries            |
-| [`docs/api.md`](docs/api.md)                                  | Endpoints, error codes, pagination, idempotency  |
-| [`docs/agent-integration.md`](docs/agent-integration.md)      | MCP setup for Codex and Claude, session policy   |
-| [`docs/operations.md`](docs/operations.md)                    | Deployment, upgrades, backups, troubleshooting   |
-| [`docs/security.md`](docs/security.md)                        | Authentication, token scopes, threat notes       |
-| [`docs/testing.md`](docs/testing.md)                          | Test strategy and how to run each suite          |
-| [`docs/adr/`](docs/adr/)                                      | Architecture decision records                    |
+| Document                                                 | Covers                                          |
+| -------------------------------------------------------- | ----------------------------------------------- |
+| [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)       | Phase-by-phase status                           |
+| [`docs/architecture.md`](docs/architecture.md)           | Domains, state ownership, boundaries            |
+| [`docs/api.md`](docs/api.md)                             | Endpoints, error codes, pagination, idempotency |
+| [`docs/agent-integration.md`](docs/agent-integration.md) | MCP setup for Codex and Claude, session policy  |
+| [`docs/operations.md`](docs/operations.md)               | Deployment, upgrades, backups, troubleshooting  |
+| [`docs/security.md`](docs/security.md)                   | Authentication, token scopes, threat notes      |
+| [`docs/testing.md`](docs/testing.md)                     | Test strategy and how to run each suite         |
+| [`docs/adr/`](docs/adr/)                                 | Architecture decision records                   |
 
 ---
 

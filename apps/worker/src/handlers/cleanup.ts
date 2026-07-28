@@ -7,7 +7,12 @@ import {
 import type { SagaPool } from '@saga/database';
 import { addSeconds } from '@saga/shared';
 import type { SnapshotRepository } from '@saga/lore';
-import type { JobHandler, JobRepository, ServiceInstanceRepository, SystemEventRepository } from '@saga/shrine';
+import type {
+  JobHandler,
+  JobRepository,
+  ServiceInstanceRepository,
+  SystemEventRepository,
+} from '@saga/shrine';
 
 export interface CleanupDeps {
   pool: SagaPool;

@@ -30,7 +30,9 @@ export function LoreEntryPage() {
           <h2 className="font-display font-mono text-xl text-ink-800 dark:text-parchment-100">
             {item.memory_key}
           </h2>
-          <Badge tone={item.state === 'active' ? 'good' : item.state === 'stale' ? 'warn' : 'neutral'}>
+          <Badge
+            tone={item.state === 'active' ? 'good' : item.state === 'stale' ? 'warn' : 'neutral'}
+          >
             {item.state}
           </Badge>
           <Badge tone="neutral">{item.category}</Badge>
@@ -124,7 +126,9 @@ export function LoreEntryPage() {
                 >
                   {link.from_memory_key}
                 </Link>
-                <span className="mx-2 text-ink-500 dark:text-parchment-300/60">{link.relation}</span>
+                <span className="mx-2 text-ink-500 dark:text-parchment-300/60">
+                  {link.relation}
+                </span>
                 <Link
                   className="link"
                   to={`/projects/${encodeURIComponent(projectRef)}/lore/${encodeURIComponent(link.to_memory_key)}`}

@@ -17,10 +17,10 @@ Lore bootstrap is required, and writes MCP configuration.
 
 It writes two files, both project-local so a machine can host several Saga projects:
 
-| File                  | For          |
-| --------------------- | ------------ |
-| `.mcp.json`           | Claude Code  |
-| `.codex/config.json`  | Codex        |
+| File                 | For         |
+| -------------------- | ----------- |
+| `.mcp.json`          | Claude Code |
+| `.codex/config.json` | Codex       |
 
 Both contain:
 
@@ -74,17 +74,17 @@ does not need to be reminded.
 
 ## 3. Tools
 
-| Tool | Purpose |
-| ---- | ------- |
-| `saga_start_session` | Open a session. Returns short Core Context and bootstrap state. **Attaches no Quest and loads no handoff.** |
-| `saga_activate_task` | Report the first task. Saga classifies it and returns the right context. |
-| `saga_get_context` | Refresh context, with the current memory revision and stale-Lore warnings. |
-| `saga_search_lore` | Search durable knowledge instead of re-reading the repository. |
-| `saga_checkpoint` | Record progress. Compare-and-swap on the Quest revision. |
-| `saga_remember` | Propose Lore Entries. Creates a candidate; never overwrites. |
-| `saga_claim_resource` | Claim a resource before a risky or exclusive operation. |
-| `saga_release_claim` | Release as soon as the protected operation finishes. Idempotent. |
-| `saga_end_session` | Final handoff, end the session and the agent run, release claims. |
+| Tool                  | Purpose                                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `saga_start_session`  | Open a session. Returns short Core Context and bootstrap state. **Attaches no Quest and loads no handoff.** |
+| `saga_activate_task`  | Report the first task. Saga classifies it and returns the right context.                                    |
+| `saga_get_context`    | Refresh context, with the current memory revision and stale-Lore warnings.                                  |
+| `saga_search_lore`    | Search durable knowledge instead of re-reading the repository.                                              |
+| `saga_checkpoint`     | Record progress. Compare-and-swap on the Quest revision.                                                    |
+| `saga_remember`       | Propose Lore Entries. Creates a candidate; never overwrites.                                                |
+| `saga_claim_resource` | Claim a resource before a risky or exclusive operation.                                                     |
+| `saga_release_claim`  | Release as soon as the protected operation finishes. Idempotent.                                            |
+| `saga_end_session`    | Final handoff, end the session and the agent run, release claims.                                           |
 
 ### Why session startup is two-phase
 
@@ -94,14 +94,14 @@ opened to fix an unrelated bug starts with someone else's half-finished refactor
 
 `saga_activate_task` is where the decision is made:
 
-| Mode | When | What you get |
-| ---- | ---- | ------------ |
-| `new_work` | a new task | Core + Task context, and a new Quest |
-| `resume_work` | the user explicitly continues, and the match is strong | Core + Task + Continuation |
-| `inquiry` | a question or exploration | Core + Task context, and **no Quest** |
+| Mode          | When                                                   | What you get                          |
+| ------------- | ------------------------------------------------------ | ------------------------------------- |
+| `new_work`    | a new task                                             | Core + Task context, and a new Quest  |
+| `resume_work` | the user explicitly continues, and the match is strong | Core + Task + Continuation            |
+| `inquiry`     | a question or exploration                              | Core + Task context, and **no Quest** |
 
-Auto-resume needs *both* explicit continuation intent ("continue", "resume", "where we left
-off", or a named Quest) *and* a strong match. Otherwise Saga creates new work and returns
+Auto-resume needs _both_ explicit continuation intent ("continue", "resume", "where we left
+off", or a named Quest) _and_ a strong match. Otherwise Saga creates new work and returns
 near-matches in `related_quests` for you to offer the user.
 
 If an inquiry session starts changing files, promote it — `saga_activate_task` again with
@@ -128,14 +128,32 @@ The `work_state` structure is what the next session actually reads:
   "completed": ["Added the token-family schema"],
   "in_progress": ["Integration test"],
   "next_steps": ["Apply the migration to the test database"],
-  "blockers": [{ "description": "The test database schema is behind",
-                 "suggested_action": "Run the test migration" }],
-  "decisions": [{ "decision": "Revoke the entire token family",
-                  "reason": "This prevents replay after token theft" }],
-  "changed_files": [{ "path": "services/api/src/auth/refresh-token.ts",
-                      "base_hash": "sha256:aaa", "current_hash": "sha256:bbb" }],
-  "commands": [{ "command": "pnpm test:integration", "status": "failed",
-                 "summary": "The token_family_id column is missing" }],
+  "blockers": [
+    {
+      "description": "The test database schema is behind",
+      "suggested_action": "Run the test migration"
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Revoke the entire token family",
+      "reason": "This prevents replay after token theft"
+    }
+  ],
+  "changed_files": [
+    {
+      "path": "services/api/src/auth/refresh-token.ts",
+      "base_hash": "sha256:aaa",
+      "current_hash": "sha256:bbb"
+    }
+  ],
+  "commands": [
+    {
+      "command": "pnpm test:integration",
+      "status": "failed",
+      "summary": "The token_family_id column is missing"
+    }
+  ],
   "tests": [{ "name": "authentication integration tests", "status": "blocked" }]
 }
 ```
@@ -146,9 +164,11 @@ Write it for the agent that picks this up tomorrow with none of your context. `n
 ### Handling a revision conflict
 
 ```json
-{ "error": "QUEST_REVISION_CONFLICT",
+{
+  "error": "QUEST_REVISION_CONFLICT",
   "details": { "expected_revision": 4, "latest_revision": 5 },
-  "what_to_do": "Another session recorded a checkpoint first. Re-read the Quest, merge your work state with the latest checkpoint, and submit again with the new revision. Do not retry blindly." }
+  "what_to_do": "Another session recorded a checkpoint first. Re-read the Quest, merge your work state with the latest checkpoint, and submit again with the new revision. Do not retry blindly."
+}
 ```
 
 Do exactly that. Retrying with the same body would discard whatever the other session recorded.
@@ -169,7 +189,7 @@ Do exactly that. Retrying with the same body would discard whatever the other se
 It is **not** for transient task state (that is a checkpoint) and **never** for credentials.
 Candidates containing a secret are rejected with the field path that tripped the policy; the
 value is never echoed back. Replace it with a placeholder or an environment-variable
-reference — documenting *which* variables exist is welcome, documenting their values is not.
+reference — documenting _which_ variables exist is welcome, documenting their values is not.
 
 Mark anything you concluded rather than read as `verification_state: "inferred"` with lower
 confidence, and attach `evidence` paths and content hashes wherever you can. Evidence is what

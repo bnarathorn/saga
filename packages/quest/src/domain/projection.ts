@@ -65,11 +65,7 @@ export function projectParentStatus(input: ProjectionInput): ProjectionResult {
   return decide(input, 'open', 'Children remain open.');
 }
 
-function decide(
-  input: ProjectionInput,
-  status: QuestStatus,
-  reason: string,
-): ProjectionResult {
+function decide(input: ProjectionInput, status: QuestStatus, reason: string): ProjectionResult {
   return { status, changed: status !== input.currentParentStatus, reason };
 }
 
@@ -85,11 +81,7 @@ export interface GraphEdge {
  * dependency graph: a Questline that contains itself, or a dependency ring, would make
  * projection and scheduling non-terminating.
  */
-export function wouldCreateCycle(
-  edges: readonly GraphEdge[],
-  from: string,
-  to: string,
-): boolean {
+export function wouldCreateCycle(edges: readonly GraphEdge[], from: string, to: string): boolean {
   if (from === to) return true;
 
   const adjacency = new Map<string, string[]>();

@@ -177,9 +177,10 @@ export class PartyRepository {
   }
 
   async findRunById(q: Queryable, id: string): Promise<AgentRun | null> {
-    const result = await q.query<RunRow>(`SELECT ${RUN_COLUMNS} FROM party.agent_runs WHERE id = $1`, [
-      id,
-    ]);
+    const result = await q.query<RunRow>(
+      `SELECT ${RUN_COLUMNS} FROM party.agent_runs WHERE id = $1`,
+      [id],
+    );
     return result.rows[0] === undefined ? null : toRun(result.rows[0]);
   }
 
@@ -446,7 +447,8 @@ export class PartyRepository {
         ],
       );
       const claim = await this.findClaimById(tx, inserted.rows[0]!.id);
-      if (claim === null) throw new SagaError('INTERNAL_ERROR', 'The claim vanished after insertion.');
+      if (claim === null)
+        throw new SagaError('INTERNAL_ERROR', 'The claim vanished after insertion.');
       return claim;
     } catch (error) {
       if (isUniqueViolation(error, 'claims_one_exclusive_per_resource')) {
@@ -527,7 +529,11 @@ export class PartyRepository {
     return result.rows.map(toClaim);
   }
 
-  async listClaimsForProject(q: Queryable, projectId: string, includeFinished: boolean): Promise<Claim[]> {
+  async listClaimsForProject(
+    q: Queryable,
+    projectId: string,
+    includeFinished: boolean,
+  ): Promise<Claim[]> {
     const result = await q.query<ClaimRow>(
       `${CLAIM_SELECT}
         WHERE r.project_id = $1 ${includeFinished ? '' : `AND c.state = 'active'`}

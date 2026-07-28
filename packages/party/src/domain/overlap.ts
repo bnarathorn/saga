@@ -32,7 +32,10 @@ const SCOPE_FIELDS: { field: keyof QuestScope; kind: OverlapDto['kind']; label: 
  * Two agents in the *same workspace* are escalated: uncommitted edits are immediately visible
  * to both, so an overlap there is a live hazard rather than a coordination note.
  */
-export function detectOverlaps(subject: AgentSnapshot, peers: readonly AgentSnapshot[]): OverlapDto[] {
+export function detectOverlaps(
+  subject: AgentSnapshot,
+  peers: readonly AgentSnapshot[],
+): OverlapDto[] {
   const overlaps: OverlapDto[] = [];
 
   for (const peer of peers) {
@@ -98,7 +101,9 @@ export function detectOverlaps(subject: AgentSnapshot, peers: readonly AgentSnap
         kind: 'claim',
         severity: 'warning',
         message: `${peer.client} holds a claim on the same resource${sharedClaims.length === 1 ? '' : 's'}.`,
-        values: sharedClaims.map((claim) => `${claim.resourceType}:${claim.resourceKey}`).slice(0, 10),
+        values: sharedClaims
+          .map((claim) => `${claim.resourceType}:${claim.resourceKey}`)
+          .slice(0, 10),
       });
     }
   }
@@ -136,7 +141,13 @@ function intersect(a: readonly string[] | undefined, b: readonly string[] | unde
 export function renderPartyContext(
   peers: readonly AgentSnapshot[],
   overlaps: readonly OverlapDto[],
-  claims: readonly { resourceType: string; resourceKey: string; mode: string; questTitle: string; leaseExpiresAt: Date }[],
+  claims: readonly {
+    resourceType: string;
+    resourceKey: string;
+    mode: string;
+    questTitle: string;
+    leaseExpiresAt: Date;
+  }[],
 ): string {
   if (peers.length === 0 && claims.length === 0) return '';
 
@@ -166,7 +177,8 @@ export function renderPartyContext(
   if (overlaps.length > 0) {
     lines.push('## Overlap warnings', '');
     for (const overlap of overlaps.slice(0, 8)) {
-      const values = overlap.values.length === 0 ? '' : ` (${overlap.values.slice(0, 5).join(', ')})`;
+      const values =
+        overlap.values.length === 0 ? '' : ` (${overlap.values.slice(0, 5).join(', ')})`;
       lines.push(`- [${overlap.severity}] ${overlap.message}${values}`);
     }
     lines.push('');

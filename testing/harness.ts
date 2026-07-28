@@ -115,13 +115,19 @@ function buildRepositories() {
 }
 
 /** Build the domain services against the test database without any HTTP layer. */
-export function createTestServices(options: { pool?: SagaPool; config?: SagaConfig } = {}): TestServices {
+export function createTestServices(
+  options: { pool?: SagaPool; config?: SagaConfig } = {},
+): TestServices {
   const config = options.config ?? testConfig();
   const ownsPool = options.pool === undefined;
   const pool = options.pool ?? createTestPool();
   const repositories = buildRepositories();
 
-  const projects = new ProjectService({ pool, projects: repositories.projects, outbox: repositories.outbox });
+  const projects = new ProjectService({
+    pool,
+    projects: repositories.projects,
+    outbox: repositories.outbox,
+  });
   const auth = new AuthService({
     pool,
     users: repositories.users,

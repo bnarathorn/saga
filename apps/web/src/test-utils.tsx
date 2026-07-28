@@ -58,7 +58,8 @@ export interface StubRoute {
 export function stubFetch(routes: Record<string, StubRoute | (() => StubRoute)>): {
   calls: { method: string; url: string; headers: Record<string, string>; body: unknown }[];
 } {
-  const calls: { method: string; url: string; headers: Record<string, string>; body: unknown }[] = [];
+  const calls: { method: string; url: string; headers: Record<string, string>; body: unknown }[] =
+    [];
 
   vi.stubGlobal(
     'fetch',

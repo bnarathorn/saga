@@ -33,7 +33,9 @@ async function main(): Promise<void> {
     : (process.env.DATABASE_URL ?? '');
 
   if (connectionString.length === 0) {
-    throw new Error(useTestDatabase ? 'SAGA_TEST_DATABASE_URL is not set.' : 'DATABASE_URL is not set.');
+    throw new Error(
+      useTestDatabase ? 'SAGA_TEST_DATABASE_URL is not set.' : 'DATABASE_URL is not set.',
+    );
   }
 
   const pool = createPool({ connectionString, applicationName: 'saga-db-cli', max: 2 });
@@ -42,7 +44,9 @@ async function main(): Promise<void> {
   try {
     switch (command) {
       case 'migrate': {
-        const result = await migrate(pool, MIGRATIONS_DIR, (message) => console.log(`  ${message}`));
+        const result = await migrate(pool, MIGRATIONS_DIR, (message) =>
+          console.log(`  ${message}`),
+        );
         console.log(
           result.appliedNow.length === 0
             ? `already at version ${result.currentVersion}`
@@ -73,7 +77,9 @@ async function main(): Promise<void> {
            DROP TABLE IF EXISTS public.schema_migrations CASCADE;`,
         );
         console.log('dropped all Saga schemas');
-        const result = await migrate(pool, MIGRATIONS_DIR, (message) => console.log(`  ${message}`));
+        const result = await migrate(pool, MIGRATIONS_DIR, (message) =>
+          console.log(`  ${message}`),
+        );
         console.log(`re-applied ${result.appliedNow.length} migration(s)`);
         break;
       }

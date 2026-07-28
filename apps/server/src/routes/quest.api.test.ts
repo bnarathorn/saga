@@ -208,7 +208,9 @@ describe('activation', () => {
       requested_quest_id: activated.body.quest.id,
     });
     expect(resumed.body.context.continuation.recovered_from_interrupted_session).toBe(true);
-    expect(resumed.body.context.continuation.rendered).toContain('Recovered from an interrupted session');
+    expect(resumed.body.context.continuation.rendered).toContain(
+      'Recovered from an interrupted session',
+    );
   });
 
   it('refuses to activate a completed session', async () => {
@@ -384,9 +386,9 @@ describe('quest management', () => {
     expect(reopened.body.quest.status).toBe('in_progress');
 
     const audit = await admin.get('/api/shrine/audit?limit=20');
-    expect(audit.body.items.some((entry: { action: string }) => entry.action === 'quest.reopened')).toBe(
-      true,
-    );
+    expect(
+      audit.body.items.some((entry: { action: string }) => entry.action === 'quest.reopened'),
+    ).toBe(true);
   });
 
   it('projects a parent status from its children', async () => {
@@ -411,7 +413,9 @@ describe('quest management', () => {
 
   it('manages dependencies and refuses a cycle', async () => {
     const a = await admin.post(`/api/projects/${projectId}/quests`, { title: 'Add schema' });
-    const b = await admin.post(`/api/projects/${projectId}/quests`, { title: 'Implement rotation' });
+    const b = await admin.post(`/api/projects/${projectId}/quests`, {
+      title: 'Implement rotation',
+    });
 
     const created = await admin.post(`/api/quests/${b.body.quest.id}/dependencies`, {
       depends_on_work_item_id: a.body.quest.id,

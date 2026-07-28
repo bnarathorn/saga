@@ -80,7 +80,9 @@ export function createOutboxDeliveryHandler(deps: OutboxDeliveryDeps): JobHandle
             } catch (error) {
               failed += 1;
               const retryAt =
-                event.attempts >= MAX_OUTBOX_ATTEMPTS ? null : nextRetryAt(new Date(), event.attempts);
+                event.attempts >= MAX_OUTBOX_ATTEMPTS
+                  ? null
+                  : nextRetryAt(new Date(), event.attempts);
               await deps.outbox.markFailed(
                 tx,
                 event.id,
@@ -144,9 +146,15 @@ function describeEvent(event: OutboxEvent): {
         message: `Lore revision ${String(payload.memory_revision)} was published (${String(payload.entry_count)} entr${payload.entry_count === 1 ? 'y' : 'ies'}).`,
       };
     case 'lore.memory_marked_stale':
-      return { severity: 'warning', message: `Lore entry "${String(payload.memory_key)}" was marked stale.` };
+      return {
+        severity: 'warning',
+        message: `Lore entry "${String(payload.memory_key)}" was marked stale.`,
+      };
     case 'lore.memory_archived':
-      return { severity: 'info', message: `Lore entry "${String(payload.memory_key)}" was archived.` };
+      return {
+        severity: 'info',
+        message: `Lore entry "${String(payload.memory_key)}" was archived.`,
+      };
     case 'quest.checkpoint_created':
       return {
         severity: 'info',

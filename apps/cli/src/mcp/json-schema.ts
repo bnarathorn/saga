@@ -21,7 +21,10 @@ function convert(schema: z.ZodTypeAny): Record<string, unknown> {
   if (schema instanceof z.ZodOptional) return convert(schema.unwrap());
   if (schema instanceof z.ZodNullable) return convert(schema.unwrap());
   if (schema instanceof z.ZodDefault) {
-    return withDescription({ ...convert(schema.removeDefault()), default: schema._def.defaultValue() });
+    return withDescription({
+      ...convert(schema.removeDefault()),
+      default: schema._def.defaultValue(),
+    });
   }
 
   if (schema instanceof z.ZodObject) {

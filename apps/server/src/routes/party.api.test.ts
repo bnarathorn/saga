@@ -110,15 +110,29 @@ describe('claims', () => {
   it('lets shared claims coexist', async () => {
     const a = await agent('Read reports', 'claude-code');
     const b = await agent('Also read reports', 'codex');
-    const body = { resource_type: 'module', resource_key: 'services/api/src/reports', mode: 'shared' };
+    const body = {
+      resource_type: 'module',
+      resource_key: 'services/api/src/reports',
+      mode: 'shared',
+    };
 
     expect(
-      (await admin.post('/api/party/claims', { ...body, agent_run_id: a.runId, work_item_id: a.questId }))
-        .status,
+      (
+        await admin.post('/api/party/claims', {
+          ...body,
+          agent_run_id: a.runId,
+          work_item_id: a.questId,
+        })
+      ).status,
     ).toBe(201);
     expect(
-      (await admin.post('/api/party/claims', { ...body, agent_run_id: b.runId, work_item_id: b.questId }))
-        .status,
+      (
+        await admin.post('/api/party/claims', {
+          ...body,
+          agent_run_id: b.runId,
+          work_item_id: b.questId,
+        })
+      ).status,
     ).toBe(201);
   });
 
@@ -221,9 +235,9 @@ describe('status and overlap', () => {
     const status = await admin.get(`/api/projects/${projectId}/party/status`);
     expect(status.body.mode).toBe('strict');
     expect(status.body.active_agents).toHaveLength(2);
-    expect(status.body.overlaps.some((overlap: { kind: string }) => overlap.kind === 'module')).toBe(
-      true,
-    );
+    expect(
+      status.body.overlaps.some((overlap: { kind: string }) => overlap.kind === 'module'),
+    ).toBe(true);
   });
 
   it('escalates a shared workspace to critical', async () => {

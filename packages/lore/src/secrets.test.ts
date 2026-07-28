@@ -18,7 +18,11 @@ describe('secret detection', () => {
   });
 
   it.each([
-    ['a PEM private key', '-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJB\n-----END RSA PRIVATE KEY-----', 'pem_private_key'],
+    [
+      'a PEM private key',
+      '-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJB\n-----END RSA PRIVATE KEY-----',
+      'pem_private_key',
+    ],
     ['an OpenSSH private key', '-----BEGIN OPENSSH PRIVATE KEY-----', 'openssh_private_key'],
     ['an AWS access key id', 'Use AKIAIOSFODNN7EXAMPLE for the uploader.', 'aws_access_key_id'],
     ['a GitHub token', 'export TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789', 'github_token'],
@@ -30,7 +34,11 @@ describe('secret detection', () => {
       'Authorization uses eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
       'jwt',
     ],
-    ['a bearer token', 'curl -H "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz012345"', 'bearer_token'],
+    [
+      'a bearer token',
+      'curl -H "Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz012345"',
+      'bearer_token',
+    ],
   ])('rejects %s', (_label, body, ruleId) => {
     const findings = scanForSecrets({ body });
     expect(findings.map((finding) => finding.ruleId)).toContain(ruleId);
@@ -38,7 +46,9 @@ describe('secret detection', () => {
   });
 
   it('rejects a credential-bearing connection string', () => {
-    const findings = scanForSecrets({ body: 'DATABASE_URL=postgres://saga:hunter2xyz@db:5432/saga' });
+    const findings = scanForSecrets({
+      body: 'DATABASE_URL=postgres://saga:hunter2xyz@db:5432/saga',
+    });
     expect(findings.map((finding) => finding.ruleId)).toContain('credential_url');
   });
 
@@ -58,7 +68,9 @@ describe('secret detection', () => {
     expect(scanForSecrets({ body: 'password = s3cr3tP4ssw0rd!' }).length).toBeGreaterThan(0);
     expect(scanForSecrets({ body: 'password = ${ADMIN_PASSWORD}' })).toEqual([]);
     expect(scanForSecrets({ body: 'password = <your-password>' })).toEqual([]);
-    expect(scanForSecrets({ body: 'The password is stored in the operating-system keychain.' })).toEqual([]);
+    expect(
+      scanForSecrets({ body: 'The password is stored in the operating-system keychain.' }),
+    ).toEqual([]);
   });
 
   it('reports the exact field path inside structured data', () => {
@@ -71,7 +83,9 @@ describe('secret detection', () => {
     // Two rules legitimately fire on the same string — the key's shape and the assignment
     // form. Both must point at the same field so the author has one place to fix.
     expect(findings.length).toBeGreaterThanOrEqual(1);
-    expect(new Set(findings.map((finding) => finding.fieldPath))).toEqual(new Set(['data.steps[1]']));
+    expect(new Set(findings.map((finding) => finding.fieldPath))).toEqual(
+      new Set(['data.steps[1]']),
+    );
     expect(findings.map((finding) => finding.ruleId)).toContain('google_api_key');
   });
 
@@ -97,7 +111,13 @@ describe('secret detection', () => {
   it('scans evidence as well as the body and data', () => {
     const findings = scanForSecrets({
       body: 'Ordinary knowledge.',
-      evidence: [{ path: 'config/prod.env', content_hash: 'sha256:aaa', note: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' }],
+      evidence: [
+        {
+          path: 'config/prod.env',
+          content_hash: 'sha256:aaa',
+          note: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+        },
+      ],
     });
     expect(findings[0]?.fieldPath).toBe('evidence[0].note');
   });
@@ -125,12 +145,19 @@ describe('secret detection', () => {
 });
 
 describe('isPlaceholder', () => {
-  it.each(['...', '****', '<value>', '${VAR}', '$VAR', '%VAR%', 'REDACTED', 'changeme', 'your-token'])(
-    'treats %s as a placeholder',
-    (value) => {
-      expect(isPlaceholder(value)).toBe(true);
-    },
-  );
+  it.each([
+    '...',
+    '****',
+    '<value>',
+    '${VAR}',
+    '$VAR',
+    '%VAR%',
+    'REDACTED',
+    'changeme',
+    'your-token',
+  ])('treats %s as a placeholder', (value) => {
+    expect(isPlaceholder(value)).toBe(true);
+  });
 
   it('does not treat a real-looking value as a placeholder', () => {
     expect(isPlaceholder('hunter2-real-value')).toBe(false);

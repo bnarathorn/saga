@@ -50,7 +50,13 @@ export interface ProjectRepository {
   lockById(q: Queryable, id: string): Promise<Project | null>;
   list(
     q: Queryable,
-    filter: { status?: ProjectStatus; search?: string; cursorKey?: string; cursorId?: string; limit: number },
+    filter: {
+      status?: ProjectStatus;
+      search?: string;
+      cursorKey?: string;
+      cursorId?: string;
+      limit: number;
+    },
   ): Promise<Project[]>;
   rename(q: Queryable, id: string, name: string, nameKey: string): Promise<Project>;
   update(
@@ -80,19 +86,22 @@ export class PgProjectRepository implements ProjectRepository {
       return toProject(result.rows[0]!);
     } catch (error) {
       if (isUniqueViolation(error, 'projects_name_key_uniq')) {
-        throw new SagaError('PROJECT_NAME_CONFLICT', `A project named "${input.name}" already exists.`, {
-          details: { name: input.name, name_key: input.nameKey },
-        });
+        throw new SagaError(
+          'PROJECT_NAME_CONFLICT',
+          `A project named "${input.name}" already exists.`,
+          {
+            details: { name: input.name, name_key: input.nameKey },
+          },
+        );
       }
       throw error;
     }
   }
 
   async findById(q: Queryable, id: string): Promise<Project | null> {
-    const result = await q.query<ProjectRow>(
-      `SELECT ${COLUMNS} FROM core.projects WHERE id = $1`,
-      [id],
-    );
+    const result = await q.query<ProjectRow>(`SELECT ${COLUMNS} FROM core.projects WHERE id = $1`, [
+      id,
+    ]);
     return result.rows[0] === undefined ? null : toProject(result.rows[0]);
   }
 
@@ -202,7 +211,8 @@ export class PgProjectRepository implements ProjectRepository {
     }
     if (assignments.length === 0) {
       const existing = await this.findById(q, id);
-      if (existing === null) throw new SagaError('PROJECT_NOT_FOUND', 'The project no longer exists.');
+      if (existing === null)
+        throw new SagaError('PROJECT_NOT_FOUND', 'The project no longer exists.');
       return existing;
     }
 

@@ -20,7 +20,7 @@ would either give agents console-wide powers or force humans through a token flo
   chosen because the reference deployment target is a small self-hosted machine where the
   46 MiB profile would make concurrent logins contend for memory.
 - Login is rate limited and locks after 5 failures for 15 minutes. An unknown address and a
-  wrong password return the *same* message, and an unknown address still costs a verify, so
+  wrong password return the _same_ message, and an unknown address still costs a verify, so
   neither timing nor wording enumerates accounts.
 
 ### Agent tokens
@@ -36,7 +36,7 @@ would either give agents console-wide powers or force humans through a token flo
 ## 2. CSRF
 
 Cookie-authenticated mutations require `X-Saga-CSRF` to match the readable `saga_csrf` cookie
-*and* to hash to the value stored with the session. `SameSite=Lax` alone does not cover every
+_and_ to hash to the value stored with the session. `SameSite=Lax` alone does not cover every
 case, so the double-submit check is not optional.
 
 Bearer-token callers are exempt: they are not cookie-driven, so there is nothing for a browser
@@ -49,26 +49,26 @@ to forge.
 Two independent maps onto one permission set. Agent scopes are a strict subset — an agent can
 never operate Shrine or manage security, whatever scopes it holds.
 
-| Permission | viewer | operator | admin | agent scope |
-| ---------- | :----: | :------: | :---: | ----------- |
-| `project:read` | ✓ | ✓ | ✓ | `project:read` |
-| `project:write` |  | ✓ | ✓ | — |
-| `project:archive` |  |  | ✓ | — |
-| `lore:read` | ✓ | ✓ | ✓ | `lore:read` |
-| `lore:propose` |  | ✓ | ✓ | `lore:propose` |
-| `lore:publish` |  | ✓ | ✓ | `lore:publish` |
-| `lore:archive` |  | ✓ | ✓ | — |
-| `quest:read` | ✓ | ✓ | ✓ | `quest:read` |
-| `quest:write` |  | ✓ | ✓ | `quest:write` |
-| `party:read` | ✓ | ✓ | ✓ | `party:heartbeat`, `party:claim` |
-| `party:heartbeat` |  | ✓ | ✓ | `party:heartbeat` |
-| `party:claim` |  | ✓ | ✓ | `party:claim` |
-| `party:revoke` |  | ✓ | ✓ | — |
-| `shrine:read` | ✓ | ✓ | ✓ | `project:read` |
-| `shrine:operate` |  | ✓ | ✓ | — |
-| `security:manage` |  |  | ✓ | — |
+| Permission        | viewer | operator | admin | agent scope                      |
+| ----------------- | :----: | :------: | :---: | -------------------------------- |
+| `project:read`    |   ✓    |    ✓     |   ✓   | `project:read`                   |
+| `project:write`   |        |    ✓     |   ✓   | —                                |
+| `project:archive` |        |          |   ✓   | —                                |
+| `lore:read`       |   ✓    |    ✓     |   ✓   | `lore:read`                      |
+| `lore:propose`    |        |    ✓     |   ✓   | `lore:propose`                   |
+| `lore:publish`    |        |    ✓     |   ✓   | `lore:publish`                   |
+| `lore:archive`    |        |    ✓     |   ✓   | —                                |
+| `quest:read`      |   ✓    |    ✓     |   ✓   | `quest:read`                     |
+| `quest:write`     |        |    ✓     |   ✓   | `quest:write`                    |
+| `party:read`      |   ✓    |    ✓     |   ✓   | `party:heartbeat`, `party:claim` |
+| `party:heartbeat` |        |    ✓     |   ✓   | `party:heartbeat`                |
+| `party:claim`     |        |    ✓     |   ✓   | `party:claim`                    |
+| `party:revoke`    |        |    ✓     |   ✓   | —                                |
+| `shrine:read`     |   ✓    |    ✓     |   ✓   | `project:read`                   |
+| `shrine:operate`  |        |    ✓     |   ✓   | —                                |
+| `security:manage` |        |          |   ✓   | —                                |
 
-An operator holds `party:heartbeat` and `party:claim` so that a human is never *less* capable
+An operator holds `party:heartbeat` and `party:claim` so that a human is never _less_ capable
 inside a project than an agent token issued for it.
 
 ### Cross-project isolation
@@ -93,12 +93,16 @@ The policy **rejects** rather than redacts, and the error names the field path w
 echoing the value:
 
 ```json
-{ "error": { "code": "MEMORY_SECRET_DETECTED",
-             "details": { "findings": [{ "field_path": "data.steps[1]", "rule": "google_api_key" }] } } }
+{
+  "error": {
+    "code": "MEMORY_SECRET_DETECTED",
+    "details": { "findings": [{ "field_path": "data.steps[1]", "rule": "google_api_key" }] }
+  }
+}
 ```
 
 Documentation placeholders (`${VAR}`, `<password>`, `REDACTED`, `changeme`, `$VAR`, `%VAR%`)
-pass, so an entry can still show the *shape* of a connection string and name which environment
+pass, so an entry can still show the _shape_ of a connection string and name which environment
 variables exist.
 
 ### Never written to logs
@@ -112,7 +116,7 @@ free text.
 
 ### Never shown in Shrine
 
-`/api/shrine/config` shows host and database *name*, TLS, embedding profile, worker settings,
+`/api/shrine/config` shows host and database _name_, TLS, embedding profile, worker settings,
 retention, context budgets and Party mode. It never shows credentials, full DSNs, the session
 secret or agent tokens. Job payloads are summarised, never returned raw, because they may
 reference local paths.

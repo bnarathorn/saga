@@ -107,7 +107,9 @@ export async function connectCommand(argv: string[]): Promise<number> {
     }
 
     const backend = await credentials.set(serverUrl, token);
-    out.write(` approved.\nToken stored in the ${backend === 'file' ? 'local credential file' : 'operating-system keychain'}.\n`);
+    out.write(
+      ` approved.\nToken stored in the ${backend === 'file' ? 'local credential file' : 'operating-system keychain'}.\n`,
+    );
   } else {
     out.write('Authentication: existing credentials accepted.\n');
   }
@@ -136,14 +138,17 @@ export async function connectCommand(argv: string[]): Promise<number> {
   // 4. bind the folder
   const projectFile = writeProjectFile(workspace.root, project.project.name);
   saveConfig(
-    upsertBinding({ ...config, serverUrl }, {
-      root: workspace.root,
-      projectId: project.project.id,
-      projectName: project.project.name,
-      serverUrl,
-      workspaceKey: workspace.workspaceKey,
-      boundAt: new Date().toISOString(),
-    }),
+    upsertBinding(
+      { ...config, serverUrl },
+      {
+        root: workspace.root,
+        projectId: project.project.id,
+        projectName: project.project.name,
+        serverUrl,
+        workspaceKey: workspace.workspaceKey,
+        boundAt: new Date().toISOString(),
+      },
+    ),
   );
 
   out.write(`\nConnected this folder to "${project.project.name}".\n`);
@@ -251,7 +256,13 @@ export function parseFlags(argv: readonly string[]): {
   json?: boolean;
   debug?: boolean;
 } {
-  const flags: { server?: string; token?: string; reauth?: boolean; json?: boolean; debug?: boolean } = {};
+  const flags: {
+    server?: string;
+    token?: string;
+    reauth?: boolean;
+    json?: boolean;
+    debug?: boolean;
+  } = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--server') flags.server = argv[++index];

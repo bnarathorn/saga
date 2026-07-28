@@ -34,7 +34,10 @@ interface ListResponse<T> {
   memory_revision: number;
 }
 
-export function useLoreEntries(ref: string, params = ''): UseQueryResult<ListResponse<LoreEntryDto>> {
+export function useLoreEntries(
+  ref: string,
+  params = '',
+): UseQueryResult<ListResponse<LoreEntryDto>> {
   return useQuery({
     queryKey: loreKeys.list(ref, params),
     queryFn: ({ signal }) =>
@@ -74,11 +77,17 @@ export function useLoreVersions(
   });
 }
 
-export function useLoreUpdates(ref: string, params = ''): UseQueryResult<{ items: MemoryUpdateDto[] }> {
+export function useLoreUpdates(
+  ref: string,
+  params = '',
+): UseQueryResult<{ items: MemoryUpdateDto[] }> {
   return useQuery({
     queryKey: loreKeys.updates(ref, params),
     queryFn: ({ signal }) =>
-      api.get<{ items: MemoryUpdateDto[] }>(`/api/projects/${encode(ref)}/lore-updates${params}`, signal),
+      api.get<{ items: MemoryUpdateDto[] }>(
+        `/api/projects/${encode(ref)}/lore-updates${params}`,
+        signal,
+      ),
     refetchInterval: POLL.fast,
     enabled: ref.length > 0,
   });

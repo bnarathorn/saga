@@ -119,7 +119,10 @@ export class AuthService {
 
     if (user === null) {
       // Spend comparable time on an unknown address so timing does not reveal existence.
-      await verifyPassword('$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA', input.password);
+      await verifyPassword(
+        '$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAA',
+        input.password,
+      );
       throw new SagaError('INVALID_CREDENTIALS', 'The email address or password is incorrect.');
     }
 
@@ -243,7 +246,12 @@ export class AuthService {
     workspaceLabel?: string | null;
     scopes?: readonly AgentScope[];
     now?: Date;
-  }): Promise<{ deviceCode: string; record: DeviceCodeRecord; intervalSeconds: number; verificationUri: string }> {
+  }): Promise<{
+    deviceCode: string;
+    record: DeviceCodeRecord;
+    intervalSeconds: number;
+    verificationUri: string;
+  }> {
     const now = input.now ?? new Date();
     const { deviceCode, deviceCodeHash, userCode } = generateDeviceCode();
     const record = await this.deps.deviceCodes.create(this.deps.pool, {
@@ -285,7 +293,10 @@ export class AuthService {
         throw new SagaError('DEVICE_CODE_INVALID', 'That approval code was not recognised.');
       }
       if (record.expiresAt <= now) {
-        throw new SagaError('DEVICE_CODE_EXPIRED', 'That approval code has expired. Run `saga connect` again.');
+        throw new SagaError(
+          'DEVICE_CODE_EXPIRED',
+          'That approval code has expired. Run `saga connect` again.',
+        );
       }
       if (record.state !== 'pending') {
         throw new SagaError(
@@ -346,7 +357,13 @@ export class AuthService {
       throw new SagaError('DEVICE_CODE_INVALID', 'That device code was not recognised.');
     }
     if (status.expiresAt <= new Date() && status.state !== 'consumed') {
-      return { state: 'expired', token: null, projectId: null, scopes: null, expiresAt: status.expiresAt };
+      return {
+        state: 'expired',
+        token: null,
+        projectId: null,
+        scopes: null,
+        expiresAt: status.expiresAt,
+      };
     }
     return {
       state: status.state,

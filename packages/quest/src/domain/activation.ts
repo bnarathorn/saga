@@ -288,10 +288,56 @@ export function deriveQuestTitle(task: string, maxLength = 120): string {
 // --- helpers ---------------------------------------------------------------
 
 const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'to', 'of', 'in', 'on', 'for', 'with', 'at', 'by',
-  'from', 'is', 'are', 'was', 'were', 'be', 'been', 'it', 'this', 'that', 'these', 'those',
-  'i', 'we', 'you', 'my', 'our', 'your', 'add', 'fix', 'make', 'use', 'using', 'need', 'want',
-  'please', 'can', 'could', 'should', 'would', 'will', 'do', 'does', 'did', 'get', 'set',
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'but',
+  'to',
+  'of',
+  'in',
+  'on',
+  'for',
+  'with',
+  'at',
+  'by',
+  'from',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'it',
+  'this',
+  'that',
+  'these',
+  'those',
+  'i',
+  'we',
+  'you',
+  'my',
+  'our',
+  'your',
+  'add',
+  'fix',
+  'make',
+  'use',
+  'using',
+  'need',
+  'want',
+  'please',
+  'can',
+  'could',
+  'should',
+  'would',
+  'will',
+  'do',
+  'does',
+  'did',
+  'get',
+  'set',
 ]);
 
 export function significantWords(text: string): string[] {
@@ -308,7 +354,14 @@ export function significantWords(text: string): string[] {
 function countScopeOverlap(a: QuestScope, b: QuestScope | undefined): number {
   if (b === undefined) return 0;
   let count = 0;
-  const fields: (keyof QuestScope)[] = ['modules', 'components', 'apis', 'databases', 'files', 'issue_keys'];
+  const fields: (keyof QuestScope)[] = [
+    'modules',
+    'components',
+    'apis',
+    'databases',
+    'files',
+    'issue_keys',
+  ];
   for (const field of fields) {
     const left = new Set(a[field] ?? []);
     for (const value of b[field] ?? []) {

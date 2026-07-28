@@ -52,7 +52,10 @@ export async function withIdempotency<T>(
   if (!reservation.reserved) {
     const existing = reservation.existing;
     if (existing === null) {
-      throw new SagaError('IDEMPOTENCY_IN_PROGRESS', 'A request with this Idempotency-Key is in progress.');
+      throw new SagaError(
+        'IDEMPOTENCY_IN_PROGRESS',
+        'A request with this Idempotency-Key is in progress.',
+      );
     }
     if (existing.requestHash !== requestHash) {
       throw new SagaError(

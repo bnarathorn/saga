@@ -208,7 +208,9 @@ describe('checkpoints', () => {
     ]);
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+    const rejected = results.find(
+      (result) => result.status === 'rejected',
+    ) as PromiseRejectedResult;
     expect(rejected.reason).toMatchObject({ code: 'QUEST_REVISION_CONFLICT' });
 
     // Exactly one checkpoint and one revision bump survived.
@@ -367,7 +369,11 @@ describe('handoff and continuation', () => {
 
   it('lets an inquiry session end without a handoff', async () => {
     const started = await sessions.start({ project, client: 'claude-code' });
-    await sessions.activate({ sessionId: started.session.id, project, task: 'What is the outbox?' });
+    await sessions.activate({
+      sessionId: started.session.id,
+      project,
+      task: 'What is the outbox?',
+    });
     const ended = await sessions.end({ sessionId: started.session.id });
     expect(ended.session.state).toBe('completed');
     expect(ended.handoff).toBeNull();
@@ -497,9 +503,9 @@ describe('questlines', () => {
   it('rejects a parent cycle', async () => {
     const a = await quests.create({ project, title: 'A' });
     const b = await quests.create({ project, title: 'B', parentWorkItemId: a.id });
-    await expect(
-      quests.update(a.id, { parentWorkItemId: b.id }),
-    ).rejects.toMatchObject({ code: 'QUEST_PARENT_INVALID' });
+    await expect(quests.update(a.id, { parentWorkItemId: b.id })).rejects.toMatchObject({
+      code: 'QUEST_PARENT_INVALID',
+    });
   });
 });
 

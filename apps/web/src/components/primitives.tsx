@@ -59,7 +59,8 @@ export function StatusPill({ status, label }: { status: HealthState; label?: str
 }
 
 const BADGE_TONES = {
-  neutral: 'border-parchment-300 bg-parchment-100 text-ink-600 dark:border-night-700 dark:bg-night-800 dark:text-parchment-200',
+  neutral:
+    'border-parchment-300 bg-parchment-100 text-ink-600 dark:border-night-700 dark:bg-night-800 dark:text-parchment-200',
   info: 'border-sigil-500/30 bg-sigil-500/10 text-sigil-600 dark:text-sigil-300',
   good: 'border-moss-500/30 bg-moss-500/10 text-moss-600 dark:text-moss-400',
   warn: 'border-gold-500/30 bg-gold-500/10 text-gold-600 dark:text-gold-400',
@@ -105,7 +106,9 @@ export function Metric({
         >
           {value}
         </span>
-        {hint !== undefined && <span className="text-xs text-ink-500 dark:text-parchment-300/70">{hint}</span>}
+        {hint !== undefined && (
+          <span className="text-xs text-ink-500 dark:text-parchment-300/70">{hint}</span>
+        )}
       </div>
     </div>
   );
@@ -113,11 +116,11 @@ export function Metric({
 
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-8 text-sm text-ink-500 dark:text-parchment-300/70" role="status">
-      <span
-        aria-hidden="true"
-        className="h-3 w-3 animate-pulse rounded-full bg-sigil-400"
-      />
+    <div
+      className="flex items-center gap-3 px-4 py-8 text-sm text-ink-500 dark:text-parchment-300/70"
+      role="status"
+    >
+      <span aria-hidden="true" className="h-3 w-3 animate-pulse rounded-full bg-sigil-400" />
       {label}
     </div>
   );
@@ -213,7 +216,9 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-parchment-200/70 dark:divide-night-800/70">{children}</tbody>
+        <tbody className="divide-y divide-parchment-200/70 dark:divide-night-800/70">
+          {children}
+        </tbody>
       </table>
     </div>
   );

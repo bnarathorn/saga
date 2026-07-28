@@ -317,7 +317,11 @@ export class LoreService {
       for (const item of items) {
         const current = lockedById.get(item.memoryItemId);
         if (current === undefined) {
-          conflicts.push({ memory_key: item.memoryKey, expected: item.baseVersionId, actual: null });
+          conflicts.push({
+            memory_key: item.memoryKey,
+            expected: item.baseVersionId,
+            actual: null,
+          });
           continue;
         }
         if (current.currentVersionId !== item.baseVersionId) {
@@ -338,7 +342,12 @@ export class LoreService {
 
       const now = new Date();
       for (const item of items) {
-        await this.deps.memory.setCurrentVersion(tx, item.memoryItemId, item.candidateVersionId, now);
+        await this.deps.memory.setCurrentVersion(
+          tx,
+          item.memoryItemId,
+          item.candidateVersionId,
+          now,
+        );
       }
 
       const memoryRevision = await this.deps.projects.bumpMemoryRevision(tx, update.projectId);
@@ -434,7 +443,10 @@ export class LoreService {
 
     const enriched: UpdateWithItems['items'] = [];
     for (const item of items) {
-      const candidate = await this.deps.memory.findVersionById(this.deps.pool, item.candidateVersionId);
+      const candidate = await this.deps.memory.findVersionById(
+        this.deps.pool,
+        item.candidateVersionId,
+      );
       if (candidate === null) {
         throw new SagaError(
           'MEMORY_VERSION_NOT_FOUND',
@@ -452,7 +464,11 @@ export class LoreService {
     return { update, items: enriched };
   }
 
-  async listUpdates(projectId: string, state?: MemoryUpdateState, limit = 50): Promise<MemoryUpdate[]> {
+  async listUpdates(
+    projectId: string,
+    state?: MemoryUpdateState,
+    limit = 50,
+  ): Promise<MemoryUpdate[]> {
     return this.deps.memory.listUpdates(this.deps.pool, { projectId, state, limit });
   }
 

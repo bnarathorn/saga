@@ -27,7 +27,9 @@ if (process.argv.includes('--check')) {
     );
     process.exit(1);
   }
-  console.log(`docs/openapi.json is up to date (${Object.keys(document.paths ?? {}).length} paths).`);
+  console.log(
+    `docs/openapi.json is up to date (${Object.keys(document.paths ?? {}).length} paths).`,
+  );
 } else {
   mkdirSync(dirname(OUTPUT), { recursive: true });
   writeFileSync(OUTPUT, rendered);

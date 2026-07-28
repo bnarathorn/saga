@@ -10,9 +10,20 @@ import type {
 import type { OutboxRepository, Project, ProjectRepository } from '@saga/core';
 import type { Queryable, SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
-import { SagaError, buildPage, decodeCursor, estimateTokens, truncateToTokens, type Page } from '@saga/shared';
+import {
+  SagaError,
+  buildPage,
+  decodeCursor,
+  estimateTokens,
+  truncateToTokens,
+  type Page,
+} from '@saga/shared';
 import type { JobService } from '@saga/shrine';
-import { canTransitionStatus, projectParentStatus, wouldCreateCycle } from '../domain/projection.js';
+import {
+  canTransitionStatus,
+  projectParentStatus,
+  wouldCreateCycle,
+} from '../domain/projection.js';
 import {
   type QuestRepository,
   type Checkpoint,
@@ -94,7 +105,9 @@ export class QuestService {
   async get(id: string): Promise<Quest> {
     const quest = await this.deps.quests.findById(this.deps.pool, id);
     if (quest === null) {
-      throw new SagaError('QUEST_NOT_FOUND', 'No Quest matches that id.', { details: { quest_id: id } });
+      throw new SagaError('QUEST_NOT_FOUND', 'No Quest matches that id.', {
+        details: { quest_id: id },
+      });
     }
     return quest;
   }
@@ -263,11 +276,9 @@ export class QuestService {
         throw new SagaError('QUEST_NOT_FOUND', 'One of the Quests does not exist.');
       }
       if (quest.projectId !== dependsOn.projectId) {
-        throw new SagaError(
-          'QUEST_DEPENDENCY_INVALID',
-          'A dependency cannot cross projects.',
-          { details: { work_item_id: workItemId, depends_on: dependsOnWorkItemId } },
-        );
+        throw new SagaError('QUEST_DEPENDENCY_INVALID', 'A dependency cannot cross projects.', {
+          details: { work_item_id: workItemId, depends_on: dependsOnWorkItemId },
+        });
       }
       if (workItemId === dependsOnWorkItemId) {
         throw new SagaError('QUEST_DEPENDENCY_INVALID', 'A Quest cannot depend on itself.');
@@ -410,7 +421,9 @@ export class QuestService {
     return this.deps.quests.listCheckpoints(this.deps.pool, workItemId, limit);
   }
 
-  async listSessions(workItemId: string): Promise<Awaited<ReturnType<QuestRepository['listSessionsForQuest']>>> {
+  async listSessions(
+    workItemId: string,
+  ): Promise<Awaited<ReturnType<QuestRepository['listSessionsForQuest']>>> {
     return this.deps.quests.listSessionsForQuest(this.deps.pool, workItemId);
   }
 
@@ -557,10 +570,7 @@ export function renderContinuation(
   };
 
   // Ordered by what a resuming agent needs first.
-  section(
-    'Next steps',
-    state.next_steps,
-  );
+  section('Next steps', state.next_steps);
   section(
     'Blockers',
     state.blockers.map((blocker) =>
@@ -573,14 +583,18 @@ export function renderContinuation(
   section(
     'Decisions',
     state.decisions.map((decision) =>
-      decision.reason === undefined ? decision.decision : `${decision.decision} (${decision.reason})`,
+      decision.reason === undefined
+        ? decision.decision
+        : `${decision.decision} (${decision.reason})`,
     ),
   );
   section('Completed', state.completed);
   section(
     'Changed files',
     state.changed_files.map((file) =>
-      file.current_hash === undefined ? file.path : `${file.path} (${file.current_hash.slice(0, 16)})`,
+      file.current_hash === undefined
+        ? file.path
+        : `${file.path} (${file.current_hash.slice(0, 16)})`,
     ),
   );
   section(
@@ -593,11 +607,14 @@ export function renderContinuation(
   );
   section(
     'Test results',
-    state.tests.map((test) =>
-      `${test.name}: ${test.status}${test.summary === undefined ? '' : ` — ${test.summary}`}`,
+    state.tests.map(
+      (test) =>
+        `${test.name}: ${test.status}${test.summary === undefined ? '' : ` — ${test.summary}`}`,
     ),
   );
 
   const rendered = lines.join('\n').trimEnd();
-  return estimateTokens(rendered) <= tokenBudget ? rendered : truncateToTokens(rendered, tokenBudget);
+  return estimateTokens(rendered) <= tokenBudget
+    ? rendered
+    : truncateToTokens(rendered, tokenBudget);
 }

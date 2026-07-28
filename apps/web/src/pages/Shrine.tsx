@@ -61,7 +61,9 @@ export function ShrinePage() {
           actions={health.data !== undefined ? <StatusPill status={health.data.status} /> : null}
         >
           {health.isPending && <LoadingState />}
-          {health.isError && <ErrorState error={health.error} onRetry={() => void health.refetch()} />}
+          {health.isError && (
+            <ErrorState error={health.error} onRetry={() => void health.refetch()} />
+          )}
           {health.data !== undefined && (
             <ul className="divide-y divide-parchment-200/70 dark:divide-night-800/70">
               {health.data.checks.map((check) => (
@@ -70,7 +72,9 @@ export function ShrinePage() {
                     <StatusPill status={check.status} />
                     <span className="font-mono text-xs">{check.name}</span>
                   </div>
-                  <p className="mt-1 text-sm text-ink-600 dark:text-parchment-300/80">{check.message}</p>
+                  <p className="mt-1 text-sm text-ink-600 dark:text-parchment-300/80">
+                    {check.message}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -178,7 +182,10 @@ export function ShrinePage() {
                 label="Database"
                 value={`${config.data.config.database.database} @ ${config.data.config.database.host}`}
               />
-              <ConfigRow label="TLS" value={config.data.config.tls_enabled ? 'enabled' : 'disabled'} />
+              <ConfigRow
+                label="TLS"
+                value={config.data.config.tls_enabled ? 'enabled' : 'disabled'}
+              />
               <ConfigRow
                 label="Embeddings"
                 value={`${config.data.config.embedding.provider} · ${config.data.config.embedding.model} · ${config.data.config.embedding.dimensions}d`}
@@ -255,7 +262,9 @@ export function ShrinePage() {
             ))}
           </Table>
         )}
-        {audit.data?.items.length === 0 && <EmptyState title="No administrative actions recorded" />}
+        {audit.data?.items.length === 0 && (
+          <EmptyState title="No administrative actions recorded" />
+        )}
       </Panel>
     </div>
   );
@@ -318,17 +327,29 @@ function JobRow({ job }: { job: JobDto }) {
         <td className="table-cell">
           <div className="flex gap-1">
             {canRetry && (
-              <button type="button" className="btn-secondary py-1 text-xs" onClick={() => setOpen('retry')}>
+              <button
+                type="button"
+                className="btn-secondary py-1 text-xs"
+                onClick={() => setOpen('retry')}
+              >
                 Retry
               </button>
             )}
             {canCancel && (
-              <button type="button" className="btn-secondary py-1 text-xs" onClick={() => setOpen('cancel')}>
+              <button
+                type="button"
+                className="btn-secondary py-1 text-xs"
+                onClick={() => setOpen('cancel')}
+              >
                 Cancel
               </button>
             )}
             {canRequeue && (
-              <button type="button" className="btn-secondary py-1 text-xs" onClick={() => setOpen('requeue')}>
+              <button
+                type="button"
+                className="btn-secondary py-1 text-xs"
+                onClick={() => setOpen('requeue')}
+              >
                 Requeue
               </button>
             )}

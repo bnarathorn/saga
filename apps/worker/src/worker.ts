@@ -63,11 +63,14 @@ export class Worker {
     this.heartbeatTimer.unref();
 
     // Stale-claim recovery runs on its own cadence so a wedged handler cannot delay it.
-    this.reaperTimer = setInterval(() => {
-      this.options.jobs.recoverExpiredLeases().catch((error: unknown) => {
-        this.options.logger.error({ err: error }, 'stale job recovery failed');
-      });
-    }, Math.max(5_000, this.options.leaseSeconds * 500));
+    this.reaperTimer = setInterval(
+      () => {
+        this.options.jobs.recoverExpiredLeases().catch((error: unknown) => {
+          this.options.logger.error({ err: error }, 'stale job recovery failed');
+        });
+      },
+      Math.max(5_000, this.options.leaseSeconds * 500),
+    );
     this.reaperTimer.unref();
 
     this.loopPromise = this.loop();
@@ -129,7 +132,11 @@ export class Worker {
     const handler = registry.get(job.jobType);
     if (handler === undefined) {
       // An unknown type means this build does not implement it: retrying cannot help.
-      await jobs.recordFailure(job, `No handler is registered for job type "${job.jobType}".`, 'permanent');
+      await jobs.recordFailure(
+        job,
+        `No handler is registered for job type "${job.jobType}".`,
+        'permanent',
+      );
       jobLogger.error('no handler registered for job type');
       return;
     }

@@ -23,7 +23,8 @@ registerCommand('logout', async (argv) => {
   const flags = parseFlags(argv);
   const workspace = detectWorkspace();
   const config = loadConfig();
-  const serverUrl = flags.server ?? findBinding(config, workspace.root)?.serverUrl ?? config.serverUrl;
+  const serverUrl =
+    flags.server ?? findBinding(config, workspace.root)?.serverUrl ?? config.serverUrl;
   if (serverUrl === null || serverUrl === undefined) {
     process.stderr.write('No server is configured for this folder.\n');
     return 1;

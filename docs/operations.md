@@ -60,17 +60,17 @@ The `migrate` service runs to completion before `api` and `worker` start.
 
 Every variable is documented in [`.env.example`](../.env.example). The ones that matter most:
 
-| Variable | Notes |
-| -------- | ----- |
-| `DATABASE_URL` | Required. Never appears in logs or in Shrine configuration. |
-| `SAGA_SESSION_SECRET` | 32+ random bytes. Rotating it invalidates every web session. |
-| `SAGA_API_HOST` | `127.0.0.1` behind nginx; `0.0.0.0` in a container. |
-| `SAGA_COOKIE_SECURE` | Must be `true` in production — the process refuses to start otherwise. |
-| `SAGA_DEV_AUTH_BYPASS` | Must be `false`. The process refuses to start in production with it on, and Shrine reports `degraded` whenever it is on. |
-| `PARTY_MODE` | `off`, `advisory` or `strict`. `off` leaves Lore and Quest fully working. |
-| `SAGA_EMBEDDING_PROVIDER` | `fake` (deterministic, no server) or `ollama`. |
-| `SAGA_WORKER_CONCURRENCY` | Jobs in flight per worker process. |
-| `SAGA_JOB_LEASE_SECONDS` | Longer than your slowest handler, or work will be reclaimed mid-flight. |
+| Variable                  | Notes                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`            | Required. Never appears in logs or in Shrine configuration.                                                              |
+| `SAGA_SESSION_SECRET`     | 32+ random bytes. Rotating it invalidates every web session.                                                             |
+| `SAGA_API_HOST`           | `127.0.0.1` behind nginx; `0.0.0.0` in a container.                                                                      |
+| `SAGA_COOKIE_SECURE`      | Must be `true` in production — the process refuses to start otherwise.                                                   |
+| `SAGA_DEV_AUTH_BYPASS`    | Must be `false`. The process refuses to start in production with it on, and Shrine reports `degraded` whenever it is on. |
+| `PARTY_MODE`              | `off`, `advisory` or `strict`. `off` leaves Lore and Quest fully working.                                                |
+| `SAGA_EMBEDDING_PROVIDER` | `fake` (deterministic, no server) or `ollama`.                                                                           |
+| `SAGA_WORKER_CONCURRENCY` | Jobs in flight per worker process.                                                                                       |
+| `SAGA_JOB_LEASE_SECONDS`  | Longer than your slowest handler, or work will be reclaimed mid-flight.                                                  |
 
 Shrine shows the sanitized configuration at `/api/shrine/config`: host and database name, TLS,
 embedding profile, worker settings, retention, context budgets and Party mode. Never
@@ -109,7 +109,7 @@ one is not recorded, so the ledger is accurate and the run is repeatable after a
 refuses to report ready while the schema version disagrees with the build, so an orchestrator
 will not route traffic to it.
 
-**Rollback.** There is none for the schema. Rolling *the application* back is safe only while
+**Rollback.** There is none for the schema. Rolling _the application_ back is safe only while
 the older build still understands the newer schema; otherwise restore the backup. This is the
 intended friction — it is why step 1 exists.
 
@@ -149,19 +149,19 @@ expires on its own rather than blocking work.
 A worker may only complete a job whose claim token still matches, so a worker that hung past
 its lease cannot overwrite the replacement worker's result.
 
-| Job type | Purpose |
-| -------- | ------- |
-| `embedding` | Vectors for Lore versions and Quests |
+| Job type            | Purpose                                              |
+| ------------------- | ---------------------------------------------------- |
+| `embedding`         | Vectors for Lore versions and Quests                 |
 | `memory_validation` | Validate, prepare a snapshot, publish in `auto` mode |
-| `context_snapshot` | Rebuild core context after a stale/archive change |
-| `stale_detection` | Compare reported evidence against recorded hashes |
-| `outbox_delivery` | Drain the transactional outbox |
-| `session_reaper` | Mark silent sessions abandoned |
-| `party_reaper` | Expire agent runs and release their claims |
-| `cleanup` | Retention |
-| `noop` | A deterministic probe for operators |
+| `context_snapshot`  | Rebuild core context after a stale/archive change    |
+| `stale_detection`   | Compare reported evidence against recorded hashes    |
+| `outbox_delivery`   | Drain the transactional outbox                       |
+| `session_reaper`    | Mark silent sessions abandoned                       |
+| `party_reaper`      | Expire agent runs and release their claims           |
+| `cleanup`           | Retention                                            |
+| `noop`              | A deterministic probe for operators                  |
 
-Outbox delivery also runs *inline* on the worker's timer rather than as one queue row per
+Outbox delivery also runs _inline_ on the worker's timer rather than as one queue row per
 second — enqueuing at that rate would bury real work under bookkeeping.
 
 Graceful shutdown: stop claiming, let in-flight work finish within the timeout, stop renewing
@@ -171,12 +171,12 @@ leases so anything still running is recovered elsewhere, then close the pool.
 
 ## 5. Health
 
-| Status | Meaning |
-| ------ | ------- |
-| `healthy` | Everything nominal. |
-| `degraded` | Working, but attention is warranted. |
-| `unhealthy` | Cannot serve correctly. |
-| `unknown` | The check could not be evaluated. |
+| Status      | Meaning                              |
+| ----------- | ------------------------------------ |
+| `healthy`   | Everything nominal.                  |
+| `degraded`  | Working, but attention is warranted. |
+| `unhealthy` | Cannot serve correctly.              |
+| `unknown`   | The check could not be evaluated.    |
 
 Degraded examples: the embedding provider is unavailable while text search still works; no
 worker holds a live lease; the oldest queued job is older than the warning threshold; failed
@@ -249,15 +249,15 @@ file is mode 0600.
 
 The `cleanup` job removes operational exhaust only:
 
-| Data | Default |
-| ---- | ------- |
-| Finished jobs | 14 days |
-| Delivered outbox rows | 30 days |
-| System events | 30 days |
-| Idempotency records | 24 hours |
-| Expired web sessions, device codes | immediately |
-| Dead service instances | 24 hours |
-| Superseded context snapshots | 30 days, keeping the 5 most recent per project |
+| Data                               | Default                                        |
+| ---------------------------------- | ---------------------------------------------- |
+| Finished jobs                      | 14 days                                        |
+| Delivered outbox rows              | 30 days                                        |
+| System events                      | 30 days                                        |
+| Idempotency records                | 24 hours                                       |
+| Expired web sessions, device codes | immediately                                    |
+| Dead service instances             | 24 hours                                       |
+| Superseded context snapshots       | 30 days, keeping the 5 most recent per project |
 
 **Durable Lore and Quest history is archived, never deleted.** Marking an entry stale keeps
 its content and adds a reason; archiving hides it from search and context but preserves every

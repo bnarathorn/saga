@@ -155,7 +155,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       reconnectAttempts,
       stale:
         mode === 'offline' ||
-        (reference !== null && Date.now() - reference.getTime() > STALE_AFTER_MS && mode !== 'streaming'),
+        (reference !== null &&
+          Date.now() - reference.getTime() > STALE_AFTER_MS &&
+          mode !== 'streaming'),
     };
   }, [mode, lastEventAt, lastRefreshAt, reconnectAttempts]);
 

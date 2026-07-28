@@ -75,7 +75,10 @@ export class SearchService {
           CHANNEL_LIMIT,
         );
         channels.push({ channel: 'vector', ids: vector });
-        if (vector.length === 0 && !(await this.deps.search.hasReadyEmbeddings(this.deps.pool, project.id))) {
+        if (
+          vector.length === 0 &&
+          !(await this.deps.search.hasReadyEmbeddings(this.deps.pool, project.id))
+        ) {
           mode = 'degraded';
           warnings.push(
             'No Lore Entry has a ready embedding yet, so results come from text search only. Embeddings are queued.',

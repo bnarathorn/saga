@@ -6,7 +6,13 @@ import type {
   MemoryUpdateDto,
   MemoryVersionDto,
 } from '@saga/contracts';
-import type { ContextSnapshot, MemoryItemWithVersion, MemoryLink, MemoryVersion, UpdateWithItems } from '@saga/lore';
+import type {
+  ContextSnapshot,
+  MemoryItemWithVersion,
+  MemoryLink,
+  MemoryVersion,
+  UpdateWithItems,
+} from '@saga/lore';
 import { bootstrapPlan } from '@saga/lore';
 import { toIso, toIsoRequired } from '@saga/shared';
 
@@ -38,7 +44,8 @@ export function presentLoreEntry(item: MemoryItemWithVersion): LoreEntryDto {
     state: item.state,
     importance: item.importance,
     volatility: item.volatility,
-    current_version: item.currentVersion === null ? null : presentMemoryVersion(item.currentVersion),
+    current_version:
+      item.currentVersion === null ? null : presentMemoryVersion(item.currentVersion),
     last_verified_at: toIso(item.lastVerifiedAt),
     stale_reason: item.staleReason,
     created_at: toIsoRequired(item.createdAt),

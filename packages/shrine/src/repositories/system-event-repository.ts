@@ -158,7 +158,9 @@ export class PgSystemEventRepository implements SystemEventRepository {
   }
 
   async deleteBefore(q: Queryable, before: Date): Promise<number> {
-    const result = await q.query(`DELETE FROM shrine.system_events WHERE created_at < $1`, [before]);
+    const result = await q.query(`DELETE FROM shrine.system_events WHERE created_at < $1`, [
+      before,
+    ]);
     return result.rowCount ?? 0;
   }
 }

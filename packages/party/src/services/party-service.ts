@@ -16,7 +16,12 @@ import {
   sanitizeWorkspaceLabel,
   type AgentSnapshot,
 } from '../domain/overlap.js';
-import { coordinationUnavailableGuidance, decideClaim, defaultPolicyFor, isFailClosed } from '../domain/policy.js';
+import {
+  coordinationUnavailableGuidance,
+  decideClaim,
+  defaultPolicyFor,
+  isFailClosed,
+} from '../domain/policy.js';
 import type { AgentRun, Claim } from '../repositories/party-repository.js';
 import { type PartyRepository } from '../repositories/party-repository.js';
 
@@ -430,7 +435,8 @@ export class PartyService {
     for (const snapshot of snapshots) {
       for (const overlap of detectOverlaps(snapshot, snapshots)) {
         // Every pair is examined twice; keep one direction.
-        const key = [snapshot.agentRunId, overlap.other_agent_run_id].sort().join('|') + overlap.kind;
+        const key =
+          [snapshot.agentRunId, overlap.other_agent_run_id].sort().join('|') + overlap.kind;
         if (seen.has(key)) continue;
         seen.add(key);
         overlaps.push(overlap);
@@ -554,10 +560,11 @@ export class PartyService {
 
   // --- helpers -------------------------------------------------------------
 
-  private async snapshotsFor(runs: readonly AgentRun[], claims: readonly Claim[]): Promise<AgentSnapshot[]> {
-    const workItemIds = runs
-      .map((run) => run.workItemId)
-      .filter((id): id is string => id !== null);
+  private async snapshotsFor(
+    runs: readonly AgentRun[],
+    claims: readonly Claim[],
+  ): Promise<AgentSnapshot[]> {
+    const workItemIds = runs.map((run) => run.workItemId).filter((id): id is string => id !== null);
 
     const quests = new Map<string, { title: string; scope: Record<string, string[]> }>();
     for (const id of new Set(workItemIds)) {

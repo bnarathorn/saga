@@ -65,23 +65,23 @@ export function QuestBoardPage() {
         </div>
 
         {can('quest:write') && (
-        <form onSubmit={submit} className="flex items-end gap-2">
-          <div>
-            <label className="field-label" htmlFor="new-quest">
-              New Quest
-            </label>
-            <input
-              id="new-quest"
-              className="field-input w-72"
-              placeholder="Add CSV report export"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </div>
-          <button type="submit" className="btn-primary" disabled={create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create'}
-          </button>
-        </form>
+          <form onSubmit={submit} className="flex items-end gap-2">
+            <div>
+              <label className="field-label" htmlFor="new-quest">
+                New Quest
+              </label>
+              <input
+                id="new-quest"
+                className="field-input w-72"
+                placeholder="Add CSV report export"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn-primary" disabled={create.isPending}>
+              {create.isPending ? 'Creating…' : 'Create'}
+            </button>
+          </form>
         )}
       </div>
 
@@ -155,7 +155,9 @@ function QuestCard({ projectRef, quest }: { projectRef: string; quest: QuestDto 
             <Badge tone={PRIORITY_TONE[quest.priority] ?? 'neutral'}>{quest.priority}</Badge>
           )}
           {quest.status === 'cancelled' && <Badge tone="neutral">cancelled</Badge>}
-          <span className="text-xs text-ink-500 dark:text-parchment-300/60">rev {quest.revision}</span>
+          <span className="text-xs text-ink-500 dark:text-parchment-300/60">
+            rev {quest.revision}
+          </span>
           {scopeCount > 0 && (
             <span className="text-xs text-ink-500 dark:text-parchment-300/60">
               · {scopeCount} scope item{scopeCount === 1 ? '' : 's'}

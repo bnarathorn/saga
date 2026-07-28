@@ -163,7 +163,9 @@ export class JobService {
     if (job === null) {
       const existing = await this.deps.jobs.findById(this.deps.pool, id);
       if (existing === null) {
-        throw new SagaError('JOB_NOT_FOUND', 'No job matches that id.', { details: { job_id: id } });
+        throw new SagaError('JOB_NOT_FOUND', 'No job matches that id.', {
+          details: { job_id: id },
+        });
       }
       throw new SagaError(
         'JOB_STATE_INVALID',
@@ -189,7 +191,9 @@ export class JobService {
     if (job === null) {
       const existing = await this.deps.jobs.findById(this.deps.pool, id);
       if (existing === null) {
-        throw new SagaError('JOB_NOT_FOUND', 'No job matches that id.', { details: { job_id: id } });
+        throw new SagaError('JOB_NOT_FOUND', 'No job matches that id.', {
+          details: { job_id: id },
+        });
       }
       throw new SagaError(
         'JOB_STATE_INVALID',
@@ -215,7 +219,9 @@ export class JobService {
     if (job === null) {
       const existing = await this.deps.jobs.findById(this.deps.pool, id);
       if (existing === null) {
-        throw new SagaError('JOB_NOT_FOUND', 'No job matches that id.', { details: { job_id: id } });
+        throw new SagaError('JOB_NOT_FOUND', 'No job matches that id.', {
+          details: { job_id: id },
+        });
       }
       throw new SagaError(
         'JOB_STATE_INVALID',

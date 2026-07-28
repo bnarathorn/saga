@@ -17,7 +17,12 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../composition.js';
 import { presentAgentToken } from '../lib/presenters.js';
 import { parseOrThrow } from '../lib/validation.js';
-import { CSRF_COOKIE, clearSessionCookies, setSessionCookies, SESSION_COOKIE } from '../plugins/auth.js';
+import {
+  CSRF_COOKIE,
+  clearSessionCookies,
+  setSessionCookies,
+  SESSION_COOKIE,
+} from '../plugins/auth.js';
 
 export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { auth, audit } = ctx.services;
@@ -25,7 +30,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   const ttlHours = ctx.config.security.sessionTtlHours;
 
   app.post('/api/auth/login', {
-    config: { rateLimit: { max: ctx.config.security.loginRateLimitPerMinute, timeWindow: '1 minute' } },
+    config: {
+      rateLimit: { max: ctx.config.security.loginRateLimitPerMinute, timeWindow: '1 minute' },
+    },
     handler: async (request, reply): Promise<LoginResponse> => {
       const body = parseOrThrow(loginRequestSchema, request.body);
       const result = await auth.login({
@@ -114,7 +121,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   // --- device flow ---------------------------------------------------------
 
   app.post('/api/auth/device/start', {
-    config: { rateLimit: { max: ctx.config.security.deviceRateLimitPerMinute, timeWindow: '1 minute' } },
+    config: {
+      rateLimit: { max: ctx.config.security.deviceRateLimitPerMinute, timeWindow: '1 minute' },
+    },
     handler: async (request): Promise<DeviceStartResponse> => {
       const body = parseOrThrow(deviceStartRequestSchema, request.body);
       const started = await auth.startDeviceFlow({
@@ -182,7 +191,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   });
 
   app.get('/api/auth/device/status', {
-    config: { rateLimit: { max: ctx.config.security.deviceRateLimitPerMinute * 6, timeWindow: '1 minute' } },
+    config: {
+      rateLimit: { max: ctx.config.security.deviceRateLimitPerMinute * 6, timeWindow: '1 minute' },
+    },
     handler: async (request, reply): Promise<DeviceStatusResponse> => {
       const query = parseOrThrow(deviceStatusQuerySchema, request.query, 'query');
       const status = await auth.pollDeviceFlow(query.device_code);

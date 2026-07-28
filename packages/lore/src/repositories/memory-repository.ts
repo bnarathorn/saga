@@ -170,9 +170,10 @@ export class MemoryRepository {
   }
 
   async findItemById(q: Queryable, id: string): Promise<MemoryItem | null> {
-    const result = await q.query<ItemRow>(`SELECT ${ITEM_COLUMNS} FROM lore.memory_items WHERE id = $1`, [
-      id,
-    ]);
+    const result = await q.query<ItemRow>(
+      `SELECT ${ITEM_COLUMNS} FROM lore.memory_items WHERE id = $1`,
+      [id],
+    );
     return result.rows[0] === undefined ? null : toItem(result.rows[0]);
   }
 
@@ -220,7 +221,8 @@ export class MemoryRepository {
     if (filter.state !== undefined) push((i) => `i.state = $${i}`, filter.state);
     else if (filter.includeArchived !== true) conditions.push(`i.state <> 'archived'`);
     if (filter.volatility !== undefined) push((i) => `i.volatility = $${i}`, filter.volatility);
-    if (filter.minImportance !== undefined) push((i) => `i.importance >= $${i}`, filter.minImportance);
+    if (filter.minImportance !== undefined)
+      push((i) => `i.importance >= $${i}`, filter.minImportance);
     if (filter.verificationState !== undefined) {
       push((i) => `v.verification_state = $${i}`, filter.verificationState);
     }
@@ -270,7 +272,10 @@ export class MemoryRepository {
     );
     const row = result.rows[0];
     if (row === undefined) return null;
-    return { ...toItem(row), currentVersion: row.v_id == null ? null : toVersion(extractVersion(row)) };
+    return {
+      ...toItem(row),
+      currentVersion: row.v_id == null ? null : toVersion(extractVersion(row)),
+    };
   }
 
   /** Load current versions for a set of item ids, keyed by item id. */
@@ -307,11 +312,7 @@ export class MemoryRepository {
     );
   }
 
-  async markStale(
-    tx: Queryable,
-    itemId: string,
-    reason: string,
-  ): Promise<MemoryItem | null> {
+  async markStale(tx: Queryable, itemId: string, reason: string): Promise<MemoryItem | null> {
     const result = await tx.query<ItemRow>(
       `UPDATE lore.memory_items
           SET state = 'stale', stale_reason = $2, updated_at = now()

@@ -186,7 +186,9 @@ for (const pkg of packages) {
       clean: 'tsc -b --clean',
       ...(pkg.scripts ?? {}),
     },
-    dependencies: Object.fromEntries(Object.entries(dependencies).sort(([a], [b]) => (a < b ? -1 : 1))),
+    dependencies: Object.fromEntries(
+      Object.entries(dependencies).sort(([a], [b]) => (a < b ? -1 : 1)),
+    ),
     ...(pkg.devDeps ? { devDependencies: pkg.devDeps } : {}),
   };
 

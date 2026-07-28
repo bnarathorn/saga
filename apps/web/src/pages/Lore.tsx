@@ -134,7 +134,9 @@ export function LorePage() {
         }
       >
         {entries.isPending && <LoadingState />}
-        {entries.isError && <ErrorState error={entries.error} onRetry={() => void entries.refetch()} />}
+        {entries.isError && (
+          <ErrorState error={entries.error} onRetry={() => void entries.refetch()} />
+        )}
         {entries.data?.items.length === 0 && (
           <EmptyState
             title="No Lore recorded yet"
@@ -346,7 +348,9 @@ function UpdateRow({ update }: { update: MemoryUpdateDto }) {
               type="button"
               className="btn-secondary"
               disabled={busy}
-              onClick={() => cancel.mutate({ updateId: update.id, reason: 'rejected in Guild Hall' })}
+              onClick={() =>
+                cancel.mutate({ updateId: update.id, reason: 'rejected in Guild Hall' })
+              }
             >
               Reject
             </button>

@@ -50,23 +50,23 @@ export function ProjectsPage() {
         </div>
 
         {can('project:write') && (
-        <form onSubmit={submit} className="flex items-end gap-2">
-          <div>
-            <label className="field-label" htmlFor="new-project">
-              New project
-            </label>
-            <input
-              id="new-project"
-              className="field-input w-64"
-              value={name}
-              placeholder="ERP Backoffice"
-              onChange={(event) => setName(event.target.value)}
-            />
-          </div>
-          <button type="submit" className="btn-primary" disabled={create.isPending}>
-            {create.isPending ? 'Creating…' : 'Create'}
-          </button>
-        </form>
+          <form onSubmit={submit} className="flex items-end gap-2">
+            <div>
+              <label className="field-label" htmlFor="new-project">
+                New project
+              </label>
+              <input
+                id="new-project"
+                className="field-input w-64"
+                value={name}
+                placeholder="ERP Backoffice"
+                onChange={(event) => setName(event.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn-primary" disabled={create.isPending}>
+              {create.isPending ? 'Creating…' : 'Create'}
+            </button>
+          </form>
         )}
       </div>
 
@@ -117,7 +117,9 @@ export function ProjectsPage() {
         }
       >
         {projects.isPending && <LoadingState />}
-        {projects.isError && <ErrorState error={projects.error} onRetry={() => void projects.refetch()} />}
+        {projects.isError && (
+          <ErrorState error={projects.error} onRetry={() => void projects.refetch()} />
+        )}
         {projects.data?.items.length === 0 && (
           <EmptyState
             title="No projects yet"
@@ -125,9 +127,7 @@ export function ProjectsPage() {
           />
         )}
         {projects.data !== undefined && projects.data.items.length > 0 && (
-          <Table
-            headers={['Project', 'Lore', 'Quests', 'Party', 'Jobs', 'Last activity', 'State']}
-          >
+          <Table headers={['Project', 'Lore', 'Quests', 'Party', 'Jobs', 'Last activity', 'State']}>
             {projects.data.items.map((project) => (
               <tr key={project.id} className="hover:bg-parchment-100/60 dark:hover:bg-night-800/40">
                 <td className="table-cell">

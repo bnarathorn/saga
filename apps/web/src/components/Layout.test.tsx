@@ -83,9 +83,7 @@ describe('the Guild Hall shell', () => {
     stubFetch({ [HEALTH]: health('degraded') });
     renderShell();
 
-    await waitFor(() =>
-      expect(screen.getByText('Degraded', { exact: false })).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('Degraded', { exact: false })).toBeInTheDocument());
   });
 
   it('stays usable when the health endpoint itself fails', async () => {

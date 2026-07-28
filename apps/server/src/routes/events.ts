@@ -62,7 +62,11 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
         const events = await ctx.repositories.events.since(ctx.pool, cursor, REPLAY_LIMIT);
         for (const event of events) {
           cursor = event.sequence;
-          if (projectFilter !== null && event.projectId !== null && event.projectId !== projectFilter) {
+          if (
+            projectFilter !== null &&
+            event.projectId !== null &&
+            event.projectId !== projectFilter
+          ) {
             continue;
           }
           // The `id:` line is what makes Last-Event-ID resume work.

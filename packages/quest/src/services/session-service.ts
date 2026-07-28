@@ -257,7 +257,10 @@ export class SessionService {
       );
     }
     if (session.state === 'completed' || session.state === 'abandoned') {
-      throw new SagaError('SESSION_STATE_INVALID', `A ${session.state} session cannot be promoted.`);
+      throw new SagaError(
+        'SESSION_STATE_INVALID',
+        `A ${session.state} session cannot be promoted.`,
+      );
     }
 
     return this.activate({

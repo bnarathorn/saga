@@ -134,7 +134,10 @@ export function startMaintenance(ctx: WorkerContext): () => void {
     }
   };
 
-  const outboxTimer = setInterval(() => void drainOutbox(), Math.max(500, ctx.config.worker.pollIntervalMs));
+  const outboxTimer = setInterval(
+    () => void drainOutbox(),
+    Math.max(500, ctx.config.worker.pollIntervalMs),
+  );
   outboxTimer.unref();
 
   const enqueueCleanup = async (): Promise<void> => {

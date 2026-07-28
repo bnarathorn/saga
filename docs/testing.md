@@ -7,14 +7,14 @@ gated on `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` passing.
 
 ## Suites
 
-| Command | What it covers | Needs PostgreSQL |
-| ------- | -------------- | :--------------: |
-| `pnpm test` | Unit: pure logic | no |
-| `pnpm test:integration` | Real transactions and concurrency | yes |
-| `pnpm test:api` | The full Fastify app | yes |
-| `pnpm test:web` | Guild Hall components in jsdom | no |
-| `pnpm test:e2e` | Playwright browser flows | yes |
-| `pnpm test:all` | Every Vitest project | yes |
+| Command                 | What it covers                    | Needs PostgreSQL |
+| ----------------------- | --------------------------------- | :--------------: |
+| `pnpm test`             | Unit: pure logic                  |        no        |
+| `pnpm test:integration` | Real transactions and concurrency |       yes        |
+| `pnpm test:api`         | The full Fastify app              |       yes        |
+| `pnpm test:web`         | Guild Hall components in jsdom    |        no        |
+| `pnpm test:e2e`         | Playwright browser flows          |       yes        |
+| `pnpm test:all`         | Every Vitest project              |       yes        |
 
 Integration and API suites need `SAGA_TEST_DATABASE_URL` pointing at a database you are
 willing to have truncated. `testing/global-setup.ts` migrates it once per run; individual
@@ -41,13 +41,13 @@ The integration suite exists for the claims that can only be true against a real
 - Two checkpoints at the same expected revision → exactly one succeeds, one 409s.
 - Two exclusive claims on one resource → exactly one wins.
 - Shared claims coexist where policy permits.
-- Lore updates touching *different* entries publish concurrently.
-- Lore updates touching the *same* entry conflict, and the loser is durably recorded.
+- Lore updates touching _different_ entries publish concurrently.
+- Lore updates touching the _same_ entry conflict, and the loser is durably recorded.
 - A partial conflict changes **no** pointer — not even the entries that would have succeeded.
 - A context snapshot activates atomically with publication; a failed publish leaves it alone.
 - A stale job claim is recovered, and the late worker cannot complete it.
 - An expired agent run expires its claims while the Quest and checkpoints survive.
-- Outbox events commit atomically with their domain mutation, and *only* with it.
+- Outbox events commit atomically with their domain mutation, and _only_ with it.
 - Enqueuing a deduplicated job does not abort the caller's transaction.
 - Project rename preserves the UUID; the old alias resolves; collisions are rejected.
 - The schema contains no repository, source or branch identity table or column.
@@ -88,7 +88,7 @@ human to approve in the browser.
 
 ## Live verification
 
-Two scripts run against a *running* stack, so they catch wiring that unit-level mocking would
+Two scripts run against a _running_ stack, so they catch wiring that unit-level mocking would
 hide:
 
 ```bash
@@ -105,10 +105,10 @@ that no unit test would have: Quest embedding jobs whose payload the handler cou
 
 ## Writing tests here
 
-- Assert the *behaviour the specification promises*, not the implementation.
+- Assert the _behaviour the specification promises_, not the implementation.
 - Name the acceptance criterion in a comment when a test defends one.
 - For concurrency, use `Promise.allSettled` and assert the winner/loser split — not just that
   no error was thrown.
 - Prefer a real database over a mock for anything involving a transaction, a lock or an index.
 - When a test fails, first ask whether the test or the code is wrong. Several defects in this
-  codebase were found because a test that *looked* wrong was right.
+  codebase were found because a test that _looked_ wrong was right.

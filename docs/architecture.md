@@ -10,21 +10,21 @@ the design together.
 
 ## 1. Terminology
 
-| Concept                      | Product name | Database name          |
-| ---------------------------- | ------------ | ---------------------- |
-| The system                   | Saga         | —                      |
-| Persistent project knowledge | Lore         | `lore.*`               |
-| One unit of knowledge        | Lore Entry   | `lore.memory_items`    |
-| A work item                  | Quest        | `quest.work_items`     |
-| A parent work item           | Questline    | parent/child work item |
-| An agent's period of work    | Session      | `quest.sessions`       |
-| A progress record            | Checkpoint   | `quest.checkpoints`    |
+| Concept                      | Product name | Database name              |
+| ---------------------------- | ------------ | -------------------------- |
+| The system                   | Saga         | —                          |
+| Persistent project knowledge | Lore         | `lore.*`                   |
+| One unit of knowledge        | Lore Entry   | `lore.memory_items`        |
+| A work item                  | Quest        | `quest.work_items`         |
+| A parent work item           | Questline    | parent/child work item     |
+| An agent's period of work    | Session      | `quest.sessions`           |
+| A progress record            | Checkpoint   | `quest.checkpoints`        |
 | A final continuation record  | Handoff      | checkpoint `final_handoff` |
-| Active agents                | Party        | `party.*`              |
-| A live agent process         | Agent Run    | `party.agent_runs`     |
-| A resource reservation       | Claim        | `party.claims`         |
-| The operations area          | Shrine       | `shrine.*`             |
-| The web console              | Guild Hall   | `apps/web`             |
+| Active agents                | Party        | `party.*`                  |
+| A live agent process         | Agent Run    | `party.agent_runs`         |
+| A resource reservation       | Claim        | `party.claims`             |
+| The operations area          | Shrine       | `shrine.*`                 |
+| The web console              | Guild Hall   | `apps/web`                 |
 
 Source code and database objects use plain technical names. Product modules and UI labels use
 Lore, Quest, Party and Shrine.
@@ -68,16 +68,16 @@ input with a Zod contract, call a service, and let the error handler translate d
 A domain never reads another domain's tables. Where a lower package needs data from a higher
 one, the higher package registers a contributor at composition time:
 
-| Registry                    | Who registers                | What it provides                        |
-| --------------------------- | ---------------------------- | --------------------------------------- |
-| `HealthRegistry`            | every domain                 | health checks for `/health/ready` and Shrine |
-| `MetricsContributors`       | Lore, Quest, Party           | per-domain counters for the metrics summary |
-| `ProjectStatsContributors`  | Lore, Quest, Party           | per-project counters for the Projects page |
-| `PartyHooks`                | the application              | lets Quest start/stop agent runs without importing Party |
-| `ContinuationProvider`      | Quest                        | lets Lore's context builder include a handoff |
-| `PartyContextProvider`      | Party                        | the coordination layer of agent context  |
-| `OutboxDispatcherRegistry`  | any domain                   | reacts to a durable event                |
-| `JobHandlerRegistry`        | any domain                   | a background job type                    |
+| Registry                   | Who registers      | What it provides                                         |
+| -------------------------- | ------------------ | -------------------------------------------------------- |
+| `HealthRegistry`           | every domain       | health checks for `/health/ready` and Shrine             |
+| `MetricsContributors`      | Lore, Quest, Party | per-domain counters for the metrics summary              |
+| `ProjectStatsContributors` | Lore, Quest, Party | per-project counters for the Projects page               |
+| `PartyHooks`               | the application    | lets Quest start/stop agent runs without importing Party |
+| `ContinuationProvider`     | Quest              | lets Lore's context builder include a handoff            |
+| `PartyContextProvider`     | Party              | the coordination layer of agent context                  |
+| `OutboxDispatcherRegistry` | any domain         | reacts to a durable event                                |
+| `JobHandlerRegistry`       | any domain         | a background job type                                    |
 
 `apps/server/src/composition.ts` is the single place this wiring happens; reading it top to
 bottom shows the whole system's shape.
@@ -86,17 +86,17 @@ bottom shows the whole system's shape.
 
 ## 3. State ownership
 
-| State                            | Owner                                       |
-| -------------------------------- | ------------------------------------------- |
-| Current Lore version             | `lore.memory_items.current_version_id`      |
-| Project Lore revision            | `core.projects.memory_revision`             |
-| Active core context              | `core.projects.active_context_snapshot_id`  |
-| Current Quest state              | `quest.work_items`                          |
-| Latest continuation              | `quest.work_items.latest_checkpoint_id`     |
-| An online agent process          | `party.agent_runs` with an unexpired lease  |
-| Resource ownership               | `party.claims` with an unexpired lease      |
-| The actual source code           | the local filesystem, Git, SVN or a working copy |
-| The actual deployment state      | the deployment platform, never Saga         |
+| State                       | Owner                                            |
+| --------------------------- | ------------------------------------------------ |
+| Current Lore version        | `lore.memory_items.current_version_id`           |
+| Project Lore revision       | `core.projects.memory_revision`                  |
+| Active core context         | `core.projects.active_context_snapshot_id`       |
+| Current Quest state         | `quest.work_items`                               |
+| Latest continuation         | `quest.work_items.latest_checkpoint_id`          |
+| An online agent process     | `party.agent_runs` with an unexpired lease       |
+| Resource ownership          | `party.claims` with an unexpired lease           |
+| The actual source code      | the local filesystem, Git, SVN or a working copy |
+| The actual deployment state | the deployment platform, never Saga              |
 
 Saga stores knowledge, intent, progress, handoffs, fingerprints and coordination state. It
 does not merge source code, and a record in Saga never means a deployment succeeded.
@@ -196,12 +196,12 @@ creates new work and returns the near-matches as suggestions.
 Append-only, with compare-and-swap on `quest.work_items.revision`:
 
 1. lock the Quest, 2. reject a stale expected revision with 409, 3. insert the checkpoint,
-4. set `latest_checkpoint_id`, 5. increment the revision **exactly once**, 6. touch
-`last_activity_at`, 7. insert the outbox event, 8. commit.
+2. set `latest_checkpoint_id`, 5. increment the revision **exactly once**, 6. touch
+   `last_activity_at`, 7. insert the outbox event, 8. commit.
 
 Continuation prefers the most recent `final_handoff`; when a session was interrupted before
-writing one, the latest checkpoint is used instead and clearly labelled *recovered from an
-interrupted session*.
+writing one, the latest checkpoint is used instead and clearly labelled _recovered from an
+interrupted session_.
 
 ---
 
@@ -214,11 +214,11 @@ expire stale claims, evaluate the policy against the still-active claims, then i
 refuse. Never a check-then-insert. A partial unique index (`claims_one_exclusive_per_resource`)
 makes the invariant a database fact as well.
 
-| Policy      | Behaviour                                              |
-| ----------- | ------------------------------------------------------ |
-| `shared`    | never blocks — coexistence is the point                 |
-| `advisory`  | never blocks, but reports overlap                       |
-| `exclusive` | blocks whenever another claim is active                 |
+| Policy      | Behaviour                               |
+| ----------- | --------------------------------------- |
+| `shared`    | never blocks — coexistence is the point |
+| `advisory`  | never blocks, but reports overlap       |
+| `exclusive` | blocks whenever another claim is active |
 
 `advisory` **mode** still enforces exclusive claims on fail-closed resource types — migration
 sequences, test environments, deployments, service restarts and production configuration —
@@ -257,14 +257,14 @@ overwrite the replacement worker's result.
 
 Three layers, each with its own token budget (ADR-0007):
 
-| Layer            | When                       | Default budget |
-| ---------------- | -------------------------- | -------------- |
-| Core             | every session startup      | 3,500          |
-| Task             | after the first task       | 4,000          |
-| Continuation     | only for `resume_work`     | 2,500          |
-| Party            | when coordination is on    | 1,000          |
+| Layer        | When                    | Default budget |
+| ------------ | ----------------------- | -------------- |
+| Core         | every session startup   | 3,500          |
+| Task         | after the first task    | 4,000          |
+| Continuation | only for `resume_work`  | 2,500          |
+| Party        | when coordination is on | 1,000          |
 
-Core context is a *pre-compiled snapshot*, built before publication and activated atomically
+Core context is a _pre-compiled snapshot_, built before publication and activated atomically
 with it, so composing it at session start is one indexed read.
 
 Trimming is deterministic and section-aware: entries are ordered by

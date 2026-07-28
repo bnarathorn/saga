@@ -306,7 +306,10 @@ export function buildContext(options: BuildContextOptions): AppContext {
   const schemaVersion = async () => {
     if (cachedSchema !== null) return cachedSchema;
     const status = await migrationStatus(pool, MIGRATIONS_DIR);
-    cachedSchema = { currentVersion: status.currentVersion, expectedVersion: status.expectedVersion };
+    cachedSchema = {
+      currentVersion: status.currentVersion,
+      expectedVersion: status.expectedVersion,
+    };
     return cachedSchema;
   };
 

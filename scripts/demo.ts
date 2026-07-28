@@ -21,7 +21,8 @@ import { ScriptClient } from './lib/http-client.js';
 
 loadDotEnv();
 
-const BASE_URL = process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
+const BASE_URL =
+  process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
 const ADMIN_EMAIL = process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ?? 'admin@saga.local';
 const ADMIN_PASSWORD = process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
 
@@ -105,7 +106,11 @@ async function main(): Promise<number> {
 
   // From here on, everything runs through the real MCP tool handlers.
   const context: McpToolContext = {
-    client: new SagaClient({ baseUrl: BASE_URL, token: token.body.raw_token, client: 'claude-code' }),
+    client: new SagaClient({
+      baseUrl: BASE_URL,
+      token: token.body.raw_token,
+      client: 'claude-code',
+    }),
     session: {
       sessionId: null,
       agentRunId: null,
@@ -187,7 +192,10 @@ async function main(): Promise<number> {
     `/api/projects/${projectId}/lore`,
   );
   detail('Guild Hall shows revision', entries.body.memory_revision);
-  detail('entries', entries.body.items.map((entry) => entry.memory_key));
+  detail(
+    'entries',
+    entries.body.items.map((entry) => entry.memory_key),
+  );
 
   heading('Start the task "Add CSV report export"');
   const activated = (await tool('saga_activate_task').handler(
@@ -278,7 +286,14 @@ async function main(): Promise<number> {
   const second: McpToolContext = {
     ...context,
     client: new SagaClient({ baseUrl: BASE_URL, token: token.body.raw_token, client: 'codex' }),
-    session: { ...context.session, sessionId: null, agentRunId: null, questId: null, questRevision: 0, client: 'codex' },
+    session: {
+      ...context.session,
+      sessionId: null,
+      agentRunId: null,
+      questId: null,
+      questRevision: 0,
+      client: 'codex',
+    },
   };
   await tool('saga_start_session').handler({ agent: 'codex' }, second);
   await tool('saga_activate_task').handler(
@@ -335,10 +350,7 @@ async function main(): Promise<number> {
     '/api/shrine/health',
   );
   detail('health', health.body.status);
-  detail(
-    'checks',
-    health.body.checks.map((check) => `${check.name}=${check.status}`).join(' '),
-  );
+  detail('checks', health.body.checks.map((check) => `${check.name}=${check.status}`).join(' '));
 
   const metrics = await console_.get<{ metrics: Record<string, unknown> }>(
     '/api/shrine/metrics-summary',

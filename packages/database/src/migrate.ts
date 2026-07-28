@@ -140,10 +140,7 @@ export function diffMigrations(
   return { pending, currentVersion };
 }
 
-export async function migrationStatus(
-  pool: SagaPool,
-  directory: string,
-): Promise<MigrationStatus> {
+export async function migrationStatus(pool: SagaPool, directory: string): Promise<MigrationStatus> {
   const onDisk = await loadMigrations(directory);
   const applied = await readApplied(pool);
   const { pending, currentVersion } = diffMigrations(onDisk, applied);

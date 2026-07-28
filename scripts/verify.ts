@@ -12,14 +12,20 @@ import { check, ScriptClient, section, summarize } from './lib/http-client.js';
 
 loadDotEnv();
 
-const BASE_URL = process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
+const BASE_URL =
+  process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
 const ADMIN_EMAIL = process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ?? 'admin@saga.local';
 const ADMIN_PASSWORD = process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
 
 const unique = Date.now().toString(36);
 
 interface JobBody {
-  job: { id: string; state: string; attempts: number; result_summary: Record<string, unknown> | null };
+  job: {
+    id: string;
+    state: string;
+    attempts: number;
+    result_summary: Record<string, unknown> | null;
+  };
 }
 
 async function main(): Promise<number> {
@@ -38,8 +44,14 @@ async function main(): Promise<number> {
     throw new Error('Set SAGA_BOOTSTRAP_ADMIN_PASSWORD in .env before running the verification.');
   }
   await api.login(ADMIN_EMAIL, ADMIN_PASSWORD);
-  const me = await api.get<{ authenticated: boolean; user: { role: string } | null }>('/api/auth/me');
-  check('session resolves to an admin', me.body.authenticated && me.body.user?.role === 'admin', me.body);
+  const me = await api.get<{ authenticated: boolean; user: { role: string } | null }>(
+    '/api/auth/me',
+  );
+  check(
+    'session resolves to an admin',
+    me.body.authenticated && me.body.user?.role === 'admin',
+    me.body,
+  );
 
   section('Core — projects, renames and aliases');
   const original = `Verify Project ${unique}`;
@@ -88,7 +100,10 @@ async function main(): Promise<number> {
     { name: `Idempotent ${unique}` },
     { 'idempotency-key': key },
   );
-  check('replaying a key returns the same resource', first.body.project.id === replay.body.project.id);
+  check(
+    'replaying a key returns the same resource',
+    first.body.project.id === replay.body.project.id,
+  );
   const mismatch = await api.post(
     '/api/projects',
     { name: `Different ${unique}` },
@@ -131,7 +146,11 @@ async function main(): Promise<number> {
   const retried = await api.post<JobBody>(`/api/shrine/jobs/${failing.body.job.id}/retry`, {
     reason: 'verification run',
   });
-  check('operator retry re-queues the job', ['queued', 'claimed'].includes(retried.body.job.state), retried.body);
+  check(
+    'operator retry re-queues the job',
+    ['queued', 'claimed'].includes(retried.body.job.state),
+    retried.body,
+  );
 
   const audit = await api.get<{ items: { action: string; reason: string | null }[] }>(
     '/api/shrine/audit?limit=25',
@@ -146,9 +165,9 @@ async function main(): Promise<number> {
 
   section('Shrine — events, services and sanitized configuration');
   const events = await api.waitFor('the project-created event to be projected', async () => {
-    const result = await api.get<{ items: { event_type: string; metadata: Record<string, unknown> }[] }>(
-      `/api/shrine/events?project_id=${projectId}&limit=20`,
-    );
+    const result = await api.get<{
+      items: { event_type: string; metadata: Record<string, unknown> }[];
+    }>(`/api/shrine/events?project_id=${projectId}&limit=20`);
     return result.body.items.some((event) => event.event_type === 'core.project_created')
       ? result.body.items
       : null;
@@ -160,13 +179,24 @@ async function main(): Promise<number> {
     events.map((e) => e.event_type),
   );
 
-  const services = await api.get<{ items: { role: string; live: boolean }[] }>('/api/shrine/services');
-  check('an API instance is live', services.body.items.some((s) => s.role === 'api' && s.live));
-  check('a worker instance is live', services.body.items.some((s) => s.role === 'worker' && s.live));
+  const services = await api.get<{ items: { role: string; live: boolean }[] }>(
+    '/api/shrine/services',
+  );
+  check(
+    'an API instance is live',
+    services.body.items.some((s) => s.role === 'api' && s.live),
+  );
+  check(
+    'a worker instance is live',
+    services.body.items.some((s) => s.role === 'worker' && s.live),
+  );
 
   const config = await api.get<{ config: Record<string, unknown> }>('/api/shrine/config');
   const configText = JSON.stringify(config.body);
-  check('sanitized config exposes no credentials', !/saga:saga|password|session_secret/i.test(configText));
+  check(
+    'sanitized config exposes no credentials',
+    !/saga:saga|password|session_secret/i.test(configText),
+  );
   check('sanitized config names the database', configText.includes('"database"'));
 
   const schema = await api.get<{ schema: { up_to_date: boolean; current_version: number } }>(
@@ -218,7 +248,11 @@ async function main(): Promise<number> {
     `/api/projects/${projectId}/lore/remember`,
     { entries: loreEntries, summary: 'Record initial project knowledge' },
   );
-  check('agent-style remember creates a candidate update', remembered.status === 202, remembered.body);
+  check(
+    'agent-style remember creates a candidate update',
+    remembered.status === 202,
+    remembered.body,
+  );
 
   const publishedUpdate = await api.waitFor(
     'the worker to validate, embed and publish the Lore update',
@@ -232,11 +266,20 @@ async function main(): Promise<number> {
   );
   check('the worker published the update automatically', publishedUpdate.state === 'published');
 
-  const entries = await api.get<{ items: { memory_key: string; current_version: { embedding_state: string } }[]; memory_revision: number }>(
-    `/api/projects/${projectId}/lore`,
+  const entries = await api.get<{
+    items: { memory_key: string; current_version: { embedding_state: string } }[];
+    memory_revision: number;
+  }>(`/api/projects/${projectId}/lore`);
+  check(
+    'the project Lore revision advanced to 1',
+    entries.body.memory_revision === 1,
+    entries.body.memory_revision,
   );
-  check('the project Lore revision advanced to 1', entries.body.memory_revision === 1, entries.body.memory_revision);
-  check('all three entries are published', entries.body.items.length === 3, entries.body.items.length);
+  check(
+    'all three entries are published',
+    entries.body.items.length === 3,
+    entries.body.items.length,
+  );
 
   const embedded = await api.waitFor(
     'embeddings to become ready',
@@ -256,7 +299,11 @@ async function main(): Promise<number> {
     `/api/projects/${projectId}/lore/search`,
     { query: 'how do I start the API locally', limit: 5 },
   );
-  check('hybrid search finds the right entry first', searched.body.hits[0]?.memory_key === 'run.api.local', searched.body.hits);
+  check(
+    'hybrid search finds the right entry first',
+    searched.body.hits[0]?.memory_key === 'run.api.local',
+    searched.body.hits,
+  );
   check('search reports full (not degraded) mode', searched.body.mode === 'full');
 
   const context = await api.post<{
@@ -266,8 +313,14 @@ async function main(): Promise<number> {
     token_counts: { core: number };
   }>(`/api/projects/${projectId}/context`, { task: 'Fix the local API startup', mode: 'new_work' });
   check('core context is compiled and non-empty', context.body.core_context.length > 0);
-  check('warnings are present in core context', context.body.core_context.includes('warning.migrations'));
-  check('task context selects the relevant entry', context.body.task_context?.includes('run.api.local') === true);
+  check(
+    'warnings are present in core context',
+    context.body.core_context.includes('warning.migrations'),
+  );
+  check(
+    'task context selects the relevant entry',
+    context.body.task_context?.includes('run.api.local') === true,
+  );
   check('bootstrap is no longer required', context.body.bootstrap_required === false);
 
   const secretAttempt = await api.post(`/api/projects/${projectId}/lore/remember`, {
@@ -297,9 +350,16 @@ async function main(): Promise<number> {
     `/api/projects/${projectId}/lore/evidence/check`,
     { observations: [{ path: 'package.json', content_hash: `sha256:${'b'.repeat(64)}` }] },
   );
-  check('drifted evidence marks the entry stale', evidence.body.marked_stale.includes('run.api.local'), evidence.body);
+  check(
+    'drifted evidence marks the entry stale',
+    evidence.body.marked_stale.includes('run.api.local'),
+    evidence.body,
+  );
 
-  const afterStale = await api.post<{ warnings: string[] }>(`/api/projects/${projectId}/context`, {});
+  const afterStale = await api.post<{ warnings: string[] }>(
+    `/api/projects/${projectId}/context`,
+    {},
+  );
   check(
     'context warns about stale knowledge',
     afterStale.body.warnings.some((warning) => warning.includes('stale')),
@@ -313,7 +373,11 @@ async function main(): Promise<number> {
     open_quests: unknown[];
     bootstrap_required: boolean;
   }>('/api/sessions', { project: projectId, client: 'claude-code', agent: 'claude' });
-  check('a new session opens in awaiting_task', firstSession.body.state === 'awaiting_task', firstSession.body);
+  check(
+    'a new session opens in awaiting_task',
+    firstSession.body.state === 'awaiting_task',
+    firstSession.body,
+  );
   check(
     'phase one carries no continuation at all',
     !Object.prototype.hasOwnProperty.call(firstSession.body, 'continuation'),
@@ -327,7 +391,11 @@ async function main(): Promise<number> {
     task: 'Add CSV report export',
     scope: { modules: ['services/api/src/reports'] },
   });
-  check('the first task creates new work', activated.body.activation_mode === 'new_work', activated.body);
+  check(
+    'the first task creates new work',
+    activated.body.activation_mode === 'new_work',
+    activated.body,
+  );
   check('a Quest was created and started', activated.body.quest.status === 'in_progress');
   check('no continuation is loaded for new work', activated.body.context.continuation === null);
 
@@ -352,7 +420,11 @@ async function main(): Promise<number> {
       },
     },
   );
-  check('a checkpoint advances the Quest revision', checkpoint.body.quest_revision === 1, checkpoint.body);
+  check(
+    'a checkpoint advances the Quest revision',
+    checkpoint.body.quest_revision === 1,
+    checkpoint.body,
+  );
 
   const staleCheckpoint = await api.post(
     `/api/sessions/${firstSession.body.session_id}/checkpoints`,
@@ -376,7 +448,8 @@ async function main(): Promise<number> {
   check(
     'a stale expected revision is refused with 409',
     staleCheckpoint.status === 409 &&
-      (staleCheckpoint.body as { error: { code: string } }).error.code === 'QUEST_REVISION_CONFLICT',
+      (staleCheckpoint.body as { error: { code: string } }).error.code ===
+        'QUEST_REVISION_CONFLICT',
     staleCheckpoint.body,
   );
 
@@ -405,7 +478,11 @@ async function main(): Promise<number> {
       },
     },
   );
-  check('the session ends with a final handoff', ended.body.handoff.kind === 'final_handoff', ended.body);
+  check(
+    'the session ends with a final handoff',
+    ended.body.handoff.kind === 'final_handoff',
+    ended.body,
+  );
 
   const unrelatedSession = await api.post<{ session_id: string }>('/api/sessions', {
     project: projectId,
@@ -452,7 +529,8 @@ async function main(): Promise<number> {
   );
   check(
     'the blockers are loaded',
-    resumed.body.context.continuation?.blockers[0]?.description.includes('streaming interface') === true,
+    resumed.body.context.continuation?.blockers[0]?.description.includes('streaming interface') ===
+      true,
   );
   check(
     'the continuation is not labelled as recovered, because a clean handoff exists',
@@ -542,16 +620,26 @@ async function main(): Promise<number> {
       agent_run_id: agentB.body.agent_run_id,
       work_item_id: questB.body.quest.id,
     });
-    const conflict = (claimB.body as { error: { code: string; details: Record<string, unknown> } }).error;
+    const conflict = (claimB.body as { error: { code: string; details: Record<string, unknown> } })
+      .error;
     check('the second exclusive claim is refused with 409', claimB.status === 409, claimB.body);
-    check('the conflict names the owning Quest and lease', conflict?.details?.owner_quest_title !== undefined && conflict?.details?.lease_expires_at !== undefined, conflict?.details);
+    check(
+      'the conflict names the owning Quest and lease',
+      conflict?.details?.owner_quest_title !== undefined &&
+        conflict?.details?.lease_expires_at !== undefined,
+      conflict?.details,
+    );
 
     // Agent B stops without ending cleanly: its lease is left to expire.
     const heartbeat = await api.post<{ renewed_claims: number }>(
       `/api/party/runs/${agentA.body.agent_run_id}/heartbeat`,
       {},
     );
-    check('a heartbeat renews the run and its claims', heartbeat.body.renewed_claims === 1, heartbeat.body);
+    check(
+      'a heartbeat renews the run and its claims',
+      heartbeat.body.renewed_claims === 1,
+      heartbeat.body,
+    );
 
     const released = await api.post<{ claim: { state: string } }>(
       `/api/party/claims/${claimA.body.claim.id}/release`,
@@ -574,7 +662,11 @@ async function main(): Promise<number> {
       `/api/party/claims/${afterRelease.body.claim === undefined ? 'missing' : (afterRelease.body as { claim: { id: string } }).claim.id}/revoke`,
       { reason: 'verification run', confirm: true },
     );
-    check('an administrator can revoke a claim with a reason', revoked.body.claim?.state === 'revoked', revoked.body);
+    check(
+      'an administrator can revoke a claim with a reason',
+      revoked.body.claim?.state === 'revoked',
+      revoked.body,
+    );
 
     const auditAfter = await api.get<{ items: { action: string }[] }>('/api/shrine/audit?limit=40');
     check(
@@ -595,7 +687,10 @@ async function main(): Promise<number> {
     `/api/projects/${projectId}/tokens`,
     { name: 'verification token', scopes: ['project:read', 'lore:read'] },
   );
-  check('agent token issued with a raw value once', typeof tokenResponse.body.raw_token === 'string');
+  check(
+    'agent token issued with a raw value once',
+    typeof tokenResponse.body.raw_token === 'string',
+  );
   check(
     'the token hash is never returned',
     !JSON.stringify(tokenResponse.body.token).includes(tokenResponse.body.raw_token),

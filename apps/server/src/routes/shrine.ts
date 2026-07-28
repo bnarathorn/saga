@@ -9,7 +9,12 @@ import { sanitizeConfig } from '@saga/shrine';
 import { SagaError, clampPageSize } from '@saga/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../composition.js';
-import { presentJob, presentServiceInstance, presentSystemEvent, presentAuditEntry } from '../lib/presenters.js';
+import {
+  presentJob,
+  presentServiceInstance,
+  presentSystemEvent,
+  presentAuditEntry,
+} from '../lib/presenters.js';
 import { parseOrThrow } from '../lib/validation.js';
 import { MIGRATIONS_DIR } from '../composition.js';
 import { migrationStatus } from '@saga/database';
@@ -185,7 +190,12 @@ export function registerShrineRoutes(app: FastifyInstance, ctx: AppContext): voi
 
   app.get('/api/shrine/audit', async (request) => {
     request.requirePermission('security:manage');
-    const query = request.query as { project_id?: string; action?: string; cursor?: string; limit?: string };
+    const query = request.query as {
+      project_id?: string;
+      action?: string;
+      cursor?: string;
+      limit?: string;
+    };
     const page = await audit.list({
       projectId: query.project_id,
       action: query.action,

@@ -68,7 +68,14 @@ describe('Lore page', () => {
       ...emptyLists,
       [`/api/projects/${REF}/lore`]: {
         body: {
-          items: [entry(), entry({ id: 'x2', memory_key: 'a.pending', current_version: { ...entry().current_version, embedding_state: 'queued' } })],
+          items: [
+            entry(),
+            entry({
+              id: 'x2',
+              memory_key: 'a.pending',
+              current_version: { ...entry().current_version, embedding_state: 'queued' },
+            }),
+          ],
           next_cursor: null,
           has_more: false,
           memory_revision: 4,
@@ -214,7 +221,9 @@ describe('Lore page', () => {
         body: {
           hits: [],
           mode: 'degraded',
-          warnings: ['The embedding provider is unavailable, so results come from text search only.'],
+          warnings: [
+            'The embedding provider is unavailable, so results come from text search only.',
+          ],
           memory_revision: 1,
         },
       },

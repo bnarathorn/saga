@@ -84,7 +84,11 @@ export function isAgentTokenShaped(value: string): boolean {
 }
 
 /** Device codes: a long opaque secret plus a short human-typeable confirmation code. */
-export function generateDeviceCode(): { deviceCode: string; deviceCodeHash: string; userCode: string } {
+export function generateDeviceCode(): {
+  deviceCode: string;
+  deviceCodeHash: string;
+  userCode: string;
+} {
   const deviceCode = randomBase32(48);
   // Exclude look-alike characters so a user reading a code aloud cannot mistype it.
   const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';

@@ -31,7 +31,12 @@ describe('project identity', () => {
 
   it('rejects names that normalise to an existing project', async () => {
     await projects.create({ name: 'ERP Backoffice' });
-    for (const duplicate of ['erp backoffice', 'ERP Backoffice ', '  ERP   Backoffice  ', 'ＥＲＰ Backoffice']) {
+    for (const duplicate of [
+      'erp backoffice',
+      'ERP Backoffice ',
+      '  ERP   Backoffice  ',
+      'ＥＲＰ Backoffice',
+    ]) {
       await expect(projects.create({ name: duplicate })).rejects.toMatchObject({
         code: 'PROJECT_NAME_CONFLICT',
       });
@@ -123,7 +128,9 @@ describe('archive and restore', () => {
 
     const restored = await projects.restore('Legacy System', 'needed again');
     expect(restored.status).toBe('active');
-    await expect(projects.requireActive('Legacy System')).resolves.toMatchObject({ status: 'active' });
+    await expect(projects.requireActive('Legacy System')).resolves.toMatchObject({
+      status: 'active',
+    });
   });
 
   it('is idempotent when archiving twice', async () => {
@@ -147,9 +154,13 @@ describe('outbox atomicity', () => {
 
   it('writes no event when the mutation fails', async () => {
     await projects.create({ name: 'Alpha' });
-    const before = await pool.query<{ count: string }>('SELECT count(*)::text FROM core.outbox_events');
+    const before = await pool.query<{ count: string }>(
+      'SELECT count(*)::text FROM core.outbox_events',
+    );
     await expect(projects.create({ name: 'alpha' })).rejects.toThrow();
-    const after = await pool.query<{ count: string }>('SELECT count(*)::text FROM core.outbox_events');
+    const after = await pool.query<{ count: string }>(
+      'SELECT count(*)::text FROM core.outbox_events',
+    );
     expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
   });
 });

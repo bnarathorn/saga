@@ -111,10 +111,10 @@ export class PgOutboxRepository implements OutboxRepository {
 
   async markFailed(q: Queryable, id: string, error: string, retryAt: Date | null): Promise<void> {
     if (retryAt === null) {
-      await q.query(`UPDATE core.outbox_events SET state = 'failed', last_error = $2 WHERE id = $1`, [
-        id,
-        error,
-      ]);
+      await q.query(
+        `UPDATE core.outbox_events SET state = 'failed', last_error = $2 WHERE id = $1`,
+        [id, error],
+      );
       return;
     }
     await q.query(

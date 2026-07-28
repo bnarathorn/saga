@@ -226,7 +226,9 @@ test('8: Party shows the agent run as live', async ({ page }) => {
   expect(rendered).not.toContain(process.cwd());
 });
 
-test('9-11: a failed job is retried from Shrine and recorded in the audit log', async ({ page }) => {
+test('9-11: a failed job is retried from Shrine and recorded in the audit log', async ({
+  page,
+}) => {
   const { api, csrf } = await adminApi();
 
   const enqueued = await api.post('/api/shrine/jobs/probe', {

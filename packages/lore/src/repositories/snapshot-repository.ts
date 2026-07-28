@@ -79,9 +79,10 @@ export class SnapshotRepository {
   }
 
   async findById(q: Queryable, id: string): Promise<ContextSnapshot | null> {
-    const result = await q.query<Row>(`SELECT ${COLUMNS} FROM lore.context_snapshots WHERE id = $1`, [
-      id,
-    ]);
+    const result = await q.query<Row>(
+      `SELECT ${COLUMNS} FROM lore.context_snapshots WHERE id = $1`,
+      [id],
+    );
     return result.rows[0] === undefined ? null : toSnapshot(result.rows[0]);
   }
 
@@ -144,7 +145,11 @@ export class SnapshotRepository {
   }
 
   /** Retention: keep the active snapshot and the most recent few per project. */
-  async deleteSupersededBefore(q: Queryable, before: Date, keepPerProject: number): Promise<number> {
+  async deleteSupersededBefore(
+    q: Queryable,
+    before: Date,
+    keepPerProject: number,
+  ): Promise<number> {
     const result = await q.query(
       `DELETE FROM lore.context_snapshots s
         WHERE s.state <> 'active'

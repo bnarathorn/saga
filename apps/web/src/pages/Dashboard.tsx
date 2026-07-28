@@ -33,7 +33,9 @@ export function DashboardPage() {
         actions={health.data !== undefined ? <StatusPill status={health.data.status} /> : null}
       >
         {health.isPending && <LoadingState />}
-        {health.isError && <ErrorState error={health.error} onRetry={() => void health.refetch()} />}
+        {health.isError && (
+          <ErrorState error={health.error} onRetry={() => void health.refetch()} />
+        )}
         {health.data !== undefined && (
           <ul className="divide-y divide-parchment-200/70 dark:divide-night-800/70">
             {health.data.checks.map((check) => (
@@ -56,11 +58,17 @@ export function DashboardPage() {
 
       <Panel title="At a glance">
         {metrics.isPending && <LoadingState />}
-        {metrics.isError && <ErrorState error={metrics.error} onRetry={() => void metrics.refetch()} />}
+        {metrics.isError && (
+          <ErrorState error={metrics.error} onRetry={() => void metrics.refetch()} />
+        )}
         {metrics.data !== undefined && (
           <div className="grid grid-cols-2 divide-x divide-y divide-parchment-200/70 sm:grid-cols-3 lg:grid-cols-5 dark:divide-night-800/70">
             <Metric label="Projects" value={metrics.data.metrics.projects.active} hint="active" />
-            <Metric label="Party members" value={metrics.data.metrics.party.active_agent_runs} hint="live" />
+            <Metric
+              label="Party members"
+              value={metrics.data.metrics.party.active_agent_runs}
+              hint="live"
+            />
             <Metric label="Open Quests" value={metrics.data.metrics.quest.open} />
             <Metric
               label="Blocked Quests"
@@ -92,7 +100,11 @@ export function DashboardPage() {
               label="Outbox pending"
               value={metrics.data.metrics.outbox.pending}
               tone={metrics.data.metrics.outbox.failed > 0 ? 'warn' : undefined}
-              hint={metrics.data.metrics.outbox.failed > 0 ? `${metrics.data.metrics.outbox.failed} failed` : undefined}
+              hint={
+                metrics.data.metrics.outbox.failed > 0
+                  ? `${metrics.data.metrics.outbox.failed} failed`
+                  : undefined
+              }
             />
           </div>
         )}
@@ -107,7 +119,9 @@ export function DashboardPage() {
         }
       >
         {events.isPending && <LoadingState />}
-        {events.isError && <ErrorState error={events.error} onRetry={() => void events.refetch()} />}
+        {events.isError && (
+          <ErrorState error={events.error} onRetry={() => void events.refetch()} />
+        )}
         {events.data?.items.length === 0 && (
           <EmptyState
             title="Nothing has happened yet"

@@ -47,7 +47,10 @@ export function ProjectDetailPage() {
     <div className="space-y-6">
       <ProjectHeader projectRef={projectRef} />
 
-      <nav aria-label="Project sections" className="border-b border-parchment-300 dark:border-night-800">
+      <nav
+        aria-label="Project sections"
+        className="border-b border-parchment-300 dark:border-night-800"
+      >
         <ul className="-mb-px flex flex-wrap gap-1">
           {TABS.map((tab) => (
             <li key={tab.label}>
@@ -128,11 +131,19 @@ function ProjectHeader({ projectRef }: { projectRef: string }) {
           )}
           {can('project:archive') &&
             (data.status === 'active' ? (
-              <button type="button" className="btn-secondary" onClick={() => setLifecycleReason('')}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setLifecycleReason('')}
+              >
                 Archive
               </button>
             ) : (
-              <button type="button" className="btn-secondary" onClick={() => setLifecycleReason('')}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setLifecycleReason('')}
+              >
                 Restore
               </button>
             ))}
@@ -212,7 +223,11 @@ function ProjectHeader({ projectRef }: { projectRef: string }) {
             >
               Confirm
             </button>
-            <button type="button" className="btn-secondary" onClick={() => setLifecycleReason(null)}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setLifecycleReason(null)}
+            >
               Cancel
             </button>
           </div>
@@ -258,7 +273,9 @@ export function ProjectOverview() {
         <div className="space-y-3 px-4 py-3 text-sm">
           {data.bootstrap_required ? (
             <div className="rounded border border-gold-500/40 bg-gold-500/10 px-3 py-2">
-              <p className="font-medium text-gold-700 dark:text-gold-400">Lore bootstrap required</p>
+              <p className="font-medium text-gold-700 dark:text-gold-400">
+                Lore bootstrap required
+              </p>
               <p className="mt-1 text-ink-600 dark:text-parchment-300/80">
                 This project has no active context snapshot yet. Run{' '}
                 <code className="font-mono text-xs">saga connect</code> in the project folder and
@@ -273,7 +290,8 @@ export function ProjectOverview() {
 
           <ul className="space-y-1">
             <li>
-              {data.stats.lore_entry_count} Lore {data.stats.lore_entry_count === 1 ? 'entry' : 'entries'}
+              {data.stats.lore_entry_count} Lore{' '}
+              {data.stats.lore_entry_count === 1 ? 'entry' : 'entries'}
               {data.stats.stale_lore_count > 0 && (
                 <span className="ml-2">
                   <Badge tone="warn">{data.stats.stale_lore_count} stale</Badge>
@@ -281,7 +299,8 @@ export function ProjectOverview() {
               )}
             </li>
             <li>
-              {data.stats.open_quest_count} open {data.stats.open_quest_count === 1 ? 'Quest' : 'Quests'}
+              {data.stats.open_quest_count} open{' '}
+              {data.stats.open_quest_count === 1 ? 'Quest' : 'Quests'}
               {data.stats.blocked_quest_count > 0 && (
                 <span className="ml-2">
                   <Badge tone="bad">{data.stats.blocked_quest_count} blocked</Badge>

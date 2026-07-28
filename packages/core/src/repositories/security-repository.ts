@@ -91,9 +91,10 @@ export class UserRepository {
   }
 
   async findById(q: Queryable, id: string): Promise<UserRecord | null> {
-    const result = await q.query<UserRow>(`SELECT ${USER_COLUMNS} FROM security.users WHERE id = $1`, [
-      id,
-    ]);
+    const result = await q.query<UserRow>(
+      `SELECT ${USER_COLUMNS} FROM security.users WHERE id = $1`,
+      [id],
+    );
     return result.rows[0] === undefined ? null : toUser(result.rows[0]);
   }
 
@@ -165,7 +166,13 @@ export class WebSessionRepository {
     sessionHash: string,
   ): Promise<(WebSessionRecord & { user: UserRecord }) | null> {
     const result = await q.query<
-      { id: string; user_id: string; csrf_token_hash: string; expires_at: Date; revoked_at: Date | null } & UserRow
+      {
+        id: string;
+        user_id: string;
+        csrf_token_hash: string;
+        expires_at: Date;
+        revoked_at: Date | null;
+      } & UserRow
     >(
       `UPDATE security.web_sessions s
           SET last_seen_at = now()
@@ -209,7 +216,9 @@ export class WebSessionRepository {
   }
 
   async deleteExpiredBefore(q: Queryable, before: Date): Promise<number> {
-    const result = await q.query(`DELETE FROM security.web_sessions WHERE expires_at < $1`, [before]);
+    const result = await q.query(`DELETE FROM security.web_sessions WHERE expires_at < $1`, [
+      before,
+    ]);
     return result.rowCount ?? 0;
   }
 }
@@ -319,7 +328,11 @@ export class AgentTokenRepository {
     return result.rows.map(toToken);
   }
 
-  async revoke(q: Queryable, id: string, revokedBy: string | null): Promise<AgentTokenRecord | null> {
+  async revoke(
+    q: Queryable,
+    id: string,
+    revokedBy: string | null,
+  ): Promise<AgentTokenRecord | null> {
     const result = await q.query<AgentTokenRow>(
       `UPDATE security.agent_tokens SET revoked_at = now(), revoked_by = $2
         WHERE id = $1 AND revoked_at IS NULL RETURNING ${TOKEN_COLUMNS}`,
@@ -498,7 +511,9 @@ export class DeviceCodeRepository {
   }
 
   async deleteBefore(q: Queryable, before: Date): Promise<number> {
-    const result = await q.query(`DELETE FROM security.device_codes WHERE expires_at < $1`, [before]);
+    const result = await q.query(`DELETE FROM security.device_codes WHERE expires_at < $1`, [
+      before,
+    ]);
     return result.rowCount ?? 0;
   }
 }

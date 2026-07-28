@@ -20,7 +20,9 @@ import { withIdempotency } from '../plugins/idempotency.js';
  * queries `lore.*`, `quest.*` or `party.*` directly (ADR-0001).
  */
 export interface ProjectStatsContributors {
-  lore?: (projectIds: readonly string[]) => Promise<Map<string, { entries: number; stale: number }>>;
+  lore?: (
+    projectIds: readonly string[],
+  ) => Promise<Map<string, { entries: number; stale: number }>>;
   quest?: (
     projectIds: readonly string[],
   ) => Promise<Map<string, { open: number; blocked: number; lastActivityAt: Date | null }>>;
@@ -80,7 +82,9 @@ export function registerProjectRoutes(
     // An agent token may only ever see its own project.
     const actor = request.actor;
     const visible =
-      actor.type === 'agent' ? page.items.filter((item) => item.id === actor.projectId) : page.items;
+      actor.type === 'agent'
+        ? page.items.filter((item) => item.id === actor.projectId)
+        : page.items;
 
     return {
       items: await summarize(visible),

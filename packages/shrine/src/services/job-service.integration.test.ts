@@ -74,7 +74,11 @@ describe('job claiming', () => {
   it('only claims job types the worker can handle', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {} });
     await jobs.enqueue({ jobType: 'embedding', payload: {} });
-    const claimed = await jobs.claim({ workerId: crypto.randomUUID(), limit: 5, jobTypes: ['noop'] });
+    const claimed = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 5,
+      jobTypes: ['noop'],
+    });
     expect(claimed.map((job) => job.jobType)).toEqual(['noop']);
   });
 });
@@ -154,14 +158,22 @@ describe('claim tokens', () => {
 
   it('refuses to renew a lease with an obsolete token', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {} });
-    const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1, leaseSeconds: -1 });
+    const [claimed] = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 1,
+      leaseSeconds: -1,
+    });
     await jobs.recoverExpiredLeases();
     expect(await jobs.renewLease(claimed!)).toBe(false);
   });
 
   it('renews a live lease', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {} });
-    const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1, leaseSeconds: 5 });
+    const [claimed] = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 1,
+      leaseSeconds: 5,
+    });
     const before = claimed!.leaseExpiresAt.getTime();
     expect(await jobs.renewLease(claimed!, 300)).toBe(true);
     const after = await jobs.get(claimed!.id);
@@ -172,7 +184,11 @@ describe('claim tokens', () => {
 describe('lease recovery', () => {
   it('marks a recovered job failed once its attempts are exhausted', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {}, maxAttempts: 1 });
-    const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1, leaseSeconds: -1 });
+    const [claimed] = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 1,
+      leaseSeconds: -1,
+    });
     await jobs.recoverExpiredLeases();
     const job = await jobs.get(claimed!.id);
     expect(job.state).toBe('failed');
@@ -181,7 +197,11 @@ describe('lease recovery', () => {
 
   it('requeues a recovered job that still has attempts left', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {}, maxAttempts: 5 });
-    const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1, leaseSeconds: -1 });
+    const [claimed] = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 1,
+      leaseSeconds: -1,
+    });
     await jobs.recoverExpiredLeases();
     const job = await jobs.get(claimed!.id);
     expect(job.state).toBe('retrying');
@@ -190,7 +210,11 @@ describe('lease recovery', () => {
 
   it('leaves a live claim alone', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {} });
-    const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1, leaseSeconds: 300 });
+    const [claimed] = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 1,
+      leaseSeconds: 300,
+    });
     expect(await jobs.recoverExpiredLeases()).not.toContain(claimed!.id);
     expect((await jobs.get(claimed!.id)).state).toBe('claimed');
   });
@@ -276,7 +300,11 @@ describe('operator actions', () => {
     });
 
     await jobs.enqueue({ jobType: 'noop', payload: {} });
-    const [expired] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1, leaseSeconds: -1 });
+    const [expired] = await jobs.claim({
+      workerId: crypto.randomUUID(),
+      limit: 1,
+      leaseSeconds: -1,
+    });
     const requeued = await jobs.adminRequeue(expired!.id, 'admin', 'lease expired');
     expect(requeued.state).toBe('queued');
   });

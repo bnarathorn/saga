@@ -76,7 +76,8 @@ export function decideClaim(input: ClaimDecisionInput): ClaimDecision {
     (claim) => claim.agentRunId !== input.requestingAgentRunId,
   );
   const own = input.activeClaims.find(
-    (claim) => claim.agentRunId === input.requestingAgentRunId && claim.mode === input.requestedMode,
+    (claim) =>
+      claim.agentRunId === input.requestingAgentRunId && claim.mode === input.requestedMode,
   );
 
   if (own !== undefined) {
