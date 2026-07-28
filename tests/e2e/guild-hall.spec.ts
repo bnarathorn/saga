@@ -226,6 +226,28 @@ test('8: Party shows the agent run as live', async ({ page }) => {
   expect(rendered).not.toContain(process.cwd());
 });
 
+test('every project tab resolves to its own page, not the not-found fallback', async ({ page }) => {
+  await signIn(page);
+
+  // Each tab is reached by clicking it, the way a user would: a tab whose route is missing
+  // renders the fallback instead, which is exactly the failure this guards against.
+  for (const [label, heading] of [
+    ['Relations', 'Relations'],
+    ['Activity', 'Activity'],
+    ['Party', 'Party'],
+  ] as const) {
+    await page.goto(projectPath(''));
+    await page
+      .getByRole('navigation', { name: 'Project sections' })
+      .getByRole('link', {
+        name: label,
+      })
+      .click();
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByText('This project has no such section.')).toBeHidden();
+  }
+});
+
 test('9-11: a failed job is retried from Shrine and recorded in the audit log', async ({
   page,
 }) => {

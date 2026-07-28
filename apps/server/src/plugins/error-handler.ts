@@ -1,4 +1,4 @@
-import { SagaError, errorMessage, isSagaError, redactText } from '@saga/shared';
+import { METRIC, metrics, SagaError, errorMessage, isSagaError, redactText } from '@saga/shared';
 import type { FastifyInstance } from 'fastify';
 
 interface FastifyErrorish {
@@ -14,11 +14,14 @@ interface FastifyErrorish {
 export function registerErrorHandler(app: FastifyInstance, exposeInternals: boolean): void {
   app.setNotFoundHandler((request, reply) => {
     const error = new SagaError('NOT_FOUND', `No route matches ${request.method} ${request.url}.`);
+    metrics.increment(`${METRIC.httpErrorPrefix}${error.code}`);
     void reply.status(404).send(error.toEnvelope(request.id));
   });
 
   app.setErrorHandler((error, request, reply) => {
     const sagaError = toSagaError(error);
+    // Counted by stable code, never by message: the code is the contract (§12).
+    metrics.increment(`${METRIC.httpErrorPrefix}${sagaError.code}`);
 
     const logPayload = {
       request_id: request.id,

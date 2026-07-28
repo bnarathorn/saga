@@ -32670,8 +32670,7 @@
                               "outbox_delivery",
                               "event_projection",
                               "session_reaper",
-                              "party_reaper",
-                              "retention_cleanup"
+                              "party_reaper"
                             ]
                           },
                           "entity_type": {
@@ -33306,8 +33305,7 @@
                             "outbox_delivery",
                             "event_projection",
                             "session_reaper",
-                            "party_reaper",
-                            "retention_cleanup"
+                            "party_reaper"
                           ]
                         },
                         "entity_type": {
@@ -33930,8 +33928,7 @@
                             "outbox_delivery",
                             "event_projection",
                             "session_reaper",
-                            "party_reaper",
-                            "retention_cleanup"
+                            "party_reaper"
                           ]
                         },
                         "entity_type": {
@@ -34554,8 +34551,7 @@
                             "outbox_delivery",
                             "event_projection",
                             "session_reaper",
-                            "party_reaper",
-                            "retention_cleanup"
+                            "party_reaper"
                           ]
                         },
                         "entity_type": {
@@ -35179,8 +35175,7 @@
                             "outbox_delivery",
                             "event_projection",
                             "session_reaper",
-                            "party_reaper",
-                            "retention_cleanup"
+                            "party_reaper"
                           ]
                         },
                         "entity_type": {
@@ -37951,6 +37946,262 @@
                           "required": [
                             "clients"
                           ]
+                        },
+                        "http": {
+                          "type": "object",
+                          "properties": {
+                            "since": {
+                              "type": "string",
+                              "format": "date-time"
+                            },
+                            "requests": {
+                              "type": "integer"
+                            },
+                            "duration": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            },
+                            "errors_by_code": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "integer"
+                              }
+                            }
+                          },
+                          "required": [
+                            "since",
+                            "requests",
+                            "duration",
+                            "errors_by_code"
+                          ]
+                        },
+                        "latency": {
+                          "type": "object",
+                          "properties": {
+                            "lore_publish": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            },
+                            "lore_search": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            },
+                            "context_build": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            },
+                            "memory_validation": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            },
+                            "context_snapshot": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            },
+                            "embedding": {
+                              "type": "object",
+                              "properties": {
+                                "count": {
+                                  "type": "integer"
+                                },
+                                "mean_ms": {
+                                  "type": "number"
+                                },
+                                "p95_ms": {
+                                  "type": "number"
+                                },
+                                "max_ms": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "count",
+                                "mean_ms",
+                                "p95_ms",
+                                "max_ms"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "lore_publish",
+                            "lore_search",
+                            "context_build",
+                            "memory_validation",
+                            "context_snapshot",
+                            "embedding"
+                          ]
+                        },
+                        "search": {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "integer"
+                            },
+                            "vector_fallback": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "vector_fallback"
+                          ]
+                        },
+                        "context": {
+                          "type": "object",
+                          "properties": {
+                            "builds": {
+                              "type": "integer"
+                            },
+                            "tokens_total": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "builds",
+                            "tokens_total"
+                          ]
+                        },
+                        "heartbeat_age_seconds": {
+                          "type": "object",
+                          "properties": {
+                            "api": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "worker": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            },
+                            "scheduler": {
+                              "type": [
+                                "number",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "api",
+                            "worker",
+                            "scheduler"
+                          ]
                         }
                       },
                       "required": [
@@ -37962,7 +38213,12 @@
                         "party",
                         "lore",
                         "quest",
-                        "sse"
+                        "sse",
+                        "http",
+                        "latency",
+                        "search",
+                        "context",
+                        "heartbeat_age_seconds"
                       ]
                     }
                   },

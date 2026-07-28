@@ -12,7 +12,7 @@ import type { OutboxRepository, Project, ProjectRepository } from '@saga/core';
 import { assertValidMemoryKey } from '@saga/core';
 import type { Queryable, SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
-import { SagaError, buildPage, decodeCursor, type Page } from '@saga/shared';
+import { METRIC, SagaError, buildPage, decodeCursor, metrics, type Page } from '@saga/shared';
 import { contentHash } from '@saga/shared/ids';
 import type { JobService } from '@saga/shrine';
 import type {
@@ -288,6 +288,12 @@ export class LoreService {
    * Before commit, readers see the old coherent state; after commit, the new one.
    */
   async publish(updateId: string): Promise<{ update: MemoryUpdate; memoryRevision: number }> {
+    return metrics.time(METRIC.lorePublish, () => this.runPublish(updateId));
+  }
+
+  private async runPublish(
+    updateId: string,
+  ): Promise<{ update: MemoryUpdate; memoryRevision: number }> {
     type Outcome =
       | { kind: 'published'; update: MemoryUpdate; memoryRevision: number }
       | { kind: 'conflict'; conflicts: PublishConflict[] };

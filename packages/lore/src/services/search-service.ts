@@ -6,7 +6,7 @@ import type {
 } from '@saga/contracts';
 import type { Project } from '@saga/core';
 import type { SagaPool } from '@saga/database';
-import { errorMessage } from '@saga/shared';
+import { METRIC, errorMessage, metrics } from '@saga/shared';
 import type { SagaLogger } from '@saga/shared/logging';
 import type { MemoryItemWithVersion } from '../domain/lore.js';
 import type { EmbeddingProvider } from '../embedding/provider.js';
@@ -45,6 +45,18 @@ export class SearchService {
    * is marked `degraded` — search keeps working rather than failing.
    */
   async search(project: Project, request: LoreSearchRequest): Promise<LoreSearchResponse> {
+    return metrics.time(METRIC.loreSearch, async () => {
+      const response = await this.runSearch(project, request);
+      metrics.increment(METRIC.loreSearchTotal);
+      if (response.mode === 'degraded') metrics.increment(METRIC.loreSearchVectorFallback);
+      return response;
+    });
+  }
+
+  private async runSearch(
+    project: Project,
+    request: LoreSearchRequest,
+  ): Promise<LoreSearchResponse> {
     const limit = request.limit ?? 10;
     const filters: SearchFilters = {
       projectId: project.id,

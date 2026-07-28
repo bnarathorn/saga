@@ -73,6 +73,15 @@ export interface JobCounts {
   oldestQueuedAgeSeconds: number | null;
 }
 
+/** Wall-clock time a succeeded job spent between claim and completion. */
+export interface JobDurationStats {
+  jobType: string;
+  count: number;
+  meanMs: number;
+  p95Ms: number;
+  maxMs: number;
+}
+
 export interface JobRepository {
   enqueue(q: Queryable, input: EnqueueJobInput): Promise<Job | null>;
   findById(q: Queryable, id: string): Promise<Job | null>;
@@ -111,6 +120,12 @@ export interface JobRepository {
   adminCancel(q: Queryable, id: string): Promise<Job | null>;
   adminRequeue(q: Queryable, id: string): Promise<Job | null>;
   counts(q: Queryable): Promise<JobCounts>;
+  /**
+   * Processing latency per job type over a recent window. This is how cross-process work
+   * (embedding, validation, snapshot building) is timed: the worker's in-process registry is
+   * not visible to the API, but the job rows it wrote are.
+   */
+  durationStats(q: Queryable, since: Date): Promise<JobDurationStats[]>;
   countFailedByProject(q: Queryable, projectIds: readonly string[]): Promise<Map<string, number>>;
   deleteFinishedBefore(q: Queryable, before: Date): Promise<number>;
 }
@@ -383,6 +398,38 @@ export class PgJobRepository implements JobRepository {
     };
   }
 
+  async durationStats(q: Queryable, since: Date): Promise<JobDurationStats[]> {
+    const result = await q.query<{
+      job_type: string;
+      count: string;
+      mean_ms: string;
+      p95_ms: string;
+      max_ms: string;
+    }>(
+      `SELECT job_type,
+              count(*)::text AS count,
+              (avg(extract(epoch FROM completed_at - claimed_at)) * 1000)::text AS mean_ms,
+              (percentile_disc(0.95) WITHIN GROUP (
+                 ORDER BY extract(epoch FROM completed_at - claimed_at)) * 1000)::text AS p95_ms,
+              (max(extract(epoch FROM completed_at - claimed_at)) * 1000)::text AS max_ms
+         FROM shrine.jobs
+        WHERE state = 'succeeded'
+          AND claimed_at IS NOT NULL
+          AND completed_at IS NOT NULL
+          AND completed_at >= $1
+        GROUP BY job_type
+        ORDER BY job_type`,
+      [since],
+    );
+    return result.rows.map((row) => ({
+      jobType: row.job_type,
+      count: Number(row.count),
+      meanMs: round(Number(row.mean_ms)),
+      p95Ms: round(Number(row.p95_ms)),
+      maxMs: round(Number(row.max_ms)),
+    }));
+  }
+
   async countFailedByProject(
     q: Queryable,
     projectIds: readonly string[],
@@ -407,4 +454,8 @@ export class PgJobRepository implements JobRepository {
     );
     return result.rowCount ?? 0;
   }
+}
+
+function round(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }

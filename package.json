@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Saga — shared project memory, work continuity, and coordination for coding agents.",
+  "description": "Saga \u2014 shared project memory, work continuity, and coordination for coding agents.",
   "engines": {
     "node": ">=22.0.0"
   },
@@ -30,7 +30,7 @@
     "db:migrate": "tsx db/cli.ts migrate",
     "db:status": "tsx db/cli.ts status",
     "db:seed": "tsx db/cli.ts seed",
-    "db:reset": "tsx db/cli.ts reset",
+    "db:reset": "tsx db/reset.ts",
     "openapi:generate": "tsx scripts/generate-openapi.ts",
     "openapi:check": "tsx scripts/generate-openapi.ts --check",
     "saga": "tsx apps/cli/src/main.ts",

@@ -96,6 +96,7 @@ export const api = {
   post: <T>(path: string, body?: unknown, idempotencyKey?: string) =>
     apiRequest<T>(path, { method: 'POST', body: body ?? {}, idempotencyKey }),
   patch: <T>(path: string, body: unknown) => apiRequest<T>(path, { method: 'PATCH', body }),
+  del: <T>(path: string) => apiRequest<T>(path, { method: 'DELETE' }),
 };
 
 /** Generate a client-side idempotency key for a create action the user might double-click. */

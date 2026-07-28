@@ -1,7 +1,7 @@
 import type { BootstrapPlan, ContextRequest, ContextResponse } from '@saga/contracts';
 import type { Project } from '@saga/core';
 import type { SagaPool } from '@saga/database';
-import { estimateTokens, truncateToTokens } from '@saga/shared';
+import { METRIC, estimateTokens, metrics, truncateToTokens } from '@saga/shared';
 import type { MemoryItemWithVersion } from '../domain/lore.js';
 import { type MemoryRepository } from '../repositories/memory-repository.js';
 import { type SnapshotRepository } from '../repositories/snapshot-repository.js';
@@ -78,6 +78,19 @@ export class ContextService {
    * Party context rides alongside as a fourth, optional budget.
    */
   async compose(project: Project, request: ContextRequest): Promise<ContextResponse> {
+    return metrics.time(METRIC.contextBuild, async () => {
+      const response = await this.runCompose(project, request);
+      const counts = response.token_counts;
+      metrics.increment(METRIC.contextBuilds);
+      metrics.increment(
+        METRIC.contextTokens,
+        counts.core + counts.task + counts.continuation + counts.party,
+      );
+      return response;
+    });
+  }
+
+  private async runCompose(project: Project, request: ContextRequest): Promise<ContextResponse> {
     const budgets = this.scaleBudgets(request.token_budget);
     const warnings: string[] = [];
 

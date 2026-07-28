@@ -4,6 +4,7 @@ export * from './repositories/service-instance-repository.js';
 export * from './repositories/system-event-repository.js';
 export * from './services/job-service.js';
 export * from './services/health-service.js';
+export * from './services/health-monitor.js';
 export * from './services/config-service.js';
 export * from './services/metrics-service.js';
 export * from './services/audit-service.js';

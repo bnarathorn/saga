@@ -1,0 +1,55 @@
+/**
+ * Lore enum value lists, with no Zod import.
+ *
+ * Guild Hall needs a few of these at runtime — to render a `<select>`, to lay out a board
+ * column per status. Importing them from the package barrel instead would pull the whole Zod
+ * runtime and every server-side schema into the browser bundle (measured: ~20 KB gzip), so the
+ * lists live here and the schema modules build their `z.enum(...)` from them.
+ *
+ * Rule for this file: value declarations only, and no import that is not itself type-only.
+ */
+
+export const MEMORY_CATEGORIES = [
+  'overview',
+  'structure',
+  'coding_style',
+  'config',
+  'running',
+  'deploy',
+  'debug',
+  'logs',
+  'testing',
+  'server',
+  'database',
+  'api',
+  'decision',
+  'warning',
+] as const;
+
+export const MEMORY_KINDS = [
+  'fact',
+  'procedure',
+  'convention',
+  'map',
+  'entity',
+  'decision',
+  'warning',
+] as const;
+
+export const MEMORY_STATES = ['active', 'stale', 'archived'] as const;
+
+export const VERIFICATION_STATES = ['observed', 'inferred', 'verified'] as const;
+
+export const VOLATILITIES = ['stable', 'operational'] as const;
+
+export const MEMORY_RELATIONS = [
+  'uses',
+  'exposes',
+  'calls',
+  'depends_on',
+  'deployed_to',
+  'configured_by',
+  'tested_by',
+  'logs_to',
+  'relates_to',
+] as const;

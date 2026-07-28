@@ -62,7 +62,6 @@ export const JOB_TYPES = [
   'event_projection',
   'session_reaper',
   'party_reaper',
-  'retention_cleanup',
 ] as const;
 export const jobTypeSchema = z.enum(JOB_TYPES);
 export type JobType = z.infer<typeof jobTypeSchema>;
@@ -201,6 +200,14 @@ export const schemaVersionSchema = z.object({
 });
 export type SchemaVersionDto = z.infer<typeof schemaVersionSchema>;
 
+export const latencySchema = z.object({
+  count: z.number().int(),
+  mean_ms: z.number(),
+  p95_ms: z.number(),
+  max_ms: z.number(),
+});
+export type LatencyDto = z.infer<typeof latencySchema>;
+
 export const metricsSummarySchema = z.object({
   collected_at: isoTimestampSchema,
   projects: z.object({ total: z.number().int(), active: z.number().int() }),
@@ -218,6 +225,38 @@ export const metricsSummarySchema = z.object({
   lore: z.object({ entries: z.number().int(), stale: z.number().int() }),
   quest: z.object({ open: z.number().int(), blocked: z.number().int() }),
   sse: z.object({ clients: z.number().int() }),
+  http: z.object({
+    /** Counts and latency are per API instance and reset on restart; `since` says when. */
+    since: isoTimestampSchema,
+    requests: z.number().int(),
+    duration: latencySchema,
+    errors_by_code: z.record(z.number().int()),
+  }),
+  latency: z.object({
+    /**
+     * Publishes performed by this API instance, i.e. approvals from Guild Hall. In `auto`
+     * approval mode the publish transaction runs inside the worker's `memory_validation`
+     * job, so its cost is reported under `memory_validation` below.
+     */
+    lore_publish: latencySchema,
+    lore_search: latencySchema,
+    context_build: latencySchema,
+    /** Derived from `shrine.jobs`, so these cover the worker as well as the API. */
+    memory_validation: latencySchema,
+    context_snapshot: latencySchema,
+    embedding: latencySchema,
+  }),
+  search: z.object({
+    total: z.number().int(),
+    /** Searches served without the vector channel because embeddings were unavailable. */
+    vector_fallback: z.number().int(),
+  }),
+  context: z.object({ builds: z.number().int(), tokens_total: z.number().int() }),
+  heartbeat_age_seconds: z.object({
+    api: z.number().nullable(),
+    worker: z.number().nullable(),
+    scheduler: z.number().nullable(),
+  }),
 });
 export type MetricsSummaryDto = z.infer<typeof metricsSummarySchema>;
 

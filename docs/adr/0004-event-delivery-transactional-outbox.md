@@ -27,4 +27,7 @@ monotonic `bigint` sequence used as the SSE event ID. A reconnecting browser sen
 
 - Event visibility lags the mutation by up to one worker poll interval (default 1 s).
 - Nothing is lost if the API crashes after commit.
-- The outbox table needs retention (`retention_cleanup` job).
+- The outbox table needs retention; the `cleanup` job deletes published rows past the retention window.
+- Delivery is at-least-once, so the projection into `shrine.system_events` is keyed on the outbox
+  event id (unique index, migration 0005). The `event_projection` job re-runs that projection over
+  a bounded window to repair gaps.

@@ -8,7 +8,9 @@ import { DashboardPage } from './pages/Dashboard.jsx';
 import { LoginPage } from './pages/Login.jsx';
 import { LorePage } from './pages/Lore.jsx';
 import { LoreEntryPage } from './pages/LoreEntry.jsx';
+import { ProjectActivity } from './pages/ProjectActivity.jsx';
 import { ProjectDetailPage, ProjectOverview } from './pages/ProjectDetail.jsx';
+import { ProjectRelations } from './pages/ProjectRelations.jsx';
 import { PartyPage } from './pages/Party.jsx';
 import { ProjectsPage } from './pages/Projects.jsx';
 import { QuestBoardPage } from './pages/QuestBoard.jsx';
@@ -67,6 +69,11 @@ export function App() {
               <Route path="quests" element={<QuestBoardPage />} />
               <Route path="quests/:questId" element={<QuestDetailPage />} />
               <Route path="party" element={<PartyPage />} />
+              <Route path="relations" element={<ProjectRelations />} />
+              <Route path="activity" element={<ProjectActivity />} />
+              {/* Keeps an unknown project sub-path inside the project shell rather than
+                  falling through to the top-level catch-all. */}
+              <Route path="*" element={<UnknownProjectSection />} />
             </Route>
             <Route path="shrine" element={<ShrinePage />} />
             <Route path="*" element={<NotFound />} />
@@ -82,6 +89,16 @@ function NotFound() {
     <Panel title="Not found">
       <div className="px-4 py-8 text-sm text-ink-600 dark:text-parchment-300/80">
         That page does not exist in Guild Hall.
+      </div>
+    </Panel>
+  );
+}
+
+function UnknownProjectSection() {
+  return (
+    <Panel title="Not found">
+      <div className="px-4 py-8 text-sm text-ink-600 dark:text-parchment-300/80">
+        This project has no such section. Pick one of the tabs above.
       </div>
     </Panel>
   );

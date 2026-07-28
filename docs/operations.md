@@ -87,6 +87,13 @@ already-applied migration, applies pending ones in numeric order, and wraps each
 transaction. **An applied migration is immutable**: editing one is refused with
 `SCHEMA_VERSION_MISMATCH`. Add a new forward migration instead.
 
+A migration whose first line is `-- saga:no-transaction` runs outside a transaction, for DDL
+PostgreSQL will not accept inside one — in practice `CREATE INDEX CONCURRENTLY`, which is how
+an index is added to a busy table without a plain `CREATE INDEX`'s `ShareLock` blocking every
+write for the length of the build. Such a migration records its ledger row separately from the
+DDL, so it must be written idempotently (`IF NOT EXISTS`): a crash between the two leaves it
+pending and re-runnable.
+
 ```bash
 pnpm db:status     # current vs expected version
 pnpm db:migrate    # apply pending
@@ -105,7 +112,15 @@ pnpm db:migrate    # apply pending
 7. Check `/api/shrine/schema`: `current_version` must equal `expected_version`.
 
 **Failure behaviour.** If a migration fails, earlier migrations stay applied and the failing
-one is not recorded, so the ledger is accurate and the run is repeatable after a fix. The API
+one is not recorded, so the ledger is accurate and the run is repeatable after a fix. One
+exception needs a human: a failed `CREATE INDEX CONCURRENTLY` leaves an _invalid_ index behind,
+which the migration's `IF NOT EXISTS` will then skip on the retry. Check for one before
+retrying, and drop it if present:
+
+````sql
+SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+ WHERE NOT i.indisvalid;
+``` The API
 refuses to report ready while the schema version disagrees with the build, so an orchestrator
 will not route traffic to it.
 
@@ -117,7 +132,7 @@ intended friction — it is why step 1 exists.
 
 ```bash
 pg_dump --format=custom --file=saga-$(date +%F).dump "$DATABASE_URL"
-```
+````
 
 That single database holds everything durable: projects, Lore and its full version history,
 Quests, checkpoints and handoffs, security records and audit logs. It does **not** hold your
@@ -156,6 +171,7 @@ its lease cannot overwrite the replacement worker's result.
 | `context_snapshot`  | Rebuild core context after a stale/archive change    |
 | `stale_detection`   | Compare reported evidence against recorded hashes    |
 | `outbox_delivery`   | Drain the transactional outbox                       |
+| `event_projection`  | Repair gaps in the Shrine feed (see below)           |
 | `session_reaper`    | Mark silent sessions abandoned                       |
 | `party_reaper`      | Expire agent runs and release their claims           |
 | `cleanup`           | Retention                                            |
@@ -163,6 +179,16 @@ its lease cannot overwrite the replacement worker's result.
 
 Outbox delivery also runs _inline_ on the worker's timer rather than as one queue row per
 second — enqueuing at that rate would bury real work under bookkeeping.
+
+Delivery projects each event into `shrine.system_events`, which is what Guild Hall and the SSE
+stream read. That projection is keyed on the outbox event id by a unique index, so
+at-least-once redelivery cannot duplicate a feed entry. `event_projection` re-runs the same
+projection over a bounded window and normally finds nothing; enqueue it if the feed has gaps:
+
+```sql
+INSERT INTO shrine.jobs (job_type, payload)
+VALUES ('event_projection', '{"window_hours": 168}'::jsonb);
+```
 
 Graceful shutdown: stop claiming, let in-flight work finish within the timeout, stop renewing
 leases so anything still running is recovered elsewhere, then close the pool.
@@ -204,8 +230,33 @@ fields: `request_id`, `correlation_id`, `project_id`, `session_id`, `quest_id`,
 contents, credential-bearing URLs. Redaction is enforced by pino `redact` paths plus a shared
 text redactor, and asserted by tests.
 
-`/api/shrine/metrics-summary` gives job counts, oldest queued age, outbox backlog, live
-services, active agent runs and claims, Lore and Quest counters, and SSE client count.
+`/api/shrine/metrics-summary` is the metrics endpoint. It carries:
+
+| Group                    | Source              | Contents                                                                        |
+| ------------------------ | ------------------- | ------------------------------------------------------------------------------- |
+| `jobs`, `outbox`         | PostgreSQL          | queue depth by state, oldest queued age, outbox backlog                         |
+| `services`               | PostgreSQL          | live API and worker instances                                                   |
+| `heartbeat_age_seconds`  | PostgreSQL          | seconds since the last heartbeat per role                                       |
+| `party`, `lore`, `quest` | domain contributors | active agent runs and claims, Lore entries and stale count, open/blocked Quests |
+| `sse`                    | in-process          | connected stream clients                                                        |
+| `http`                   | in-process          | request count, request latency, error count by stable error code                |
+| `search`, `context`      | in-process          | search count, text-only fallback count, contexts built, tokens emitted          |
+| `latency`                | mixed               | see below                                                                       |
+
+`latency` mixes two sources. `lore_publish`, `lore_search` and `context_build` are timed
+in-process by the API instance answering the request. `memory_validation`, `context_snapshot`
+and `embedding` are computed from `shrine.jobs` (`completed_at - claimed_at`) over the last
+hour, so they cover the worker too. In `auto` approval mode the publish transaction runs
+inside the `memory_validation` job, so its cost appears there rather than under `lore_publish`.
+
+In-process counters belong to one API instance and reset when it restarts; `http.since` states
+when counting began. Everything read from PostgreSQL is cluster-wide and survives restarts.
+
+`shrine.health_changed` is written whenever the overall health status changes — a transition
+only, never one row per evaluation — and reaches Guild Hall over SSE like any other event. The
+API evaluates health for this purpose every six heartbeat intervals (60 s by default) and
+recovers the last known status from the feed on startup, so a restart does not re-announce a
+status that is already recorded.
 
 ---
 

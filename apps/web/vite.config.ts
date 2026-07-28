@@ -9,11 +9,19 @@ const apiTarget = process.env.SAGA_API_URL ?? 'http://127.0.0.1:4319';
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@saga/contracts': resolve('../../packages/contracts/src/index.ts'),
-      '@saga/shared': resolve('../../packages/shared/src/index.ts'),
-      '@': resolve('./src'),
-    },
+    // Array form, because order matters: the subpath entries must be tried before the bare
+    // package names, which would otherwise swallow them as a prefix match.
+    alias: [
+      {
+        find: /^@saga\/(contracts|shared)\/(.*)$/,
+        replacement: resolve('../../packages/$1/src/$2.ts'),
+      },
+      {
+        find: /^@saga\/(contracts|shared)$/,
+        replacement: resolve('../../packages/$1/src/index.ts'),
+      },
+      { find: '@', replacement: resolve('./src') },
+    ],
   },
   server: {
     // Bind the loopback address explicitly: the default `localhost` resolves to ::1 on some

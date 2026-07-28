@@ -67,6 +67,12 @@ export interface ServiceInstanceRepository {
   markStopped(q: Queryable, role: ServiceRole, instanceKey: string): Promise<void>;
   list(q: Queryable): Promise<ServiceInstance[]>;
   countLive(q: Queryable): Promise<Record<ServiceRole, number>>;
+  /**
+   * Seconds since the most recent heartbeat of each role, or null when no instance of that
+   * role has ever registered. A rising worker age is the signal that job processing stalled
+   * even while the row still claims `running`.
+   */
+  heartbeatAges(q: Queryable): Promise<Record<ServiceRole, number | null>>;
   deleteStaleBefore(q: Queryable, before: Date): Promise<number>;
 }
 
@@ -142,6 +148,18 @@ export class PgServiceInstanceRepository implements ServiceInstanceRepository {
     const counts: Record<ServiceRole, number> = { api: 0, worker: 0, scheduler: 0 };
     for (const row of result.rows) counts[row.role as ServiceRole] = Number(row.count);
     return counts;
+  }
+
+  async heartbeatAges(q: Queryable): Promise<Record<ServiceRole, number | null>> {
+    const result = await q.query<{ role: string; age: string | null }>(
+      `SELECT role, extract(epoch FROM now() - max(heartbeat_at))::text AS age
+         FROM shrine.service_instances GROUP BY role`,
+    );
+    const ages: Record<ServiceRole, number | null> = { api: null, worker: null, scheduler: null };
+    for (const row of result.rows) {
+      ages[row.role as ServiceRole] = row.age === null ? null : Number(row.age);
+    }
+    return ages;
   }
 
   async deleteStaleBefore(q: Queryable, before: Date): Promise<number> {

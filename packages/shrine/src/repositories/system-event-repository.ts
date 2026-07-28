@@ -62,6 +62,12 @@ function toEvent(row: Row): SystemEvent {
 
 export interface SystemEventRepository {
   record(q: Queryable, event: NewSystemEvent): Promise<SystemEvent>;
+  /**
+   * Record the projection of one outbox event. Returns `null` when that outbox event has
+   * already been projected, which is what makes at-least-once delivery safe to replay.
+   * `metadata.outbox_event_id` must be set; migration 0005 enforces uniqueness on it.
+   */
+  recordProjection(q: Queryable, event: NewSystemEvent): Promise<SystemEvent | null>;
   list(
     q: Queryable,
     filter: {
@@ -75,6 +81,8 @@ export interface SystemEventRepository {
   ): Promise<SystemEvent[]>;
   /** Replay for SSE reconnects: everything strictly after `sequence`, oldest first. */
   since(q: Queryable, sequence: number, limit: number): Promise<SystemEvent[]>;
+  /** The most recent event of one type, or null. Lets a restarted process recover state. */
+  latestOfType(q: Queryable, eventType: string): Promise<SystemEvent | null>;
   latestSequence(q: Queryable): Promise<number>;
   deleteBefore(q: Queryable, before: Date): Promise<number>;
 }
@@ -98,6 +106,36 @@ export class PgSystemEventRepository implements SystemEventRepository {
       ],
     );
     return toEvent(result.rows[0]!);
+  }
+
+  async recordProjection(q: Queryable, event: NewSystemEvent): Promise<SystemEvent | null> {
+    const outboxEventId = (event.metadata ?? {})['outbox_event_id'];
+    if (typeof outboxEventId !== 'string' || outboxEventId.length === 0) {
+      throw new Error('recordProjection requires metadata.outbox_event_id.');
+    }
+
+    const result = await q.query<Row>(
+      `INSERT INTO shrine.system_events
+         (severity, category, project_id, entity_type, entity_id, event_type, message, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+       -- Named target, not a bare DO NOTHING: only a repeated projection may be dropped.
+       -- Any other unique violation must still surface as an error.
+       ON CONFLICT ((metadata ->> 'outbox_event_id')) WHERE metadata ? 'outbox_event_id'
+         DO NOTHING
+       RETURNING ${COLUMNS}`,
+      [
+        event.severity,
+        event.category,
+        event.projectId ?? null,
+        event.entityType ?? null,
+        event.entityId ?? null,
+        event.eventType,
+        event.message,
+        JSON.stringify(event.metadata ?? {}),
+      ],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toEvent(row);
   }
 
   async list(
@@ -148,6 +186,16 @@ export class PgSystemEventRepository implements SystemEventRepository {
       [sequence, limit],
     );
     return result.rows.map(toEvent);
+  }
+
+  async latestOfType(q: Queryable, eventType: string): Promise<SystemEvent | null> {
+    const result = await q.query<Row>(
+      `SELECT ${COLUMNS} FROM shrine.system_events
+        WHERE event_type = $1 ORDER BY sequence DESC LIMIT 1`,
+      [eventType],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toEvent(row);
   }
 
   async latestSequence(q: Queryable): Promise<number> {

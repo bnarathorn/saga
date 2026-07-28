@@ -103,6 +103,42 @@ that no unit test would have: Quest embedding jobs whose payload the handler cou
 
 ---
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs every suite on push to `main` and on every pull request, in
+this order: `lint`, `typecheck`, `openapi:check`, `test`, `build`, `test:integration`,
+`test:api`, `test:e2e`. The OpenAPI step is what spec 22.3 requires — generated artifacts must
+never drift from the Zod contracts they come from.
+
+PostgreSQL comes from a `pgvector/pgvector:pg16` service container. Two databases are created,
+not one:
+
+| Database    | Used by                        | Why separate                                                                                                              |
+| ----------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `saga_test` | `test:integration`, `test:api` | Suites truncate between tests but keep the schema.                                                                        |
+| `saga_e2e`  | `test:e2e`                     | The browser stack _empties_ its database before the API starts, so sharing would wipe the other suites' fixtures mid-run. |
+
+CI sets only `SAGA_TEST_DATABASE_URL` and `SAGA_E2E_DATABASE_URL`. Everything else has a
+default: `testing/harness.ts` supplies its own config, and `tests/e2e/stack-env.ts` supplies
+the e2e stack's. `.env` is not committed, and `loadDotEnv` tolerates its absence with the
+process environment always winning — so a test that only passes because of a local `.env` will
+fail in CI. To reproduce that condition locally:
+
+```bash
+mv .env .env.local-backup
+SAGA_TEST_DATABASE_URL=postgres://saga:saga@127.0.0.1:5432/saga_test \
+SAGA_E2E_DATABASE_URL=postgres://saga:saga@127.0.0.1:5432/saga_e2e \
+  pnpm lint && pnpm typecheck && pnpm openapi:check && pnpm test && pnpm build \
+  && pnpm test:integration && pnpm test:api && pnpm test:e2e
+mv .env.local-backup .env
+```
+
+Only Chromium is installed: the Playwright config pins a single project, so the other engines
+are download and cache weight for nothing. On failure the report and traces upload as an
+artifact.
+
+---
+
 ## Writing tests here
 
 - Assert the _behaviour the specification promises_, not the implementation.

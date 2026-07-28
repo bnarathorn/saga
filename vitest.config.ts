@@ -25,7 +25,11 @@ export default defineConfig({
         resolve: { alias: sagaAliases },
         test: {
           name: 'integration',
-          include: ['packages/*/src/**/*.integration.test.ts', 'db/**/*.integration.test.ts'],
+          include: [
+            'packages/*/src/**/*.integration.test.ts',
+            'apps/*/src/**/*.integration.test.ts',
+            'db/**/*.integration.test.ts',
+          ],
           environment: 'node',
           globalSetup: ['./testing/global-setup.ts'],
           hookTimeout: 60_000,

@@ -3,6 +3,7 @@ import type { SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
 import { errorMessage, nextRetryAt } from '@saga/shared';
 import type { JobHandler, SystemEventRepository } from '@saga/shrine';
+import { projectOutboxEvent } from './event-projection.js';
 
 const MAX_OUTBOX_ATTEMPTS = 8;
 const BATCH_SIZE = 50;
@@ -71,7 +72,7 @@ export function createOutboxDeliveryHandler(deps: OutboxDeliveryDeps): JobHandle
 
           for (const event of claimed) {
             try {
-              await projectToSystemEvent(deps, tx, event);
+              await projectOutboxEvent(deps.events, tx, event);
               for (const dispatcher of deps.registry.for(event.topic)) {
                 await dispatcher.dispatch(event);
               }
@@ -99,107 +100,4 @@ export function createOutboxDeliveryHandler(deps: OutboxDeliveryDeps): JobHandle
       return { delivered, failed, remaining_hint: batch.length };
     },
   };
-}
-
-/** Map a durable domain event onto the human-readable Shrine feed that SSE replays. */
-async function projectToSystemEvent(
-  deps: OutboxDeliveryDeps,
-  tx: Parameters<SystemEventRepository['record']>[0],
-  event: OutboxEvent,
-): Promise<void> {
-  const { severity, message } = describeEvent(event);
-  await deps.events.record(tx, {
-    severity,
-    category: event.topic.split('.')[0] ?? 'core',
-    projectId: event.projectId,
-    entityType: event.aggregateType,
-    entityId: event.aggregateId,
-    eventType: event.topic,
-    message,
-    metadata: { ...event.payload, outbox_event_id: event.id, correlation_id: event.correlationId },
-  });
-}
-
-function describeEvent(event: OutboxEvent): {
-  severity: 'info' | 'warning' | 'error' | 'critical';
-  message: string;
-} {
-  const payload = event.payload as Record<string, unknown>;
-  const name = typeof payload.name === 'string' ? payload.name : null;
-  const title = typeof payload.title === 'string' ? payload.title : null;
-
-  switch (event.topic) {
-    case 'core.project_created':
-      return { severity: 'info', message: `Project "${name ?? 'unknown'}" was created.` };
-    case 'core.project_renamed':
-      return {
-        severity: 'info',
-        message: `Project was renamed from "${String(payload.from)}" to "${String(payload.to)}".`,
-      };
-    case 'core.project_archived':
-      return { severity: 'warning', message: `Project "${name ?? 'unknown'}" was archived.` };
-    case 'core.project_restored':
-      return { severity: 'info', message: `Project "${name ?? 'unknown'}" was restored.` };
-    case 'lore.memory_published':
-      return {
-        severity: 'info',
-        message: `Lore revision ${String(payload.memory_revision)} was published (${String(payload.entry_count)} entr${payload.entry_count === 1 ? 'y' : 'ies'}).`,
-      };
-    case 'lore.memory_marked_stale':
-      return {
-        severity: 'warning',
-        message: `Lore entry "${String(payload.memory_key)}" was marked stale.`,
-      };
-    case 'lore.memory_archived':
-      return {
-        severity: 'info',
-        message: `Lore entry "${String(payload.memory_key)}" was archived.`,
-      };
-    case 'quest.checkpoint_created':
-      return {
-        severity: 'info',
-        message: `Checkpoint recorded for "${title ?? 'a Quest'}" (${String(payload.kind)}).`,
-      };
-    case 'quest.status_changed':
-      return {
-        severity: 'info',
-        message: `Quest "${title ?? 'unknown'}" moved from ${String(payload.from)} to ${String(payload.to)}.`,
-      };
-    case 'quest.completed':
-      return { severity: 'info', message: `Quest "${title ?? 'unknown'}" was completed.` };
-    case 'quest.session_started':
-      return { severity: 'info', message: `A ${String(payload.client)} session started.` };
-    case 'quest.session_ended':
-      return { severity: 'info', message: `A ${String(payload.client)} session ended.` };
-    case 'quest.session_abandoned':
-      return { severity: 'warning', message: `A session was abandoned without a clean end.` };
-    case 'party.agent_started':
-      return { severity: 'info', message: `Agent run started for ${String(payload.client)}.` };
-    case 'party.agent_expired':
-      return {
-        severity: 'warning',
-        message: `An agent run lease expired; its claims were released.`,
-      };
-    case 'party.agent_ended':
-      return { severity: 'info', message: `An agent run ended cleanly.` };
-    case 'party.claim_acquired':
-      return {
-        severity: 'info',
-        message: `Claim acquired on ${String(payload.resource_type)} "${String(payload.resource_key)}" (${String(payload.mode)}).`,
-      };
-    case 'party.claim_released':
-      return {
-        severity: 'info',
-        message: `Claim released on ${String(payload.resource_type)} "${String(payload.resource_key)}".`,
-      };
-    case 'party.claim_revoked':
-      return {
-        severity: 'warning',
-        message: `Claim on ${String(payload.resource_type)} "${String(payload.resource_key)}" was revoked by an administrator.`,
-      };
-    case 'shrine.job_failed':
-      return { severity: 'error', message: `Job ${String(payload.job_type)} failed.` };
-    default:
-      return { severity: 'info', message: `${event.topic}` };
-  }
 }

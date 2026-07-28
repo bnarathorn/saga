@@ -9,3 +9,4 @@ export * from './tokens.js';
 export * from './redaction.js';
 export * from './backoff.js';
 export * from './pagination.js';
+export * from './metrics.js';

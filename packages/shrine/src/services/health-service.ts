@@ -57,6 +57,9 @@ export class HealthRegistry {
           const result = await contributor.check();
           return {
             ...result,
+            // The contributor's registered name wins: a check that omits it would otherwise
+            // produce an unnamed report and break the sort below.
+            name: contributor.name,
             detail: result.detail ?? {},
             durationMs: Date.now() - startedAt,
           };

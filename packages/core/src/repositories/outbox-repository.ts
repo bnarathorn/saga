@@ -47,6 +47,11 @@ export interface OutboxRepository {
   markFailed(q: Queryable, id: string, error: string, retryAt: Date | null): Promise<void>;
   counts(q: Queryable): Promise<{ pending: number; failed: number }>;
   deletePublishedBefore(q: Queryable, before: Date): Promise<number>;
+  /**
+   * Published events that were never projected into the Shrine feed. Used by the
+   * `event_projection` repair job; the claim path never needs it.
+   */
+  listUnprojected(q: Queryable, since: Date, limit: number): Promise<OutboxEvent[]>;
 }
 
 export class PgOutboxRepository implements OutboxRepository {
@@ -132,6 +137,23 @@ export class PgOutboxRepository implements OutboxRepository {
     );
     const row = result.rows[0]!;
     return { pending: Number(row.pending), failed: Number(row.failed) };
+  }
+
+  async listUnprojected(q: Queryable, since: Date, limit: number): Promise<OutboxEvent[]> {
+    const result = await q.query<OutboxRow>(
+      `SELECT ${COLUMNS}
+         FROM core.outbox_events e
+        WHERE e.state = 'published'
+          AND e.published_at >= $1
+          AND NOT EXISTS (
+            SELECT 1 FROM shrine.system_events s
+             WHERE s.metadata ->> 'outbox_event_id' = e.id::text
+          )
+        ORDER BY e.created_at
+        LIMIT $2`,
+      [since, limit],
+    );
+    return result.rows.map(toEvent);
   }
 
   async deletePublishedBefore(q: Queryable, before: Date): Promise<number> {

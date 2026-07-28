@@ -1,6 +1,7 @@
 import { errorMessage } from '@saga/shared';
 import type { WorkerContext } from './context.js';
 import { createCleanupHandler } from './handlers/cleanup.js';
+import { createEventProjectionHandler } from './handlers/event-projection.js';
 import { noopHandler } from './handlers/noop.js';
 import { createOutboxDeliveryHandler } from './handlers/outbox-delivery.js';
 import { createPartyReaperHandler, createSessionReaperHandler } from './handlers/quest.js';
@@ -23,6 +24,13 @@ export function registerHandlers(ctx: WorkerContext): void {
       outbox: ctx.repositories.outbox,
       events: ctx.repositories.events,
       registry: ctx.dispatchers,
+    }),
+  );
+  ctx.handlers.register(
+    createEventProjectionHandler({
+      pool: ctx.pool,
+      outbox: ctx.repositories.outbox,
+      events: ctx.repositories.events,
     }),
   );
   ctx.handlers.register(

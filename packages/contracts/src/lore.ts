@@ -5,64 +5,42 @@ import {
   nullableIsoTimestampSchema,
   uuidSchema,
 } from './common.js';
+import {
+  MEMORY_CATEGORIES,
+  MEMORY_KINDS,
+  MEMORY_RELATIONS,
+  MEMORY_STATES,
+  VERIFICATION_STATES,
+  VOLATILITIES,
+} from './constants.js';
 
-export const MEMORY_CATEGORIES = [
-  'overview',
-  'structure',
-  'coding_style',
-  'config',
-  'running',
-  'deploy',
-  'debug',
-  'logs',
-  'testing',
-  'server',
-  'database',
-  'api',
-  'decision',
-  'warning',
-] as const;
+export {
+  MEMORY_CATEGORIES,
+  MEMORY_KINDS,
+  MEMORY_RELATIONS,
+  MEMORY_STATES,
+  VERIFICATION_STATES,
+  VOLATILITIES,
+};
+
 export const memoryCategorySchema = z.enum(MEMORY_CATEGORIES);
 export type MemoryCategory = z.infer<typeof memoryCategorySchema>;
 
-export const MEMORY_KINDS = [
-  'fact',
-  'procedure',
-  'convention',
-  'map',
-  'entity',
-  'decision',
-  'warning',
-] as const;
 export const memoryKindSchema = z.enum(MEMORY_KINDS);
 export type MemoryKind = z.infer<typeof memoryKindSchema>;
 
-export const MEMORY_STATES = ['active', 'stale', 'archived'] as const;
 export const memoryStateSchema = z.enum(MEMORY_STATES);
 export type MemoryState = z.infer<typeof memoryStateSchema>;
 
-export const VERIFICATION_STATES = ['observed', 'inferred', 'verified'] as const;
 export const verificationStateSchema = z.enum(VERIFICATION_STATES);
 export type VerificationState = z.infer<typeof verificationStateSchema>;
 
-export const VOLATILITIES = ['stable', 'operational'] as const;
 export const volatilitySchema = z.enum(VOLATILITIES);
 export type Volatility = z.infer<typeof volatilitySchema>;
 
 export const EMBEDDING_STATES = ['queued', 'claimed', 'ready', 'failed'] as const;
 export const embeddingStateSchema = z.enum(EMBEDDING_STATES);
 
-export const MEMORY_RELATIONS = [
-  'uses',
-  'exposes',
-  'calls',
-  'depends_on',
-  'deployed_to',
-  'configured_by',
-  'tested_by',
-  'logs_to',
-  'relates_to',
-] as const;
 export const memoryRelationSchema = z.enum(MEMORY_RELATIONS);
 export type MemoryRelation = z.infer<typeof memoryRelationSchema>;
 

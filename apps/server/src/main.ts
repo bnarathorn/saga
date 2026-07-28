@@ -2,6 +2,7 @@ import { hostname } from 'node:os';
 import { loadConfig } from '@saga/shared/config';
 import { errorMessage } from '@saga/shared';
 import { loadDotEnv } from '@saga/shared/dotenv';
+import { HealthMonitor } from '@saga/shrine';
 import { assertProductionSafety, buildApp } from './app.js';
 import { buildContext } from './composition.js';
 
@@ -56,6 +57,19 @@ async function main(): Promise<void> {
   }, config.worker.heartbeatIntervalMs);
   timer.unref();
 
+  // Health is computed on demand, so a transition is only noticed by something watching for
+  // it. This is what puts `shrine.health_changed` on the SSE stream (spec 11.4).
+  const healthMonitor = new HealthMonitor({
+    pool: ctx.pool,
+    health: ctx.health,
+    events: ctx.repositories.events,
+    logger: ctx.logger,
+    // Six heartbeats apart: a health transition is worth noticing within a minute, and a full
+    // registry evaluation is far more expensive than a heartbeat upsert.
+    intervalMs: config.worker.heartbeatIntervalMs * 6,
+  });
+  healthMonitor.start();
+
   ctx.logger.info(
     { host: config.api.host, port: config.api.port, public_url: config.api.publicUrl },
     'Saga API listening',
@@ -67,6 +81,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     ctx.logger.info({ signal }, 'shutting down');
     clearInterval(timer);
+    healthMonitor.stop();
 
     // Hard stop so a wedged in-flight request cannot hold the process open indefinitely.
     const forceExit = setTimeout(() => {

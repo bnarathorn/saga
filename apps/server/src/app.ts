@@ -2,7 +2,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
-import { SagaError } from '@saga/shared';
+import { METRIC, metrics, SagaError } from '@saga/shared';
 import { newRequestId } from '@saga/shared/ids';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { AppContext } from './composition.js';
@@ -80,6 +80,14 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   app.addHook('onSend', async (request, reply, payload) => {
     void reply.header('x-request-id', request.id);
     return payload;
+  });
+
+  // Request throughput and latency. Health probes are excluded so a one-second monitor does
+  // not drown out the numbers an operator actually wants to read.
+  app.addHook('onResponse', async (request, reply) => {
+    if (request.url.startsWith('/health/')) return;
+    metrics.increment(METRIC.httpRequests);
+    metrics.observe(METRIC.httpRequestDuration, reply.elapsedTime);
   });
 
   registerErrorHandler(app, !isProduction);

@@ -210,12 +210,21 @@ export function useProbeJob(): UseMutationResult<{ job: JobDto }, Error, { echo?
   });
 }
 
-export function useEvents(params = ''): UseQueryResult<ListResponse<SystemEventDto>> {
+/**
+ * `enabled` matters for the project-scoped caller: its query string depends on the project
+ * UUID, which arrives a render later. Without the gate the first render would request the
+ * unfiltered, server-wide feed.
+ */
+export function useEvents(
+  params = '',
+  enabled = true,
+): UseQueryResult<ListResponse<SystemEventDto>> {
   return useQuery({
     queryKey: queryKeys.events(params),
     queryFn: ({ signal }) =>
       api.get<ListResponse<SystemEventDto>>(`/api/shrine/events${params}`, signal),
     refetchInterval: POLL.fast,
+    enabled,
   });
 }
 

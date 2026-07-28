@@ -3,6 +3,7 @@ import type {
   LoreEntryDto,
   LoreSearchResponse,
   MemoryLinkDto,
+  MemoryRelation,
   MemoryUpdateDto,
   MemoryVersionDto,
 } from '@saga/contracts';
@@ -173,6 +174,31 @@ export function useLoreUpdateAction(
       await client.invalidateQueries({ queryKey: ['lore'] });
       await client.invalidateQueries({ queryKey: ['projects'] });
       await client.invalidateQueries({ queryKey: ['project'] });
+    },
+  });
+}
+
+export function useCreateLoreLink(): UseMutationResult<
+  { link: MemoryLinkDto },
+  Error,
+  { ref: string; from_memory_key: string; relation: MemoryRelation; to_memory_key: string }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ref, ...body }) =>
+      api.post<{ link: MemoryLinkDto }>(`/api/projects/${encode(ref)}/lore-links`, body),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['lore'] });
+    },
+  });
+}
+
+export function useDeleteLoreLink(): UseMutationResult<unknown, Error, { linkId: string }> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ linkId }) => api.del(`/api/lore-links/${linkId}`),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['lore'] });
     },
   });
 }

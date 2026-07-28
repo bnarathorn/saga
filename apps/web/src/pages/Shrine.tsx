@@ -1,5 +1,5 @@
-import type { JobDto } from '@saga/contracts';
-import { useState } from 'react';
+import type { JobDto, LatencyDto, MetricsSummaryDto } from '@saga/contracts';
+import { useState, type ReactNode } from 'react';
 import {
   Badge,
   EmptyState,
@@ -18,6 +18,7 @@ import {
   useHealth,
   useJobAction,
   useJobs,
+  useMetrics,
   useProbeJob,
   useSchemaVersion,
   useServices,
@@ -42,6 +43,7 @@ export function ShrinePage() {
   const jobs = useJobs('?limit=25');
   const events = useEvents('?limit=25');
   const audit = useAuditLog('?limit=25');
+  const metrics = useMetrics();
   const probe = useProbeJob();
 
   return (
@@ -212,6 +214,8 @@ export function ShrinePage() {
         </Panel>
       </div>
 
+      {metrics.data !== undefined && <ThroughputPanels metrics={metrics.data.metrics} />}
+
       <Panel title="System events">
         {events.isPending && <LoadingState />}
         {events.data !== undefined && events.data.items.length > 0 && (
@@ -270,7 +274,7 @@ export function ShrinePage() {
   );
 }
 
-function ConfigRow({ label, value }: { label: string; value: string }) {
+function ConfigRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <>
       <dt className="text-ink-500 dark:text-parchment-300/70">{label}</dt>
@@ -392,5 +396,90 @@ function JobRow({ job }: { job: JobDto }) {
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * Throughput and latency (spec 18.1).
+ *
+ * HTTP and in-request latencies are observed by *this* API instance and reset when it
+ * restarts, which `since` states plainly. Job latencies come from `shrine.jobs`, so they cover
+ * the worker too.
+ */
+function ThroughputPanels({ metrics }: { metrics: MetricsSummaryDto }) {
+  const errors = Object.entries(metrics.http.errors_by_code).sort((a, b) => b[1] - a[1]);
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Panel title="Throughput">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3 text-sm">
+          <ConfigRow label="Requests" value={metrics.http.requests.toLocaleString()} />
+          <ConfigRow label="Request p95" value={`${String(metrics.http.duration.p95_ms)} ms`} />
+          <ConfigRow label="Searches" value={metrics.search.total.toLocaleString()} />
+          <ConfigRow
+            label="Search fallback"
+            value={`${metrics.search.vector_fallback.toLocaleString()} text-only`}
+          />
+          <ConfigRow label="Contexts built" value={metrics.context.builds.toLocaleString()} />
+          <ConfigRow label="Context tokens" value={metrics.context.tokens_total.toLocaleString()} />
+          <ConfigRow
+            label="Worker heartbeat age"
+            value={
+              metrics.heartbeat_age_seconds.worker === null
+                ? 'never'
+                : `${String(Math.round(metrics.heartbeat_age_seconds.worker))} s`
+            }
+          />
+          <ConfigRow label="Counting since" value={<RelativeTime value={metrics.http.since} />} />
+
+          <div className="col-span-2">
+            <p className="field-label">Errors by code</p>
+            {errors.length === 0 ? (
+              <p className="text-xs text-ink-500 dark:text-parchment-300/60">
+                No errors since this instance started.
+              </p>
+            ) : (
+              <ul className="mt-1 flex flex-wrap gap-2">
+                {errors.map(([code, count]) => (
+                  <li key={code}>
+                    <Badge tone={code === 'NOT_FOUND' ? 'neutral' : 'warn'}>
+                      {code} · {count}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </dl>
+      </Panel>
+
+      <Panel title="Latency">
+        <Table headers={['Operation', 'Count', 'Mean', 'p95', 'Max']}>
+          <LatencyRow label="HTTP request" latency={metrics.http.duration} />
+          {/* Auto-mode publishes run inside the validation job, so they are counted there. */}
+          <LatencyRow label="Lore publish (approval)" latency={metrics.latency.lore_publish} />
+          <LatencyRow label="Lore search" latency={metrics.latency.lore_search} />
+          <LatencyRow label="Context build" latency={metrics.latency.context_build} />
+          <LatencyRow
+            label="Lore validate + publish (job)"
+            latency={metrics.latency.memory_validation}
+          />
+          <LatencyRow label="Snapshot build (job)" latency={metrics.latency.context_snapshot} />
+          <LatencyRow label="Embedding (job)" latency={metrics.latency.embedding} />
+        </Table>
+      </Panel>
+    </div>
+  );
+}
+
+function LatencyRow({ label, latency }: { label: string; latency: LatencyDto }) {
+  return (
+    <tr>
+      <td className="table-cell">{label}</td>
+      <td className="table-cell tabular-nums">{latency.count.toLocaleString()}</td>
+      <td className="table-cell tabular-nums">{Math.round(latency.mean_ms)} ms</td>
+      <td className="table-cell tabular-nums">{Math.round(latency.p95_ms)} ms</td>
+      <td className="table-cell tabular-nums">{Math.round(latency.max_ms)} ms</td>
+    </tr>
   );
 }
