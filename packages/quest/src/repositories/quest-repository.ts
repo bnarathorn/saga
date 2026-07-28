@@ -616,6 +616,27 @@ export class QuestRepository {
     return toSession(result.rows[0]);
   }
 
+  /**
+   * Abandon a session only if it is *still* stale. Returns false when it is not.
+   *
+   * The reaper reads its candidate list outside the write transaction, so a session can report
+   * in during the gap. An unconditional UPDATE would abandon a session that just came back to
+   * life, and every later checkpoint from it would then fail with SESSION_STATE_INVALID.
+   */
+  async abandonIfStale(tx: Queryable, id: string, cutoff: Date): Promise<QuestSession | null> {
+    const result = await tx.query<SessionRow>(
+      `UPDATE quest.sessions
+          SET state = 'abandoned', ended_at = now(), last_seen_at = now()
+        WHERE id = $1
+          AND state IN ('awaiting_task', 'active')
+          AND COALESCE(last_seen_at, started_at) < $2
+       RETURNING ${SESSION_COLUMNS}`,
+      [id, cutoff],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toSession(row);
+  }
+
   async endSession(
     tx: Queryable,
     id: string,

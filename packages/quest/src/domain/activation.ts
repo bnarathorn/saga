@@ -269,6 +269,8 @@ export function classifyActivation(input: MatchInput): MatchResult {
 }
 
 /** A concise title for a Quest created from the user's first task. */
+export const UNTITLED_QUEST = 'Untitled task';
+
 export function deriveQuestTitle(task: string, maxLength = 120): string {
   const firstSentence = task.split(/(?<=[.!?])\s|\n/)[0] ?? task;
   const cleaned = firstSentence
@@ -277,6 +279,11 @@ export function deriveQuestTitle(task: string, maxLength = 120): string {
     .trim();
   const titled = cleaned.length === 0 ? task.trim().slice(0, maxLength) : cleaned;
   const withoutTrailingPunctuation = titled.replace(/[.!?]+$/, '');
+  // A task of only whitespace or punctuation ("???") strips down to nothing, and
+  // `work_items_title_not_blank` would then reject the insert with a raw constraint violation
+  // instead of a domain error. A Quest always gets a title; the task text is kept in
+  // `sessions.initial_task` regardless.
+  if (withoutTrailingPunctuation.trim().length === 0) return UNTITLED_QUEST;
   if (withoutTrailingPunctuation.length <= maxLength) {
     return capitalize(withoutTrailingPunctuation);
   }

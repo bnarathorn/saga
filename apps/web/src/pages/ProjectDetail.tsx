@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useParams } from 'react-router-dom';
 import {
   Badge,
@@ -10,6 +10,7 @@ import {
 } from '../components/primitives.jsx';
 import { ApiError } from '../lib/api.js';
 import { useCan } from '../lib/permissions.jsx';
+import { rememberProject } from '../lib/last-project.js';
 import { useProject, useProjectLifecycle, useRenameProject } from '../lib/queries.js';
 
 const TABS = [
@@ -24,6 +25,8 @@ const TABS = [
 export function ProjectDetailPage() {
   const { projectRef = '' } = useParams();
   const project = useProject(projectRef);
+  // The top-level Lore/Quest Board/Party entries need a project to act on (spec 1).
+  useEffect(() => rememberProject(projectRef), [projectRef]);
 
   if (project.isPending) return <LoadingState label="Loading project…" />;
   if (project.isError) {

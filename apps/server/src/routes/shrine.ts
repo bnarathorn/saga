@@ -23,7 +23,8 @@ export function registerShrineRoutes(app: FastifyInstance, ctx: AppContext): voi
   const { jobs, audit, metrics } = ctx.services;
 
   app.get('/api/shrine/health', async (request): Promise<ShrineHealthDto> => {
-    request.requirePermission('shrine:read');
+    // The narrow permission: every other Shrine route is server-wide and stays operator-only.
+    request.requirePermission('shrine:health');
     const report = await ctx.health.run();
     return {
       status: report.status,

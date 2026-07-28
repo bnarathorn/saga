@@ -185,6 +185,8 @@ const EMBEDDING_WAIT_ATTEMPTS = 3;
  * Drives an update from `draft` to `ready`, then publishes it when the project's approval
  * mode is `auto`. In `manual` mode it stops at `ready` and waits for Guild Hall.
  */
+const TERMINAL_UPDATE_STATES = new Set(['published', 'cancelled', 'failed', 'conflict']);
+
 export function createMemoryValidationHandler(deps: MemoryValidationDeps): JobHandler {
   return {
     type: 'memory_validation',
@@ -211,11 +213,20 @@ export function createMemoryValidationHandler(deps: MemoryValidationDeps): JobHa
       }
       const updateId = parsed.data.memory_update_id;
 
-      const update = await deps.lore.getUpdate(updateId).catch(() => null);
+      // Only a genuine not-found is permanent. A blanket catch here would turn a dropped
+      // connection or a statement timeout — spec 19.2's textbook *retryable* cases — into a
+      // permanent failure on attempt one, stranding the update in `draft` for an operator.
+      const update = await deps.lore.getUpdate(updateId).catch((error: unknown) => {
+        if (isSagaError(error) && error.code === 'MEMORY_UPDATE_NOT_FOUND') return null;
+        throw error;
+      });
       if (update === null) {
         throw JobHandlerError.permanent('The Lore update no longer exists.');
       }
-      if (update.update.state === 'published' || update.update.state === 'cancelled') {
+      // Terminal states are all no-ops, not just the happy ones: `validate` rejects anything
+      // that is neither draft nor validating, so re-running an admin retry on a failed or
+      // conflicted update would otherwise dead-end.
+      if (TERMINAL_UPDATE_STATES.has(update.update.state)) {
         return { memory_update_id: updateId, state: update.update.state, skipped: true };
       }
 

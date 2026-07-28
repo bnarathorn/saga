@@ -29,6 +29,38 @@ beforeEach(async () => {
 
 /** The security requirements of specification section 21.6, tested end to end. */
 describe('project-scoped tokens', () => {
+  it('cannot read Shrine, which is server-wide and has no project scoping', async () => {
+    // Spec 17.2: "Do not allow a generic valid token to access every project." Shrine's job
+    // queue, event feed, service instances and config span every project, so an agent token
+    // must not reach them — it only ever needs the liveness probe.
+    const issued = await admin.post(`/api/projects/${projectId}/tokens`, {
+      name: 'shrine-probe',
+      scopes: ['project:read'],
+    });
+    const agent = harness.withAgentToken(issued.body.raw_token);
+
+    expect((await agent.get('/api/shrine/health')).status).toBe(200);
+
+    for (const path of [
+      '/api/shrine/jobs',
+      '/api/shrine/events',
+      '/api/shrine/services',
+      '/api/shrine/config',
+      '/api/shrine/schema',
+      '/api/shrine/metrics-summary',
+      '/api/shrine/audit',
+    ]) {
+      expect((await agent.get(path)).status, path).toBe(403);
+    }
+  });
+
+  it('still lets an operator read all of Shrine', async () => {
+    const operator = await harness.loginAs('operator', 'operator-shrine@example.test');
+    for (const path of ['/api/shrine/health', '/api/shrine/jobs', '/api/shrine/events']) {
+      expect((await operator.get(path)).status, path).toBe(200);
+    }
+  });
+
   it('cannot reach another project through any route', async () => {
     const other = await admin.post('/api/projects', { name: 'Other Security Project' });
     const otherId = other.body.project.id;

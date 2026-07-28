@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { hash, verify, type Algorithm } from '@node-rs/argon2';
 import { SagaError } from '@saga/shared';
 import { randomBase32, safeEqual, sha256Hex } from '@saga/shared/ids';
@@ -76,7 +77,12 @@ export function generateAgentToken(projectNameKey: string): {
       .padEnd(3, 'x') || 'prj';
   const secret = randomBase32(40);
   const raw = `${TOKEN_PREFIX}_${slug}_${secret}`;
-  return { raw, hash: sha256Hex(raw), prefix: `${TOKEN_PREFIX}_${slug}_${secret.slice(0, 6)}` };
+  // The display hint is derived from the *hash*, never from the secret itself. `token_prefix`
+  // is returned by every token listing, so putting a literal slice of the secret there would
+  // persist part of it in plaintext and re-display it forever — against spec 7.20 ("store only
+  // secure hashes") and 17.2 ("displayed only once when created").
+  const hash = sha256Hex(raw);
+  return { raw, hash, prefix: `${TOKEN_PREFIX}_${slug}_${hash.slice(0, 6)}` };
 }
 
 export function isAgentTokenShaped(value: string): boolean {
@@ -92,11 +98,18 @@ export function generateDeviceCode(): {
   const deviceCode = randomBase32(48);
   // Exclude look-alike characters so a user reading a code aloud cannot mistype it.
   const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789';
-  const raw = randomBase32(16);
+  // Sampled from raw bytes with rejection, not by folding another alphabet's char codes into
+  // this one: 256 is not a multiple of 31, and `charCode % 31` over base32 text made `a`, `b`,
+  // `c`, `d` and `9` impossible while `w`-`3` came up twice as often as everything else.
+  const limit = Math.floor(256 / alphabet.length) * alphabet.length;
   let userCode = '';
-  for (let i = 0; i < 8; i += 1) {
-    userCode += alphabet[raw.charCodeAt(i) % alphabet.length];
-    if (i === 3) userCode += '-';
+  while (userCode.replace('-', '').length < 8) {
+    for (const byte of randomBytes(16)) {
+      if (byte >= limit) continue;
+      userCode += alphabet[byte % alphabet.length];
+      if (userCode.length === 4) userCode += '-';
+      if (userCode.replace('-', '').length === 8) break;
+    }
   }
   return { deviceCode, deviceCodeHash: sha256Hex(deviceCode), userCode: userCode.toUpperCase() };
 }

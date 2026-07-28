@@ -171,10 +171,23 @@ export async function migrate(
   await ensureLedger(pool);
 
   const client = await pool.connect();
-  const release = await acquireSessionAdvisoryLock(
-    { query: (text, values) => client.query(text, values as unknown[] | undefined) },
-    MIGRATION_LOCK_NAMESPACE,
-  );
+
+  // Acquiring the lock can itself fail — `pg_advisory_lock` blocks until the holder finishes,
+  // and that wait is subject to `statement_timeout`, which is exactly the contention case this
+  // lock exists for. Releasing the client on that path matters: leaking it would cripple the
+  // pool a retry has to run through.
+  let release: () => Promise<void>;
+  try {
+    release = await acquireSessionAdvisoryLock(
+      { query: (text, values) => client.query(text, values as unknown[] | undefined) },
+      MIGRATION_LOCK_NAMESPACE,
+    );
+  } catch (error) {
+    client.release(true);
+    throw new SagaError('INTERNAL_ERROR', 'Could not acquire the migration lock.', {
+      cause: error,
+    });
+  }
 
   const appliedNow: MigrationFile[] = [];
   try {

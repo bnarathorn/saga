@@ -163,12 +163,19 @@ export async function connectCommand(argv: string[]): Promise<number> {
   }
 
   // 6. MCP configuration for Codex and Claude
-  const written = writeMcpConfig({
+  const mcp = writeMcpConfig({
     root: workspace.root,
     serverUrl,
     projectRef: project.project.id,
   });
-  for (const file of written) out.write(`MCP configuration written: ${file}\n`);
+  for (const file of mcp.written) out.write(`MCP configuration written: ${file}\n`);
+  for (const file of mcp.skipped) {
+    out.write(
+      `MCP configuration NOT written: ${file} exists but is not valid JSON. ` +
+        `Saga left it untouched rather than discarding the servers it defines. ` +
+        `Fix the JSON and re-run \`saga connect\`, or paste the block from \`saga mcp --print\`.\n`,
+    );
+  }
 
   out.write(
     `\nNext: run \`saga status\` to confirm, or start your agent — it will call ` +

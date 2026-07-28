@@ -1,6 +1,7 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout.jsx';
 import { ErrorState, LoadingState, Panel } from './components/primitives.jsx';
+import { lastProject } from './lib/last-project.js';
 import { LiveProvider } from './lib/live.jsx';
 import { PermissionProvider } from './lib/permissions.jsx';
 import { useMe } from './lib/queries.js';
@@ -75,6 +76,11 @@ export function App() {
                   falling through to the top-level catch-all. */}
               <Route path="*" element={<UnknownProjectSection />} />
             </Route>
+            {/* Spec 1 puts these at the top level of the console, but each is a per-project
+                view. They resolve to the project last opened, or to the picker. */}
+            <Route path="lore" element={<ProjectSection section="lore" />} />
+            <Route path="quests" element={<ProjectSection section="quests" />} />
+            <Route path="party" element={<ProjectSection section="party" />} />
             <Route path="shrine" element={<ShrinePage />} />
             <Route path="*" element={<NotFound />} />
           </Route>
@@ -92,6 +98,25 @@ function NotFound() {
       </div>
     </Panel>
   );
+}
+
+/** Sends a top-level section to the last project opened, or to the picker if there is none. */
+function ProjectSection({ section }: { section: 'lore' | 'quests' | 'party' }) {
+  const ref = lastProject();
+  if (ref === null) {
+    return (
+      <Panel title="Choose a project first">
+        <div className="px-4 py-8 text-sm text-ink-600 dark:text-parchment-300/80">
+          Lore, the Quest Board and Party all belong to a project.{' '}
+          <Link className="link" to="/projects">
+            Open a project
+          </Link>{' '}
+          and this entry will take you straight there next time.
+        </div>
+      </Panel>
+    );
+  }
+  return <Navigate to={`/projects/${encodeURIComponent(ref)}/${section}`} replace />;
 }
 
 function UnknownProjectSection() {

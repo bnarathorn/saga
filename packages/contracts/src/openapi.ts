@@ -862,6 +862,186 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     },
   });
 
+  // --- routes that exist on the server and were missing from this document ---------------
+  // A route reaching the server without a registration here is invisible to `openapi:check`,
+  // which only diffs this generator against the committed JSON. `openapi.api.test.ts` walks
+  // the live Fastify route table and fails if anything below falls out of step again.
+
+  const listOf = (schema: z.ZodTypeAny) =>
+    z.object({ items: z.array(schema), next_cursor: z.string().nullable(), has_more: z.boolean() });
+  const questId = z.object({ questId: z.string().uuid() });
+  const sessionId = z.object({ sessionId: z.string().uuid() });
+
+  route({
+    method: 'get',
+    path: '/api/auth/device/pending',
+    tags: ['Security'],
+    summary: 'List device authorizations awaiting approval',
+    responses: { 200: { description: 'Pending device codes.', schema: z.record(z.unknown()) } },
+  });
+  route({
+    method: 'get',
+    path: '/api/projects/{projectRef}/tokens',
+    tags: ['Security'],
+    summary: 'List the agent tokens issued for a project',
+    request: { params: projectRef },
+    responses: {
+      200: { description: 'Tokens.', schema: z.object({ items: z.array(agentTokenSchema) }) },
+    },
+  });
+  route({
+    method: 'get',
+    path: '/api/lore/updates/{updateId}',
+    tags: ['Lore'],
+    summary: 'Read one Lore update',
+    request: { params: z.object({ updateId: z.string().uuid() }) },
+    responses: {
+      200: { description: 'The update.', schema: z.object({ update: memoryUpdateSchema }) },
+      404: { description: 'No such update.' },
+    },
+  });
+  route({
+    method: 'post',
+    path: '/api/projects/{projectRef}/lore/updates',
+    tags: ['Lore'],
+    summary: 'Propose a Lore update (alias of remember)',
+    request: { params: projectRef, body: rememberRequestSchema },
+    responses: {
+      201: { description: 'Created.', schema: z.object({ update: memoryUpdateSchema }) },
+    },
+  });
+  route({
+    method: 'get',
+    path: '/api/projects/{projectRef}/lore-updates',
+    tags: ['Lore'],
+    summary: 'List Lore updates',
+    request: { params: projectRef },
+    responses: { 200: { description: 'Updates.', schema: listOf(memoryUpdateSchema) } },
+  });
+  route({
+    method: 'get',
+    path: '/api/projects/{projectRef}/lore-links',
+    tags: ['Lore'],
+    summary: 'List the relations between Lore Entries',
+    request: { params: projectRef },
+    responses: {
+      200: { description: 'Relations.', schema: z.object({ items: z.array(memoryLinkSchema) }) },
+    },
+  });
+  route({
+    method: 'delete',
+    path: '/api/lore-links/{linkId}',
+    tags: ['Lore'],
+    summary: 'Remove a relation',
+    request: { params: z.object({ linkId: z.string().uuid() }) },
+    responses: { 200: { description: 'Removed.', schema: z.object({ ok: z.boolean() }) } },
+  });
+  route({
+    method: 'post',
+    path: '/api/quests/{questId}/archive',
+    tags: ['Quest'],
+    summary: 'Archive a completed Quest',
+    request: { params: questId },
+    responses: { 200: { description: 'Archived.', schema: z.object({ quest: questSchema }) } },
+  });
+  route({
+    method: 'delete',
+    path: '/api/quests/{questId}/dependencies/{dependsOnId}',
+    tags: ['Quest'],
+    summary: 'Remove a Quest dependency',
+    request: {
+      params: z.object({ questId: z.string().uuid(), dependsOnId: z.string().uuid() }),
+    },
+    responses: { 200: { description: 'Removed.', schema: z.object({ ok: z.boolean() }) } },
+  });
+  route({
+    method: 'get',
+    path: '/api/quests/{questId}/checkpoints',
+    tags: ['Quest'],
+    summary: "List a Quest's checkpoints, newest first",
+    request: { params: questId },
+    responses: { 200: { description: 'Checkpoints.', schema: listOf(checkpointSchema) } },
+  });
+  route({
+    method: 'get',
+    path: '/api/quests/{questId}/sessions',
+    tags: ['Quest'],
+    summary: 'List the sessions that worked on a Quest',
+    request: { params: questId },
+    responses: {
+      200: { description: 'Sessions.', schema: z.object({ items: z.array(sessionSchema) }) },
+    },
+  });
+  route({
+    method: 'get',
+    path: '/api/sessions/{sessionId}',
+    tags: ['Quest'],
+    summary: 'Read a session',
+    request: { params: sessionId },
+    responses: {
+      200: { description: 'The session.', schema: z.object({ session: sessionSchema }) },
+      404: { description: 'No such session.' },
+    },
+  });
+  route({
+    method: 'post',
+    path: '/api/sessions/{sessionId}/heartbeat',
+    tags: ['Quest'],
+    summary: 'Keep a session and its agent run alive',
+    request: { params: sessionId },
+    responses: { 200: { description: 'Renewed.', schema: z.record(z.unknown()) } },
+  });
+  route({
+    method: 'post',
+    path: '/api/party/runs/{runId}/end',
+    tags: ['Party'],
+    summary: 'End an agent run and release its claims',
+    request: { params: z.object({ runId: z.string().uuid() }) },
+    responses: { 200: { description: 'Ended.', schema: z.object({ agent_run: agentRunSchema }) } },
+  });
+  route({
+    method: 'post',
+    path: '/api/party/claims/{claimId}/renew',
+    tags: ['Party'],
+    summary: 'Renew a claim lease',
+    request: { params: z.object({ claimId: z.string().uuid() }) },
+    responses: {
+      200: { description: 'Renewed.', schema: z.object({ claim: claimSchema }) },
+      409: { description: 'The claim is no longer active.' },
+    },
+  });
+  route({
+    method: 'get',
+    path: '/api/projects/{projectRef}/party/runs',
+    tags: ['Party'],
+    summary: 'List agent runs',
+    request: { params: projectRef },
+    responses: {
+      200: { description: 'Runs.', schema: z.object({ items: z.array(agentRunSchema) }) },
+    },
+  });
+  route({
+    method: 'get',
+    path: '/api/projects/{projectRef}/party/claims',
+    tags: ['Party'],
+    summary: 'List claims, active or historical',
+    request: { params: projectRef },
+    responses: {
+      200: { description: 'Claims.', schema: z.object({ items: z.array(claimSchema) }) },
+    },
+  });
+  route({
+    method: 'get',
+    path: '/api/shrine/jobs/{jobId}',
+    tags: ['Shrine'],
+    summary: 'Read one job',
+    request: { params: z.object({ jobId: z.string().uuid() }) },
+    responses: {
+      200: { description: 'The job.', schema: z.object({ job: jobSchema }) },
+      404: { description: 'No such job.' },
+    },
+  });
+
   // Referenced for documentation completeness even where no route embeds them directly.
   registry.register('WorkState', workStateSchema);
   registry.register('Checkpoint', checkpointSchema);

@@ -36,6 +36,7 @@ const VIEWER: Permission[] = [
   'lore:read',
   'quest:read',
   'party:read',
+  'shrine:health',
   'shrine:read',
 ];
 
@@ -64,7 +65,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
 
 /** Agent scopes grant a strict subset: agents can never operate Shrine or manage security. */
 const SCOPE_PERMISSIONS: Record<AgentScope, readonly Permission[]> = {
-  'project:read': ['project:read', 'shrine:read'],
+  // Deliberately NOT `shrine:read`: that opens the job queue, the system-event feed, service
+  // instances and sanitized config for *every* project, and Shrine has no per-project scoping.
+  // An agent only ever needs the liveness probe (`saga doctor`, SDK `health()`).
+  'project:read': ['project:read', 'shrine:health'],
   'lore:read': ['lore:read'],
   'lore:propose': ['lore:propose'],
   'lore:publish': ['lore:publish'],

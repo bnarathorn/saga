@@ -74,6 +74,7 @@ export const PERMISSIONS = [
   'party:heartbeat',
   'party:claim',
   'party:revoke',
+  'shrine:health',
   'shrine:read',
   'shrine:operate',
   'security:manage',

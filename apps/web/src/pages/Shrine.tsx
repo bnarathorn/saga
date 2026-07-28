@@ -152,6 +152,9 @@ export function ShrinePage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Schema version">
           {schema.isPending && <LoadingState />}
+          {schema.isError && (
+            <ErrorState error={schema.error} onRetry={() => void schema.refetch()} />
+          )}
           {schema.data !== undefined && (
             <div className="space-y-2 px-4 py-3 text-sm">
               <div className="flex items-center gap-2">
@@ -176,6 +179,9 @@ export function ShrinePage() {
 
         <Panel title="Configuration">
           {config.isPending && <LoadingState />}
+          {config.isError && (
+            <ErrorState error={config.error} onRetry={() => void config.refetch()} />
+          )}
           {config.data !== undefined && (
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 px-4 py-3 text-sm">
               <ConfigRow label="Version" value={config.data.config.version} />
@@ -214,10 +220,17 @@ export function ShrinePage() {
         </Panel>
       </div>
 
+      {metrics.isPending && <LoadingState label="Loading metrics…" />}
+      {metrics.isError && (
+        <ErrorState error={metrics.error} onRetry={() => void metrics.refetch()} />
+      )}
       {metrics.data !== undefined && <ThroughputPanels metrics={metrics.data.metrics} />}
 
       <Panel title="System events">
         {events.isPending && <LoadingState />}
+        {events.isError && (
+          <ErrorState error={events.error} onRetry={() => void events.refetch()} />
+        )}
         {events.data !== undefined && events.data.items.length > 0 && (
           <Table headers={['When', 'Severity', 'Event', 'Message']}>
             {events.data.items.map((event) => (

@@ -100,6 +100,22 @@ export class SnapshotRepository {
    * unique index enforces at most one active snapshot per project — the database, not just the
    * service, guarantees the invariant.
    */
+  /**
+   * Stamp the snapshot with the revision it actually belongs to.
+   *
+   * `createReady` runs at validate time, when the target revision can only be guessed at
+   * (`current + 1`). Two updates touching different entries may both validate against the same
+   * current revision and then publish concurrently — spec 7.7 explicitly allows that — so the
+   * guess is wrong for whichever publishes second. The true value is known only after the
+   * revision bump inside the publish transaction.
+   */
+  async setProjectRevision(tx: Queryable, id: string, projectRevision: number): Promise<void> {
+    await tx.query(`UPDATE lore.context_snapshots SET project_revision = $2 WHERE id = $1`, [
+      id,
+      projectRevision,
+    ]);
+  }
+
   async activate(tx: Queryable, projectId: string, snapshotId: string): Promise<ContextSnapshot> {
     await tx.query(
       `UPDATE lore.context_snapshots SET state = 'ready'

@@ -529,6 +529,22 @@ export class PartyRepository {
     return result.rows.map(toClaim);
   }
 
+  /**
+   * Lock one agent run for the duration of the caller's transaction.
+   *
+   * Only the reaper flips a dead run's `state`, so between the crash and the next sweep the row
+   * still reads `active`. Anything that grants a run new authority has to look at the lease,
+   * under a lock, inside the same transaction as the grant.
+   */
+  async lockRun(tx: Queryable, id: string): Promise<AgentRun | null> {
+    const result = await tx.query<RunRow>(
+      `SELECT ${RUN_COLUMNS} FROM party.agent_runs WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    const row = result.rows[0];
+    return row === undefined ? null : toRun(row);
+  }
+
   async listClaimsForProject(
     q: Queryable,
     projectId: string,
@@ -536,7 +552,9 @@ export class PartyRepository {
   ): Promise<Claim[]> {
     const result = await q.query<ClaimRow>(
       `${CLAIM_SELECT}
-        WHERE r.project_id = $1 ${includeFinished ? '' : `AND c.state = 'active'`}
+        WHERE r.project_id = $1 ${
+          includeFinished ? '' : `AND c.state = 'active' AND c.lease_expires_at > now()`
+        }
         ORDER BY c.acquired_at DESC LIMIT 200`,
       [projectId],
     );

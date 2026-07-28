@@ -185,7 +185,7 @@ describe('bindings', () => {
 
 describe('MCP configuration', () => {
   it('writes project-local configuration for Claude Code and Codex', () => {
-    const written = writeMcpConfig({
+    const { written } = writeMcpConfig({
       root,
       serverUrl: 'https://saga.test',
       projectRef: 'project-uuid',

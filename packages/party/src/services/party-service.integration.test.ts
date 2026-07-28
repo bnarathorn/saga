@@ -310,20 +310,75 @@ describe('claims', () => {
   });
 });
 
-describe('lease expiry after an unclean stop', () => {
-  it('expires the run, releases its claims, and leaves the Quest untouched', async () => {
-    const shortLease = buildParty('strict', -1);
+describe('a run without a live lease', () => {
+  it('cannot take a new claim, even while its state still reads active', async () => {
+    // Only the reaper flips a crashed run to `expired`, so between the crash and the next
+    // sweep `state` still says `active`. Liveness is the lease, never the column (spec 4.5).
     const a = await agent('Add token-family migration', 'claude-code');
-
-    // The run and its claim are created with an already-lapsed lease: an agent that stopped
-    // without ending cleanly.
-    const stale = await shortLease.startRun({
+    const run = await party.startRun({
       projectId: project.id,
       sessionId: a.sessionId,
       agentInstanceId: 'crashed',
       client: 'claude-code',
     });
-    await shortLease.acquireClaim({
+    await pool.query(
+      `UPDATE party.agent_runs SET lease_expires_at = now() - interval '1 minute' WHERE id = $1`,
+      [run.id],
+    );
+    expect((await party.getRun(run.id)).state).toBe('active');
+
+    await expect(
+      party.acquireClaim({
+        projectId: project.id,
+        agentRunId: run.id,
+        workItemId: a.questId,
+        resourceType: 'migration_sequence',
+        resourceKey: 'db/migrations',
+        mode: 'exclusive',
+      }),
+    ).rejects.toMatchObject({ code: 'AGENT_RUN_EXPIRED' });
+  });
+
+  it('stops being reported as holding its claims once the lease lapses', async () => {
+    const a = await agent('Add token-family migration', 'claude-code');
+    const run = await party.startRun({
+      projectId: project.id,
+      sessionId: a.sessionId,
+      agentInstanceId: 'holder',
+      client: 'claude-code',
+    });
+    await party.acquireClaim({
+      projectId: project.id,
+      agentRunId: run.id,
+      workItemId: a.questId,
+      resourceType: 'test_environment',
+      resourceKey: 'integration-db',
+      mode: 'exclusive',
+    });
+    expect((await party.status(project.id)).claims).toHaveLength(1);
+
+    await pool.query(`UPDATE party.claims SET lease_expires_at = now() - interval '1 minute'`);
+
+    // Reported ownership must not outlive the lease: an agent reading this would otherwise
+    // wait on a resource nobody holds.
+    expect((await party.status(project.id)).claims).toHaveLength(0);
+  });
+});
+
+describe('lease expiry after an unclean stop', () => {
+  it('expires the run, releases its claims, and leaves the Quest untouched', async () => {
+    const a = await agent('Add token-family migration', 'claude-code');
+
+    // The run takes its claim while its lease is live, the way a real agent does — acquiring a
+    // claim on a run with a lapsed lease is refused, and this test is about what happens
+    // *after* a healthy agent stops reporting.
+    const stale = await party.startRun({
+      projectId: project.id,
+      sessionId: a.sessionId,
+      agentInstanceId: 'crashed',
+      client: 'claude-code',
+    });
+    await party.acquireClaim({
       projectId: project.id,
       agentRunId: stale.id,
       workItemId: a.questId,
@@ -331,6 +386,17 @@ describe('lease expiry after an unclean stop', () => {
       resourceKey: 'integration-db',
       mode: 'exclusive',
     });
+
+    // Then the process dies. Time passing is simulated by moving both leases into the past,
+    // which is exactly the state the reaper is meant to find.
+    await pool.query(
+      `UPDATE party.agent_runs SET lease_expires_at = now() - interval '1 minute' WHERE id = $1`,
+      [stale.id],
+    );
+    await pool.query(
+      `UPDATE party.claims SET lease_expires_at = now() - interval '1 minute' WHERE agent_run_id = $1`,
+      [stale.id],
+    );
 
     await quests.createCheckpoint({
       sessionId: a.sessionId,

@@ -21,6 +21,15 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
   let clients = 0;
   ctx.metricsContributors.sseClients = () => clients;
 
+  /**
+   * Open streams, so shutdown can end them.
+   *
+   * An SSE response is in-flight for as long as the client stays connected, and `app.close()`
+   * waits for in-flight requests. Without this, a single connected Guild Hall tab makes every
+   * restart stall until the shutdown timeout fires and the process is killed — the normal case,
+   * not an edge one. Clients reconnect and resume from `Last-Event-ID`.
+   */
+
   app.get('/api/events/stream', async (request, reply) => {
     request.requirePermission('shrine:read');
 

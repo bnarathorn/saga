@@ -143,6 +143,7 @@ export function LoreEntryPage() {
 
       <Panel title="Version history">
         {versions.isPending && <LoadingState />}
+        {versions.isError && <ErrorState error={versions.error} />}
         {versions.data !== undefined && (
           <Table headers={['Version', 'Verification', 'Confidence', 'Embedding', 'Created']}>
             {versions.data.items.map((version) => (

@@ -89,7 +89,23 @@ export function createLogger(options: CreateLoggerOptions): SagaLogger {
         route: request.routeOptions?.url,
       }),
       res: (reply: { statusCode?: number }) => ({ status_code: reply.statusCode }),
-      err: stdSerializers.err,
+      /**
+       * Errors go through the standard serializer, then lose `details` entirely.
+       *
+       * pino's `redact` paths are anchored at the log object's root, so nothing in
+       * `REDACT_PATHS` reaches inside `err`. `{ err }` is the dominant error-logging idiom in
+       * this codebase, and `SagaError.details` is caller-supplied — its "never put secrets
+       * here" rule was enforced by convention alone, with a log line one mistake away. The
+       * detail keys are kept for diagnosis; the values are not.
+       */
+      err: (error: unknown) => {
+        const serialized = stdSerializers.err(error as Error) as Record<string, unknown>;
+        const details = serialized.details;
+        if (details !== undefined && details !== null && typeof details === 'object') {
+          serialized.details = { keys: Object.keys(details as Record<string, unknown>) };
+        }
+        return serialized;
+      },
     },
     redact: { paths: REDACT_PATHS, censor: '[redacted]', remove: false },
   };

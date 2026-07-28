@@ -144,6 +144,16 @@ export class SessionService {
         { details: { state: session.state } },
       );
     }
+    // Activation is once per session (spec 9.1: open -> await task -> activate). A repeated
+    // call would re-run Quest matching and could rebind the session to a different Quest, or
+    // create a second one. `promote` guards the same shape.
+    if (session.workItemId !== null) {
+      throw new SagaError(
+        'SESSION_STATE_INVALID',
+        'This session is already attached to a Quest. Use a new session, or promote an inquiry.',
+        { details: { work_item_id: session.workItemId, state: session.state } },
+      );
+    }
     if (session.projectId !== input.project.id) {
       throw new SagaError('SESSION_NOT_FOUND', 'That session belongs to another project.');
     }
@@ -356,7 +366,10 @@ export class SessionService {
     return withTransaction(this.deps.pool, async (tx) => {
       const abandoned: string[] = [];
       for (const session of stale) {
-        await this.deps.quests.endSession(tx, session.id, 'abandoned');
+        // Re-checked against the cutoff at write time: the candidate list was read outside this
+        // transaction, and a session that reported in since then must be left alone.
+        const ended = await this.deps.quests.abandonIfStale(tx, session.id, cutoff);
+        if (ended === null) continue;
         await this.deps.outbox.emit(tx, {
           aggregateType: 'session',
           aggregateId: session.id,

@@ -244,6 +244,12 @@ describe('concurrent publication', () => {
     const refreshed = await projects.resolve(project.id);
     expect(refreshed.memoryRevision).toBe(2);
 
+    // The snapshot is stamped at validate time with a guess at the revision it will create.
+    // Both updates guessed 1; whichever published second actually created revision 2, and the
+    // active snapshot has to say so.
+    const active = await snapshots.findActive(pool, project.id);
+    expect(active?.projectRevision).toBe(refreshed.memoryRevision);
+
     for (const key of ['a.one', 'b.two']) {
       const item = await memory.findItemWithVersion(pool, project.id, key);
       expect(item?.currentVersion, key).not.toBeNull();

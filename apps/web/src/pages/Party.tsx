@@ -176,9 +176,16 @@ export function PartyPage() {
       </Panel>
 
       <Panel title="Claims">
-        {history.data === undefined || history.data.items.length === 0 ? (
+        {history.isPending && <LoadingState />}
+        {/* A failed fetch must not read as the *fact* that no claims exist: an operator could
+            be looking for a claim an agent is waiting on. */}
+        {history.isError && (
+          <ErrorState error={history.error} onRetry={() => void history.refetch()} />
+        )}
+        {history.data !== undefined && history.data.items.length === 0 && (
           <EmptyState title="No claims recorded" />
-        ) : (
+        )}
+        {history.data !== undefined && history.data.items.length > 0 && (
           <Table headers={['Resource', 'Policy', 'Mode', 'Owner', 'State', 'Lease', 'Actions']}>
             {history.data.items.map((claim) => (
               <tr key={claim.id}>

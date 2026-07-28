@@ -3,6 +3,7 @@ import {
   AUTO_RESUME_THRESHOLD,
   classifyActivation,
   deriveQuestTitle,
+  UNTITLED_QUEST,
   extractIssueKeys,
   hasContinuationIntent,
   looksLikeInquiry,
@@ -309,5 +310,20 @@ describe('title derivation', () => {
   it('handles a single very long word', () => {
     const title = deriveQuestTitle('x'.repeat(300), 30);
     expect(title.length).toBeLessThanOrEqual(30);
+  });
+
+  it('never returns a blank title', () => {
+    // `work_items_title_not_blank` rejects an empty title, and a task of only whitespace or
+    // punctuation used to strip down to one — surfacing as a raw constraint violation rather
+    // than a domain error. Every one of these passes the API schema (`min(1)`).
+    for (const task of ['   ', '???', '...', '!!!', '?', '   ...   ', '.', '\n\n', '\t']) {
+      const title = deriveQuestTitle(task);
+      expect(title.trim().length, `blank title for ${JSON.stringify(task)}`).toBeGreaterThan(0);
+      expect(title).toBe(UNTITLED_QUEST);
+    }
+  });
+
+  it('still prefers real text over the placeholder', () => {
+    expect(deriveQuestTitle('Add CSV export???')).toBe('Add CSV export');
   });
 });

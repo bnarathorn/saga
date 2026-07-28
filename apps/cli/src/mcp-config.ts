@@ -15,8 +15,15 @@ export interface McpConfigInput {
  * several Saga projects, and a global entry would point them all at one. The token is never
  * written here — the MCP server reads it from the keychain via `saga`'s own credential store.
  */
-export function writeMcpConfig(input: McpConfigInput): string[] {
+export interface McpConfigResult {
+  written: string[];
+  /** Files left alone because they no longer parse. Never overwritten — see `readJson`. */
+  skipped: string[];
+}
+
+export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
   const written: string[] = [];
+  const skipped: string[] = [];
 
   const entry = {
     command: 'saga',
@@ -29,21 +36,31 @@ export function writeMcpConfig(input: McpConfigInput): string[] {
 
   // Claude Code: `.mcp.json` at the project root.
   const claudePath = join(input.root, '.mcp.json');
-  const claude = readJson(claudePath) ?? {};
-  const claudeServers = (claude.mcpServers as Record<string, unknown> | undefined) ?? {};
-  claude.mcpServers = { ...claudeServers, saga: entry };
-  writeJson(claudePath, claude);
-  written.push(claudePath);
+  const claude = readJson(claudePath);
+  if (claude === 'unparseable') {
+    skipped.push(claudePath);
+  } else {
+    const existing = claude ?? {};
+    const claudeServers = (existing.mcpServers as Record<string, unknown> | undefined) ?? {};
+    existing.mcpServers = { ...claudeServers, saga: entry };
+    writeJson(claudePath, existing);
+    written.push(claudePath);
+  }
 
   // Codex: `.codex/config.json` at the project root.
   const codexPath = join(input.root, '.codex', 'config.json');
-  const codex = readJson(codexPath) ?? {};
-  const codexServers = (codex.mcpServers as Record<string, unknown> | undefined) ?? {};
-  codex.mcpServers = { ...codexServers, saga: entry };
-  writeJson(codexPath, codex);
-  written.push(codexPath);
+  const codex = readJson(codexPath);
+  if (codex === 'unparseable') {
+    skipped.push(codexPath);
+  } else {
+    const existing = codex ?? {};
+    const codexServers = (existing.mcpServers as Record<string, unknown> | undefined) ?? {};
+    existing.mcpServers = { ...codexServers, saga: entry };
+    writeJson(codexPath, existing);
+    written.push(codexPath);
+  }
 
-  return written;
+  return { written, skipped };
 }
 
 /** Render the same configuration for a user to paste elsewhere. */
@@ -71,13 +88,15 @@ export function globalClaudeConfigPath(): string {
   return join(homedir(), '.claude.json');
 }
 
-function readJson(path: string): Record<string, unknown> | null {
+/** `null` = no file yet; `'unparseable'` = a file exists that we must not clobber. */
+function readJson(path: string): Record<string, unknown> | null | 'unparseable' {
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
   } catch {
-    // A hand-edited file that no longer parses must not be silently overwritten.
-    return null;
+    // A hand-edited file that no longer parses must not be silently overwritten: merging into
+    // `{}` would drop every other MCP server the user had configured there.
+    return 'unparseable';
   }
 }
 

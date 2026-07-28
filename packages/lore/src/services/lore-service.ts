@@ -364,6 +364,11 @@ export class LoreService {
         const rebuilt = await this.prepareSnapshot(tx, update.projectId, items);
         snapshotId = rebuilt.id;
       }
+      // The snapshot was stamped at validate time with a guess at the revision it would create.
+      // Concurrent publishes of different entries (spec 7.7) make that guess wrong for whichever
+      // commits second, and the fallback above re-derives it from an already-bumped revision.
+      // `memoryRevision` is the only authoritative value, and it exists only here.
+      await this.deps.snapshots.setProjectRevision(tx, snapshotId, memoryRevision);
       await this.deps.snapshots.activate(tx, update.projectId, snapshotId);
       await this.deps.projects.setActiveContextSnapshot(tx, update.projectId, snapshotId);
 

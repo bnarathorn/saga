@@ -251,6 +251,27 @@ export class PartyService {
     }
 
     return withTransaction(this.deps.pool, async (tx) => {
+      // Re-checked under a row lock inside the transaction that grants the claim. The check
+      // above runs against a snapshot, and `state` alone is not liveness: only the reaper
+      // flips a crashed run to `expired`, so between the crash and the next sweep the row
+      // still reads `active`. A run without a live lease must not gain new claims (spec 4.5).
+      const locked = await this.deps.party.lockRun(tx, input.agentRunId);
+      if (locked === null) {
+        throw new SagaError('AGENT_RUN_NOT_FOUND', 'That agent run no longer exists.');
+      }
+      if (
+        locked.state === 'ended' ||
+        locked.state === 'expired' ||
+        locked.leaseExpiresAt === null ||
+        locked.leaseExpiresAt.getTime() <= Date.now()
+      ) {
+        throw new SagaError(
+          'AGENT_RUN_EXPIRED',
+          'This agent run no longer holds a live lease and cannot take claims. Send a heartbeat first.',
+          { details: { state: locked.state, lease_expires_at: locked.leaseExpiresAt } },
+        );
+      }
+
       const resource = await this.deps.party.lockOrCreateResource(tx, {
         projectId: input.projectId,
         resourceType: input.resourceType,

@@ -147,7 +147,13 @@ export class Worker {
         job,
         logger: jobLogger,
         signal: this.abort.signal,
-        renewLease: () => jobs.renewLease(job, this.options.leaseSeconds),
+        // Abort-aware at the injection point, not per handler: spec 19.6 forbids extending a
+        // lease once shutdown starts, and leaving that to each handler makes the guarantee
+        // depend on every future one remembering to check.
+        renewLease: () =>
+          this.abort.signal.aborted
+            ? Promise.resolve(false)
+            : jobs.renewLease(job, this.options.leaseSeconds),
       });
       await jobs.succeed(job, result);
       jobLogger.info({ latency_ms: Date.now() - startedAt }, 'job succeeded');
