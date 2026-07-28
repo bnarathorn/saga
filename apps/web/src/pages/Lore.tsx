@@ -11,6 +11,7 @@ import {
   Table,
   type BadgeTone,
 } from '../components/primitives.jsx';
+import { useCan } from '../lib/permissions.jsx';
 import {
   useContextSnapshot,
   useLoreEntries,
@@ -283,6 +284,7 @@ function EntryRow({ projectRef, entry }: { projectRef: string; entry: LoreEntryD
 }
 
 function UpdateRow({ update }: { update: MemoryUpdateDto }) {
+  const can = useCan();
   const validate = useLoreUpdateAction('validate');
   const publish = useLoreUpdateAction('publish');
   const cancel = useLoreUpdateAction('cancel');
@@ -314,7 +316,7 @@ function UpdateRow({ update }: { update: MemoryUpdateDto }) {
         </div>
 
         <div className="flex gap-2">
-          {(update.state === 'draft' || update.state === 'validating') && (
+          {can('lore:publish') && (update.state === 'draft' || update.state === 'validating') && (
             <button
               type="button"
               className="btn-secondary"
@@ -324,7 +326,7 @@ function UpdateRow({ update }: { update: MemoryUpdateDto }) {
               Validate
             </button>
           )}
-          {update.state === 'ready' && (
+          {can('lore:publish') && update.state === 'ready' && (
             <button
               type="button"
               className="btn-primary"
@@ -339,7 +341,7 @@ function UpdateRow({ update }: { update: MemoryUpdateDto }) {
               Approve and publish
             </button>
           )}
-          {update.state !== 'conflict' && update.state !== 'failed' && (
+          {can('lore:propose') && update.state !== 'conflict' && update.state !== 'failed' && (
             <button
               type="button"
               className="btn-secondary"
@@ -442,6 +444,7 @@ function SearchPanel({ projectRef }: { projectRef: string }) {
 }
 
 function ProposePanel({ projectRef }: { projectRef: string }) {
+  const can = useCan();
   const propose = useProposeLore();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -477,6 +480,9 @@ function ProposePanel({ projectRef }: { projectRef: string }) {
       },
     );
   };
+
+  // A viewer sees Lore but is offered no way to change it.
+  if (!can('lore:propose')) return null;
 
   if (!open) {
     return (

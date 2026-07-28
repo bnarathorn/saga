@@ -10,6 +10,7 @@ import {
   Table,
 } from '../components/primitives.jsx';
 import { ApiError } from '../lib/api.js';
+import { useCan } from '../lib/permissions.jsx';
 import { useCreateProject, useProjects } from '../lib/queries.js';
 
 export function ProjectsPage() {
@@ -23,6 +24,7 @@ export function ProjectsPage() {
   if (search.length > 0) query.set('q', search);
   const suffix = query.size > 0 ? `?${query.toString()}` : '';
 
+  const can = useCan();
   const projects = useProjects(suffix);
   const create = useCreateProject();
   const [name, setName] = useState('');
@@ -47,6 +49,7 @@ export function ProjectsPage() {
           </p>
         </div>
 
+        {can('project:write') && (
         <form onSubmit={submit} className="flex items-end gap-2">
           <div>
             <label className="field-label" htmlFor="new-project">
@@ -64,6 +67,7 @@ export function ProjectsPage() {
             {create.isPending ? 'Creating…' : 'Create'}
           </button>
         </form>
+        )}
       </div>
 
       {createError !== null && (

@@ -16,6 +16,9 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind the loopback address explicitly: the default `localhost` resolves to ::1 on some
+    // machines, which a health check against 127.0.0.1 never reaches.
+    host: '127.0.0.1',
     port: Number(process.env.SAGA_WEB_PORT ?? 4320),
     strictPort: true,
     proxy: {

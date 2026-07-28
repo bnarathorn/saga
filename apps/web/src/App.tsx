@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout.jsx';
 import { ErrorState, LoadingState, Panel } from './components/primitives.jsx';
 import { LiveProvider } from './lib/live.jsx';
+import { PermissionProvider } from './lib/permissions.jsx';
 import { useMe } from './lib/queries.js';
 import { DashboardPage } from './pages/Dashboard.jsx';
 import { LoginPage } from './pages/Login.jsx';
@@ -52,25 +53,27 @@ export function App() {
   }
 
   return (
-    <LiveProvider>
-      <Routes>
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route element={<Layout me={me.data!} />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="projects" element={<ProjectsPage />} />
-          <Route path="projects/:projectRef" element={<ProjectDetailPage />}>
-            <Route index element={<ProjectOverview />} />
-            <Route path="lore" element={<LorePage />} />
-            <Route path="lore/:memoryKey" element={<LoreEntryPage />} />
-            <Route path="quests" element={<QuestBoardPage />} />
-            <Route path="quests/:questId" element={<QuestDetailPage />} />
-            <Route path="party" element={<PartyPage />} />
+    <PermissionProvider permissions={me.data?.permissions ?? []}>
+      <LiveProvider>
+        <Routes>
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route element={<Layout me={me.data!} />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="projects" element={<ProjectsPage />} />
+            <Route path="projects/:projectRef" element={<ProjectDetailPage />}>
+              <Route index element={<ProjectOverview />} />
+              <Route path="lore" element={<LorePage />} />
+              <Route path="lore/:memoryKey" element={<LoreEntryPage />} />
+              <Route path="quests" element={<QuestBoardPage />} />
+              <Route path="quests/:questId" element={<QuestDetailPage />} />
+              <Route path="party" element={<PartyPage />} />
+            </Route>
+            <Route path="shrine" element={<ShrinePage />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
-          <Route path="shrine" element={<ShrinePage />} />
-          <Route path="*" element={<NotFound />} />
-        </Route>
-      </Routes>
-    </LiveProvider>
+        </Routes>
+      </LiveProvider>
+    </PermissionProvider>
   );
 }
 

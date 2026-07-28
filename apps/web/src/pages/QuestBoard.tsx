@@ -12,6 +12,7 @@ import {
   type BadgeTone,
 } from '../components/primitives.jsx';
 import { useCreateQuest, useQuests } from '../lib/quest-queries.js';
+import { useCan } from '../lib/permissions.jsx';
 
 /** Board columns, in the order the specification documents. */
 const COLUMNS: { status: QuestStatus; title: string; tone: BadgeTone }[] = [
@@ -31,6 +32,7 @@ const PRIORITY_TONE: Record<string, BadgeTone> = {
 
 export function QuestBoardPage() {
   const { projectRef = '' } = useParams();
+  const can = useCan();
   const quests = useQuests(projectRef, '?limit=200');
   const create = useCreateQuest();
   const [title, setTitle] = useState('');
@@ -62,6 +64,7 @@ export function QuestBoardPage() {
           </p>
         </div>
 
+        {can('quest:write') && (
         <form onSubmit={submit} className="flex items-end gap-2">
           <div>
             <label className="field-label" htmlFor="new-quest">
@@ -79,6 +82,7 @@ export function QuestBoardPage() {
             {create.isPending ? 'Creating…' : 'Create'}
           </button>
         </form>
+        )}
       </div>
 
       {create.isError && <ErrorState error={create.error} />}

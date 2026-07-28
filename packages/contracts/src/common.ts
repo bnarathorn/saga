@@ -55,6 +55,32 @@ export const USER_ROLES = ['admin', 'operator', 'viewer'] as const;
 export const userRoleSchema = z.enum(USER_ROLES);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
+/**
+ * Permissions the API checks. The role and scope matrices that map onto them live in
+ * `@saga/core`; the names live here so Guild Hall can hide an action the caller cannot
+ * perform without duplicating the server's matrix.
+ */
+export const PERMISSIONS = [
+  'project:read',
+  'project:write',
+  'project:archive',
+  'lore:read',
+  'lore:propose',
+  'lore:publish',
+  'lore:archive',
+  'quest:read',
+  'quest:write',
+  'party:read',
+  'party:heartbeat',
+  'party:claim',
+  'party:revoke',
+  'shrine:read',
+  'shrine:operate',
+  'security:manage',
+] as const;
+export const permissionSchema = z.enum(PERMISSIONS);
+export type Permission = z.infer<typeof permissionSchema>;
+
 /** Evidence is optional metadata. `vcs_revision` is never identity — see ADR-0001. */
 export const evidenceItemSchema = z.object({
   path: z.string().min(1).max(1_000),

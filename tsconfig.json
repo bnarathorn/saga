@@ -9,14 +9,14 @@
   },
   "include": ["db/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "eslint.config.js"],
   "references": [
-    { "path": "packages/shared" },
-    { "path": "packages/contracts" },
-    { "path": "packages/database" },
-    { "path": "packages/core" },
-    { "path": "packages/shrine" },
-    { "path": "packages/quest" },
-    { "path": "packages/lore" },
-    { "path": "packages/party" },
-    { "path": "packages/agent-sdk" }
+    { "path": "packages/shared/tsconfig.json" },
+    { "path": "packages/contracts/tsconfig.json" },
+    { "path": "packages/database/tsconfig.json" },
+    { "path": "packages/core/tsconfig.json" },
+    { "path": "packages/shrine/tsconfig.json" },
+    { "path": "packages/quest/tsconfig.json" },
+    { "path": "packages/lore/tsconfig.json" },
+    { "path": "packages/party/tsconfig.json" },
+    { "path": "packages/agent-sdk/tsconfig.json" }
   ]
 }

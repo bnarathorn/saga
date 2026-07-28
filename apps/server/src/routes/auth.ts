@@ -11,7 +11,7 @@ import {
   type LoginResponse,
   type MeResponse,
 } from '@saga/contracts';
-import { DEFAULT_AGENT_SCOPES } from '@saga/core';
+import { DEFAULT_AGENT_SCOPES, permissionsFor } from '@saga/core';
 import { SagaError, toIso } from '@saga/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../composition.js';
@@ -83,6 +83,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
         },
         agent: null,
         csrf_token: request.cookies[CSRF_COOKIE] ?? null,
+        permissions: [...permissionsFor(actor)],
       };
     }
     if (actor.type === 'agent') {
@@ -97,9 +98,17 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
           scopes: actor.scopes,
         },
         csrf_token: null,
+        permissions: [...permissionsFor(actor)],
       };
     }
-    return { authenticated: false, actor_type: 'anonymous', user: null, agent: null, csrf_token: null };
+    return {
+      authenticated: false,
+      actor_type: 'anonymous',
+      user: null,
+      agent: null,
+      csrf_token: null,
+      permissions: [],
+    };
   });
 
   // --- device flow ---------------------------------------------------------

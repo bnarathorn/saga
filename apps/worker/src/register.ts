@@ -71,6 +71,7 @@ export function registerHandlers(ctx: WorkerContext): void {
       outbox: ctx.repositories.outbox,
       idempotency: ctx.repositories.idempotency,
       services: ctx.repositories.services,
+      snapshots: ctx.repositories.snapshots,
       retention: {
         jobDays: ctx.config.retention.jobDays,
         systemEventDays: ctx.config.retention.systemEventDays,

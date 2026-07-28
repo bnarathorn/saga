@@ -1,12 +1,23 @@
+import { PERMISSIONS, type Permission } from '@saga/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, type RenderResult } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { vi } from 'vitest';
+import { PermissionProvider } from './lib/permissions.jsx';
+
+/** What a viewer may do — read everything, change nothing. */
+export const VIEWER_PERMISSIONS: Permission[] = [
+  'project:read',
+  'lore:read',
+  'quest:read',
+  'party:read',
+  'shrine:read',
+];
 
 export function renderWithProviders(
   ui: ReactElement,
-  options: { route?: string; path?: string } = {},
+  options: { route?: string; path?: string; permissions?: readonly Permission[] } = {},
 ): RenderResult & { queryClient: QueryClient } {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
@@ -25,7 +36,9 @@ export function renderWithProviders(
 
   const result = render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[options.route ?? '/']}>{tree}</MemoryRouter>
+      <PermissionProvider permissions={options.permissions ?? PERMISSIONS}>
+        <MemoryRouter initialEntries={[options.route ?? '/']}>{tree}</MemoryRouter>
+      </PermissionProvider>
     </QueryClientProvider>,
   );
 
@@ -87,6 +100,7 @@ export const adminMe = {
   },
   agent: null,
   csrf_token: 'test-csrf-token',
+  permissions: [...PERMISSIONS],
 };
 
 export function projectSummary(overrides: Record<string, unknown> = {}) {

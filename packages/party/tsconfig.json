@@ -17,22 +17,22 @@
   ],
   "references": [
     {
-      "path": "../shared"
+      "path": "../shared/tsconfig.json"
     },
     {
-      "path": "../contracts"
+      "path": "../contracts/tsconfig.json"
     },
     {
-      "path": "../database"
+      "path": "../database/tsconfig.json"
     },
     {
-      "path": "../core"
+      "path": "../core/tsconfig.json"
     },
     {
-      "path": "../shrine"
+      "path": "../shrine/tsconfig.json"
     },
     {
-      "path": "../quest"
+      "path": "../quest/tsconfig.json"
     }
   ]
 }

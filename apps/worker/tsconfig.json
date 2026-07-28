@@ -17,28 +17,28 @@
   ],
   "references": [
     {
-      "path": "../../packages/shared"
+      "path": "../../packages/shared/tsconfig.json"
     },
     {
-      "path": "../../packages/contracts"
+      "path": "../../packages/contracts/tsconfig.json"
     },
     {
-      "path": "../../packages/database"
+      "path": "../../packages/database/tsconfig.json"
     },
     {
-      "path": "../../packages/core"
+      "path": "../../packages/core/tsconfig.json"
     },
     {
-      "path": "../../packages/shrine"
+      "path": "../../packages/shrine/tsconfig.json"
     },
     {
-      "path": "../../packages/quest"
+      "path": "../../packages/quest/tsconfig.json"
     },
     {
-      "path": "../../packages/lore"
+      "path": "../../packages/lore/tsconfig.json"
     },
     {
-      "path": "../../packages/party"
+      "path": "../../packages/party/tsconfig.json"
     }
   ]
 }

@@ -9,6 +9,7 @@ import type { AppContext } from './composition.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerEventRoutes } from './routes/events.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerLoreRoutes } from './routes/lore.js';
 import { registerProjectRoutes, type ProjectStatsContributors } from './routes/projects.js';
@@ -105,6 +106,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   registerLoreRoutes(app, ctx);
   registerQuestRoutes(app, ctx);
   registerPartyRoutes(app, ctx);
+  registerEventRoutes(app, ctx);
 
   for (const register of options.extraRoutes ?? []) {
     await register(app, ctx);

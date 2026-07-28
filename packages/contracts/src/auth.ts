@@ -3,6 +3,7 @@ import {
   agentScopeSchema,
   isoTimestampSchema,
   nullableIsoTimestampSchema,
+  permissionSchema,
   userRoleSchema,
   uuidSchema,
 } from './common.js';
@@ -43,6 +44,12 @@ export const meResponseSchema = z.object({
     })
     .nullable(),
   csrf_token: z.string().nullable(),
+  /**
+   * What this caller may do, resolved from their role or token scopes. Guild Hall hides
+   * actions that are absent here; the API checks the same permissions independently, so a
+   * hidden action is also a refused one.
+   */
+  permissions: z.array(permissionSchema),
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 

@@ -17,13 +17,13 @@
   ],
   "references": [
     {
-      "path": "../../packages/shared"
+      "path": "../../packages/shared/tsconfig.json"
     },
     {
-      "path": "../../packages/contracts"
+      "path": "../../packages/contracts/tsconfig.json"
     },
     {
-      "path": "../../packages/agent-sdk"
+      "path": "../../packages/agent-sdk/tsconfig.json"
     }
   ]
 }

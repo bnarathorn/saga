@@ -195,7 +195,9 @@ for (const pkg of packages) {
   const refDirs = pkg.internal.map((name) => {
     const dep = packages.find((p) => p.name === name);
     if (!dep) throw new Error(`Unknown internal dependency ${name} in ${pkg.name}`);
-    return relative(abs, join(root, dep.dir)).replaceAll('\\', '/');
+    // The explicit `tsconfig.json` suffix, rather than the directory, because tools other
+    // than `tsc` (Playwright's config loader among them) do not expand a directory here.
+    return `${relative(abs, join(root, dep.dir)).replaceAll('\\', '/')}/tsconfig.json`;
   });
 
   const tsconfig = {

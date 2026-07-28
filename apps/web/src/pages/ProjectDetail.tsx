@@ -9,6 +9,7 @@ import {
   classNames,
 } from '../components/primitives.jsx';
 import { ApiError } from '../lib/api.js';
+import { useCan } from '../lib/permissions.jsx';
 import { useProject, useProjectLifecycle, useRenameProject } from '../lib/queries.js';
 
 const TABS = [
@@ -75,6 +76,7 @@ export function ProjectDetailPage() {
 }
 
 function ProjectHeader({ projectRef }: { projectRef: string }) {
+  const can = useCan();
   const project = useProject(projectRef);
   const rename = useRenameProject();
   const archive = useProjectLifecycle('archive');
@@ -112,25 +114,28 @@ function ProjectHeader({ projectRef }: { projectRef: string }) {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => {
-              setNewName(data.name);
-              setRenaming(true);
-            }}
-          >
-            Rename
-          </button>
-          {data.status === 'active' ? (
-            <button type="button" className="btn-secondary" onClick={() => setLifecycleReason('')}>
-              Archive
-            </button>
-          ) : (
-            <button type="button" className="btn-secondary" onClick={() => setLifecycleReason('')}>
-              Restore
+          {can('project:write') && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                setNewName(data.name);
+                setRenaming(true);
+              }}
+            >
+              Rename
             </button>
           )}
+          {can('project:archive') &&
+            (data.status === 'active' ? (
+              <button type="button" className="btn-secondary" onClick={() => setLifecycleReason('')}>
+                Archive
+              </button>
+            ) : (
+              <button type="button" className="btn-secondary" onClick={() => setLifecycleReason('')}>
+                Restore
+              </button>
+            ))}
         </div>
       </div>
 

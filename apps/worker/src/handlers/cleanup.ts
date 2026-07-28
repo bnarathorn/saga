@@ -6,6 +6,7 @@ import {
 } from '@saga/core';
 import type { SagaPool } from '@saga/database';
 import { addSeconds } from '@saga/shared';
+import type { SnapshotRepository } from '@saga/lore';
 import type { JobHandler, JobRepository, ServiceInstanceRepository, SystemEventRepository } from '@saga/shrine';
 
 export interface CleanupDeps {
@@ -15,6 +16,7 @@ export interface CleanupDeps {
   outbox: OutboxRepository;
   idempotency: IdempotencyRepository;
   services: ServiceInstanceRepository;
+  snapshots: SnapshotRepository;
   retention: { jobDays: number; systemEventDays: number; idempotencyHours: number };
 }
 
@@ -33,7 +35,7 @@ export function createCleanupHandler(deps: CleanupDeps): JobHandler {
       idempotency: 'Deleting already-deleted rows is a no-op, so re-running is always safe.',
       retryPolicy: 'Standard backoff; a failure only delays reclaiming disk.',
       sideEffects:
-        'Deletes finished jobs, published outbox rows, old system events, expired web sessions, expired device codes, expired idempotency records and dead service instances.',
+        'Deletes finished jobs, published outbox rows, old system events, expired web sessions, expired device codes, expired idempotency records, dead service instances and superseded context snapshots. Durable Lore and Quest history is archived, never deleted.',
       result: 'Counts of rows removed per table.',
       failureCodes: [],
     },
@@ -66,6 +68,14 @@ export function createCleanupHandler(deps: CleanupDeps): JobHandler {
         deps.services.deleteStaleBefore(deps.pool, serviceCutoff),
       ]);
 
+      // Context snapshots are derived data: the active one and the most recent few per
+      // project are kept so an operator can see how core context changed.
+      const removedSnapshots = await deps.snapshots.deleteSupersededBefore(
+        deps.pool,
+        eventCutoff,
+        5,
+      );
+
       return {
         jobs: removedJobs,
         outbox_events: removedOutbox,
@@ -74,6 +84,7 @@ export function createCleanupHandler(deps: CleanupDeps): JobHandler {
         device_codes: removedDeviceCodes,
         idempotency_records: removedIdempotency,
         service_instances: removedServices,
+        context_snapshots: removedSnapshots,
       };
     },
   };

@@ -1,4 +1,4 @@
-import type { AgentScope, UserRole } from '@saga/contracts';
+import { PERMISSIONS, type AgentScope, type Permission, type UserRole } from '@saga/contracts';
 import { SagaError } from '@saga/shared';
 
 export interface UserActor {
@@ -25,29 +25,11 @@ export interface AnonymousActor {
 export type Actor = UserActor | AgentActor | AnonymousActor;
 
 /**
- * Permissions the API checks. Web roles map to sets of these; agent scopes map separately,
- * because an agent must never inherit console-wide powers.
+ * Web roles map to sets of permissions; agent scopes map separately, because an agent must
+ * never inherit console-wide powers. The permission *names* live in `@saga/contracts` so
+ * Guild Hall can read them; the matrices below are server-side policy.
  */
-export const PERMISSIONS = [
-  'project:read',
-  'project:write',
-  'project:archive',
-  'lore:read',
-  'lore:propose',
-  'lore:publish',
-  'lore:archive',
-  'quest:read',
-  'quest:write',
-  'party:read',
-  'party:heartbeat',
-  'party:claim',
-  'party:revoke',
-  'shrine:read',
-  'shrine:operate',
-  'security:manage',
-] as const;
-
-export type Permission = (typeof PERMISSIONS)[number];
+export { PERMISSIONS, type Permission };
 
 const VIEWER: Permission[] = [
   'project:read',

@@ -13,6 +13,7 @@ import {
   type BadgeTone,
 } from '../components/primitives.jsx';
 import { api } from '../lib/api.js';
+import { useCan } from '../lib/permissions.jsx';
 import { POLL } from '../lib/queries.js';
 
 const SEVERITY_TONE: Record<string, BadgeTone> = {
@@ -29,6 +30,7 @@ const CLAIM_TONE: Record<string, BadgeTone> = {
 };
 
 export function PartyPage() {
+  const can = useCan();
   const { projectRef = '' } = useParams();
   const client = useQueryClient();
 
@@ -190,7 +192,7 @@ export function PartyPage() {
                   <RelativeTime value={claim.lease_expires_at} />
                 </td>
                 <td className="table-cell">
-                  {claim.state === 'active' ? (
+                  {claim.state === 'active' && can('party:revoke') ? (
                     <button
                       type="button"
                       className="btn-secondary py-1 text-xs"

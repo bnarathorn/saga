@@ -12,6 +12,7 @@ import {
   type BadgeTone,
 } from '../components/primitives.jsx';
 import { useQuestDetail, useQuestLifecycle, useUpdateQuest } from '../lib/quest-queries.js';
+import { useCan } from '../lib/permissions.jsx';
 
 const STATUS_TONE: Record<QuestStatus, BadgeTone> = {
   open: 'neutral',
@@ -32,6 +33,7 @@ const STATUSES: QuestStatus[] = [
 ];
 
 export function QuestDetailPage() {
+  const can = useCan();
   const { projectRef = '', questId = '' } = useParams();
   const detail = useQuestDetail(questId);
   const update = useUpdateQuest();
@@ -67,6 +69,8 @@ export function QuestDetailPage() {
         )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          {can('quest:write') && (
+          <>
           <label className="sr-only" htmlFor="quest-status">
             Change status
           </label>
@@ -89,6 +93,8 @@ export function QuestDetailPage() {
             <button type="button" className="btn-secondary" onClick={() => setReopenReason('')}>
               Reopen
             </button>
+          )}
+          </>
           )}
         </div>
         {update.isError && <ErrorState error={update.error} />}

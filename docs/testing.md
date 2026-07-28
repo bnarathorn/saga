@@ -1,0 +1,114 @@
+# Saga — Testing
+
+Testing is part of implementation here, not a cleanup phase. Every phase of the build was
+gated on `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` passing.
+
+---
+
+## Suites
+
+| Command | What it covers | Needs PostgreSQL |
+| ------- | -------------- | :--------------: |
+| `pnpm test` | Unit: pure logic | no |
+| `pnpm test:integration` | Real transactions and concurrency | yes |
+| `pnpm test:api` | The full Fastify app | yes |
+| `pnpm test:web` | Guild Hall components in jsdom | no |
+| `pnpm test:e2e` | Playwright browser flows | yes |
+| `pnpm test:all` | Every Vitest project | yes |
+
+Integration and API suites need `SAGA_TEST_DATABASE_URL` pointing at a database you are
+willing to have truncated. `testing/global-setup.ts` migrates it once per run; individual
+tests truncate rather than re-migrate.
+
+Both run in a **single fork** (`poolOptions.forks.singleFork`): they truncate shared tables
+between tests, so two files running at once would wipe each other's fixtures.
+
+Tests always resolve `@saga/*` to TypeScript **source**, never to `dist`, so a stale build can
+never mask a regression.
+
+---
+
+## What the tests are actually for
+
+The unit suite covers pure logic where a subtle mistake is invisible in review: project-name
+normalization, memory-key validation, the secret policy, reciprocal rank fusion, relation
+expansion and cycle protection, token-budget trimming, snapshot determinism, activation
+classification, parent-state projection, the claim-policy matrix, overlap ranking, lease
+arithmetic, retry backoff and sanitized configuration.
+
+The integration suite exists for the claims that can only be true against a real database:
+
+- Two checkpoints at the same expected revision → exactly one succeeds, one 409s.
+- Two exclusive claims on one resource → exactly one wins.
+- Shared claims coexist where policy permits.
+- Lore updates touching *different* entries publish concurrently.
+- Lore updates touching the *same* entry conflict, and the loser is durably recorded.
+- A partial conflict changes **no** pointer — not even the entries that would have succeeded.
+- A context snapshot activates atomically with publication; a failed publish leaves it alone.
+- A stale job claim is recovered, and the late worker cannot complete it.
+- An expired agent run expires its claims while the Quest and checkpoints survive.
+- Outbox events commit atomically with their domain mutation, and *only* with it.
+- Enqueuing a deduplicated job does not abort the caller's transaction.
+- Project rename preserves the UUID; the old alias resolves; collisions are rejected.
+- The schema contains no repository, source or branch identity table or column.
+
+The API suite drives the real Fastify app: authentication, CSRF, the authorization matrix,
+project lifecycle, the whole Lore pipeline, the two-phase session flow, Party coordination,
+Shrine operations, idempotency replay and mismatch, and the security requirements.
+
+The web suite asserts the states that are easy to skip: loading, empty, degraded and error;
+permission-based action visibility, so a hidden control is also a refused one; the event
+stream degrading to polling and saying so; keyboard reachability of the primary flows; and
+that mutations carry the CSRF header.
+
+---
+
+## Browser tests
+
+`pnpm test:e2e` runs the section-21.4 scenario end to end — administrator login, project
+creation, the Lore bootstrap state, proposing and publishing an Entry, an agent session and
+checkpoint, the Quest Board and its handoff, Party liveness, and retrying a failed job from
+Shrine with the reason landing in the audit log.
+
+The stack is hermetic and disposable:
+
+- its own ports (API 4419, Guild Hall 4420), so it cannot collide with `scripts/stack.sh`;
+- `tests/e2e/prepare.ts` migrates and truncates the test database as the first half of the API
+  `webServer` command, because the bootstrap administrator is only created when no user
+  exists — a database left over from Vitest would leave the browser with no credentials;
+- the worker is started by `tests/e2e/global-setup.ts`, since a Playwright `webServer` entry
+  is identified by a URL and the worker listens on none;
+- `SAGA_EMBEDDING_PROVIDER=fake`, so no network call is involved.
+
+The project is switched to `lore_approval_mode = manual` before step 4. Under the default
+`auto` mode the worker publishes as soon as validation passes, and there is nothing left for a
+human to approve in the browser.
+
+---
+
+## Live verification
+
+Two scripts run against a *running* stack, so they catch wiring that unit-level mocking would
+hide:
+
+```bash
+scripts/stack.sh up
+pnpm exec tsx scripts/verify.ts   # 75 assertions across every slice
+pnpm demo                          # the full section-25 demonstration
+```
+
+`scripts/demo.ts` drives the **real MCP tool handlers** from a temporary plain folder with no
+version control — the same code path an agent takes through `saga mcp`. It found a real defect
+that no unit test would have: Quest embedding jobs whose payload the handler could not parse.
+
+---
+
+## Writing tests here
+
+- Assert the *behaviour the specification promises*, not the implementation.
+- Name the acceptance criterion in a comment when a test defends one.
+- For concurrency, use `Promise.allSettled` and assert the winner/loser split — not just that
+  no error was thrown.
+- Prefer a real database over a mock for anything involving a transaction, a lock or an index.
+- When a test fails, first ask whether the test or the code is wrong. Several defects in this
+  codebase were found because a test that *looked* wrong was right.

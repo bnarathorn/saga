@@ -11,6 +11,7 @@ import {
   Table,
   type BadgeTone,
 } from '../components/primitives.jsx';
+import { useCan } from '../lib/permissions.jsx';
 import {
   useAuditLog,
   useEvents,
@@ -33,6 +34,7 @@ const JOB_STATE_TONE: Record<string, BadgeTone> = {
 };
 
 export function ShrinePage() {
+  const can = useCan();
   const health = useHealth();
   const services = useServices();
   const schema = useSchemaVersion();
@@ -110,14 +112,18 @@ export function ShrinePage() {
       <Panel
         title="Job queue"
         actions={
-          <button
-            type="button"
-            className="btn-secondary"
-            disabled={probe.isPending}
-            onClick={() => probe.mutate({ echo: 'Guild Hall probe' })}
-          >
-            {probe.isPending ? 'Queueing…' : 'Queue a probe job'}
-          </button>
+          // The probe is the only job Guild Hall can enqueue: there is no arbitrary payload
+          // editor and no command runner here, by design.
+          can('shrine:operate') ? (
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={probe.isPending}
+              onClick={() => probe.mutate({ echo: 'Guild Hall probe' })}
+            >
+              {probe.isPending ? 'Queueing…' : 'Queue a probe job'}
+            </button>
+          ) : null
         }
       >
         {jobs.isPending && <LoadingState />}
@@ -265,15 +271,18 @@ function ConfigRow({ label, value }: { label: string; value: string }) {
 }
 
 function JobRow({ job }: { job: JobDto }) {
+  const can = useCan();
   const retry = useJobAction('retry');
   const cancel = useJobAction('cancel');
   const requeue = useJobAction('requeue');
   const [reason, setReason] = useState('');
   const [open, setOpen] = useState<null | 'retry' | 'cancel' | 'requeue'>(null);
 
-  const canRetry = job.state === 'failed' || job.state === 'cancelled';
-  const canCancel = job.state === 'queued' || job.state === 'retrying';
+  const operate = can('shrine:operate');
+  const canRetry = operate && (job.state === 'failed' || job.state === 'cancelled');
+  const canCancel = operate && (job.state === 'queued' || job.state === 'retrying');
   const canRequeue =
+    operate &&
     job.state === 'claimed' &&
     job.lease_expires_at !== null &&
     new Date(job.lease_expires_at).getTime() < Date.now();
