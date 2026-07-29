@@ -5,6 +5,7 @@ import { connectCommand, parseFlags } from './commands/connect.js';
 import { doctorCommand } from './commands/doctor.js';
 import { statusCommand } from './commands/status.js';
 import { CredentialStore } from './credentials.js';
+import { describeLocalChanges } from './local-changes.js';
 import { detectWorkspace, findBinding, loadConfig } from './workspace.js';
 
 registerCommand('connect', connectCommand);
@@ -46,10 +47,10 @@ runCli(process.argv.slice(2)).then(
     } else if (isSagaError(error)) {
       process.stderr.write(`\n${error.message}\n  (${error.code})\n`);
       if (error.retryable) process.stderr.write('  Retrying is safe.\n');
-      process.stderr.write('  Your local files were not modified.\n');
+      process.stderr.write(`  ${describeLocalChanges()}\n`);
     } else {
       process.stderr.write(
-        `\n${errorMessage(error)}\n  Your local files were not modified. Run with --debug for detail.\n`,
+        `\n${errorMessage(error)}\n  ${describeLocalChanges()}\n  Run with --debug for detail.\n`,
       );
     }
     process.exitCode = 1;

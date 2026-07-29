@@ -1,13 +1,14 @@
 import { createInterface } from 'node:readline/promises';
 import { SagaClient } from '@saga/agent-sdk';
-import { errorMessage } from '@saga/shared';
+import { errorMessage, isSagaError } from '@saga/shared';
 import { CredentialStore } from '../credentials.js';
 import { writeMcpConfig } from '../mcp-config.js';
+import { checkApiCompatibility } from '../version.js';
 import {
   detectWorkspace,
   loadConfig,
   readProjectFile,
-  saveConfig,
+  updateConfig,
   upsertBinding,
   writeProjectFile,
 } from '../workspace.js';
@@ -116,7 +117,45 @@ export async function connectCommand(argv: string[]): Promise<number> {
 
   const client = new SagaClient({ baseUrl: serverUrl, token, client: 'saga-cli' });
 
-  // 3. the token is project-scoped, so the project is already decided
+  // 3. verify API compatibility before anything is written locally (spec 13.1 step 7).
+  //    Only a *known* incompatibility stops the flow. `/api/shrine/health` needs the
+  //    `shrine:health` permission, which a token approved with a narrower scope set than the
+  //    default does not carry — and being unable to check the version is not a reason to
+  //    refuse to bind a folder that `/health/live` has already answered for.
+  const health = await client.health().then(
+    (value) => value,
+    (error: unknown) => (error instanceof Error ? error : new Error(String(error))),
+  );
+  if (health instanceof Error) {
+    const code = isSagaError(health) ? health.code : 'UNKNOWN';
+    out.write(
+      `API compatibility: not verified (${code}).\n` +
+        (code === 'SCOPE_REQUIRED' || code === 'FORBIDDEN'
+          ? '  This token is not scoped to read server health. That is fine for ordinary use;\n' +
+            '  run `saga doctor` with an operator session to check the version.\n'
+          : '  The server did not answer /api/shrine/health. Run `saga doctor` for detail.\n'),
+    );
+  } else {
+    const compatibility = checkApiCompatibility(health.version);
+    if (compatibility.verdict === 'incompatible') {
+      process.stderr.write(
+        `\n${compatibility.message}\n` +
+          `  Nothing was changed locally.\n` +
+          `  ${compatibility.action ?? ''}\n`,
+      );
+      return 1;
+    }
+    out.write(
+      compatibility.verdict === 'compatible'
+        ? `API compatibility: ${compatibility.message}\n`
+        : `API compatibility: ${compatibility.message}\n  ${compatibility.action ?? ''}\n`,
+    );
+  }
+
+  // 4. the project is already decided: the token is minted bound to the project the approver
+  //    chose, and bearer auth only ever resolves an agent token, so the CLI cannot pick one.
+  //    `--project` therefore asserts rather than selects — it stops a folder being bound to
+  //    the wrong project when several approvals are in flight.
   const who = await client.whoami().catch(() => null);
   if (who === null || who.agent === null) {
     process.stderr.write(
@@ -132,14 +171,26 @@ export async function connectCommand(argv: string[]): Promise<number> {
     return 1;
   }
 
+  if (flags.project !== undefined && !matchesProject(flags.project, project.project)) {
+    process.stderr.write(
+      `\nYou asked for project "${flags.project}", but this token is bound to ` +
+        `"${project.project.name}" (${project.project.id}).\n` +
+        '  Nothing was changed locally. The project is chosen when the device request is\n' +
+        '  approved, not by this CLI. Ask for a token for the project you want, then run\n' +
+        '  `saga connect --reauth`.\n',
+    );
+    return 1;
+  }
+
   out.write(`\nLocal project type: ${describeKind(workspace.kind)}\n`);
   out.write(`Project: ${project.project.name}\n`);
 
-  // 4. bind the folder
+  // 5. bind the folder. Under a lock, because a concurrent `saga connect` in another folder
+  //    rewrites the same bindings array and would otherwise drop this one.
   const projectFile = writeProjectFile(workspace.root, project.project.name);
-  saveConfig(
+  updateConfig((current) =>
     upsertBinding(
-      { ...config, serverUrl },
+      { ...current, serverUrl },
       {
         root: workspace.root,
         projectId: project.project.id,
@@ -153,7 +204,7 @@ export async function connectCommand(argv: string[]): Promise<number> {
 
   out.write(`\nConnected this folder to "${project.project.name}".\n`);
 
-  // 5. bootstrap state
+  // 6. bootstrap state
   const context = await client.context(project.project.id, {}).catch(() => null);
   if (context?.bootstrap_required === true) {
     out.write('Lore bootstrap is required: this project has no core context yet.\n');
@@ -162,7 +213,7 @@ export async function connectCommand(argv: string[]): Promise<number> {
     out.write(`Core context is ready (Lore revision ${context.project.memory_revision}).\n`);
   }
 
-  // 6. MCP configuration for Codex and Claude
+  // 7. MCP configuration for Codex and Claude
   const mcp = writeMcpConfig({
     root: workspace.root,
     serverUrl,
@@ -256,24 +307,28 @@ export function describeKind(kind: string): string {
   }
 }
 
-export function parseFlags(argv: readonly string[]): {
+/** Accepts either the project's UUID or its display name, case-insensitively. */
+export function matchesProject(requested: string, project: { id: string; name: string }): boolean {
+  const wanted = requested.trim().toLowerCase();
+  return wanted === project.id.toLowerCase() || wanted === project.name.toLowerCase();
+}
+
+export interface CliFlags {
   server?: string;
   token?: string;
+  project?: string;
   reauth?: boolean;
   json?: boolean;
   debug?: boolean;
-} {
-  const flags: {
-    server?: string;
-    token?: string;
-    reauth?: boolean;
-    json?: boolean;
-    debug?: boolean;
-  } = {};
+}
+
+export function parseFlags(argv: readonly string[]): CliFlags {
+  const flags: CliFlags = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--server') flags.server = argv[++index];
     else if (arg === '--token') flags.token = argv[++index];
+    else if (arg === '--project') flags.project = argv[++index];
     else if (arg === '--reauth') flags.reauth = true;
     else if (arg === '--json') flags.json = true;
     else if (arg === '--debug') flags.debug = true;

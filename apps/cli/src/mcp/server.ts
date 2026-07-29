@@ -20,10 +20,20 @@ export interface McpSession {
   client: string;
 }
 
+/**
+ * Keeps the agent-run lease alive between tool calls. Declared as a shape rather than imported,
+ * so the tool surface does not depend on the timer implementation. See `heartbeat.ts`.
+ */
+export interface HeartbeatController {
+  start(): void;
+  stop(): void;
+}
+
 export interface McpToolContext {
   client: SagaClient;
   session: McpSession;
   workspace: { root: string; kind: string; workspaceKey: string; workspaceLabel: string };
+  heartbeat?: HeartbeatController;
 }
 
 export interface McpToolResult {
@@ -111,6 +121,9 @@ export const TOOLS: McpTool[] = [
 
       ctx.session.sessionId = started.session_id;
       ctx.session.agentRunId = started.agent_run_id;
+      // From here a single tool call can outlast the lease, so the heartbeat runs on its own
+      // timer rather than on the request cycle.
+      ctx.heartbeat?.start();
 
       return {
         session_id: started.session_id,
@@ -394,6 +407,7 @@ export const TOOLS: McpTool[] = [
           : undefined,
       });
 
+      ctx.heartbeat?.stop();
       ctx.session.sessionId = null;
       ctx.session.agentRunId = null;
       ctx.session.questId = null;

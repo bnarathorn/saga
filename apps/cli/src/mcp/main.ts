@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { SessionHeartbeat } from './heartbeat.js';
 import { zodToJsonSchema } from './json-schema.js';
 import { TOOLS, buildToolContext, toToolError } from './server.js';
 
@@ -13,6 +14,15 @@ import { TOOLS, buildToolContext, toToolError } from './server.js';
 export async function runMcpServer(clientName = 'saga-mcp'): Promise<void> {
   const { context, problems } = await buildToolContext(clientName);
   for (const problem of problems) process.stderr.write(`saga-mcp: ${problem}\n`);
+
+  const heartbeat = new SessionHeartbeat(context.client, context.session);
+  context.heartbeat = heartbeat;
+  // A host that kills the server mid-session should not leave the lease to time out silently.
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      heartbeat.stop();
+    });
+  }
 
   const server = new Server(
     { name: 'saga', version: process.env.SAGA_VERSION ?? '0.1.0' },

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { noteLocalChange } from './local-changes.js';
 
 export interface McpConfigInput {
   root: string;
@@ -103,4 +104,5 @@ function readJson(path: string): Record<string, unknown> | null | 'unparseable' 
 function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  noteLocalChange(path);
 }

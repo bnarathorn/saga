@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { SagaClient } from '@saga/agent-sdk';
 import { CredentialStore } from '../credentials.js';
 import { mcpConfigPaths } from '../mcp-config.js';
+import { checkApiCompatibility } from '../version.js';
 import { configPath, detectWorkspace, findBinding, loadConfig } from '../workspace.js';
 import { parseFlags } from './connect.js';
 
@@ -167,11 +168,25 @@ export async function doctorCommand(argv: string[]): Promise<number> {
   }
 
   const health = await client.health().catch(() => null);
-  if (health !== null) {
+  if (health === null) {
     checks.push({
       name: 'api compatibility',
-      status: 'ok',
-      message: `Saga ${health.version}, health ${health.status}.`,
+      status: 'failure',
+      message: 'The server did not answer /api/shrine/health.',
+      action: 'Check the server logs; the API is reachable but not serving its health endpoint.',
+    });
+  } else {
+    const compatibility = checkApiCompatibility(health.version);
+    checks.push({
+      name: 'api compatibility',
+      status:
+        compatibility.verdict === 'compatible'
+          ? 'ok'
+          : compatibility.verdict === 'unknown'
+            ? 'warning'
+            : 'failure',
+      message: `${compatibility.message} Server health ${health.status}.`,
+      ...(compatibility.action === undefined ? {} : { action: compatibility.action }),
     });
 
     const detailed = (await fetch(`${serverUrl}/api/shrine/health`, {

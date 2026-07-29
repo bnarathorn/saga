@@ -99,6 +99,7 @@ export async function statusCommand(argv: string[]): Promise<number> {
   }
 
   const party = await client.partyStatus(projectRef).catch(() => null);
+  let questHere: { id: string; title: string } | null = null;
   if (party !== null) {
     report.party = {
       mode: party.mode,
@@ -109,6 +110,14 @@ export async function statusCommand(argv: string[]): Promise<number> {
     const here = party.active_agents.filter(
       (agent) => agent.workspace_label === workspace.workspaceLabel,
     );
+    // The Quest of an agent run in *this* folder — not merely the first in-progress Quest in
+    // the project, which in the multi-agent case Saga exists for is somebody else's work.
+    const attached = here.find(
+      (agent) => agent.work_item_id !== null && agent.quest_title !== null,
+    );
+    if (attached !== undefined) {
+      questHere = { id: attached.work_item_id!, title: attached.quest_title! };
+    }
     if (here.length > 0) {
       report.notes.push(
         `${here.length} agent run${here.length === 1 ? '' : 's'} active in this folder: ${here
@@ -129,8 +138,16 @@ export async function statusCommand(argv: string[]): Promise<number> {
     const open = quests.items.filter(
       (quest) => quest.status !== 'completed' && quest.status !== 'cancelled',
     );
-    const inProgress = open.find((quest) => quest.status === 'in_progress');
-    report.quests = { open: open.length, active_here: inProgress?.title ?? null };
+    report.quests = { open: open.length, active_here: questHere?.title ?? null };
+    if (questHere === null) {
+      const elsewhere = open.filter((quest) => quest.status === 'in_progress');
+      if (elsewhere.length > 0) {
+        report.notes.push(
+          `${elsewhere.length} Quest${elsewhere.length === 1 ? ' is' : 's are'} in progress in this ` +
+            `project, but none is attached to an agent run in this folder.`,
+        );
+      }
+    }
   }
 
   return emit(report, flags.json === true, 0);
@@ -171,7 +188,7 @@ function emit(report: StatusReport, json: boolean, code: number): number {
 
   if (report.quests !== null) {
     line('Open Quests', String(report.quests.open));
-    if (report.quests.active_here !== null) line('In progress', report.quests.active_here);
+    if (report.quests.active_here !== null) line('Active here', report.quests.active_here);
   }
 
   if (report.party !== null) {
