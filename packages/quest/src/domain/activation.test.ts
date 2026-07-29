@@ -196,6 +196,61 @@ describe('classification', () => {
     ).toBe('resume_work');
   });
 
+  it('refuses to attach a resume hint to a Quest too weak to even suggest', () => {
+    // The hint supplies the "intent is explicit" half of spec 9.5, not the "confidence is
+    // high" half. Attaching the top candidate whatever it scored meant a resume in a project
+    // with one unrelated open Quest silently joined that Quest.
+    const stale = candidate({
+      id: 'q1',
+      title: 'Rewrite the invoicing PDF templates',
+      lastActivityAt: new Date('2025-01-01T00:00:00Z'),
+    });
+    const result = classifyActivation(
+      match({ task: 'add a healthcheck endpoint', modeHint: 'resume_work', candidates: [stale] }),
+    );
+
+    expect(result.mode).toBe('new_work');
+    expect(result.matched).toBeNull();
+    expect(result.explanation).toMatch(/when uncertain, create a new Quest/i);
+  });
+
+  it('still resumes on a hint when the match is plausible', () => {
+    const quest = candidate({
+      id: 'q1',
+      title: 'Refresh-token reuse detection',
+      scope: { issue_keys: ['AUTH-142'] },
+    });
+    const result = classifyActivation(
+      match({ task: 'AUTH-142 keeps failing', modeHint: 'resume_work', candidates: [quest] }),
+    );
+
+    expect(result.mode).toBe('resume_work');
+    expect(result.matched?.id).toBe('q1');
+  });
+
+  it('resumes a weakly-matching Quest when the caller names it outright', () => {
+    // An explicit id is a stronger signal than any score, so the threshold does not apply.
+    const stale = candidate({
+      id: 'q1',
+      title: 'Rewrite the invoicing PDF templates',
+      lastActivityAt: new Date('2025-01-01T00:00:00Z'),
+    });
+    const result = classifyActivation(
+      match({ task: 'add a healthcheck endpoint', requestedQuestId: 'q1', candidates: [stale] }),
+    );
+
+    expect(result.mode).toBe('resume_work');
+    expect(result.matched?.id).toBe('q1');
+  });
+
+  it('says the project has nothing to resume when there are no candidates', () => {
+    const result = classifyActivation(
+      match({ task: 'continue the work', modeHint: 'resume_work', candidates: [] }),
+    );
+    expect(result.mode).toBe('new_work');
+    expect(result.explanation).toMatch(/no open Quest to resume/);
+  });
+
   it('returns new_work when resume is requested but nothing is resumable', () => {
     const result = classifyActivation(
       match({

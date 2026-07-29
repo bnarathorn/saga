@@ -29386,6 +29386,19 @@
                           "other_quest_title": {
                             "type": "string"
                           },
+                          "other_agent_run_id": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "other_client": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "message": {
                             "type": "string"
                           }
@@ -29396,6 +29409,8 @@
                           "observed_hash",
                           "other_quest_id",
                           "other_quest_title",
+                          "other_agent_run_id",
+                          "other_client",
                           "message"
                         ]
                       }

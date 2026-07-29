@@ -39,8 +39,15 @@ export function worstStatus(states: readonly HealthState[]): HealthState {
  * Domains register their own health contributors at composition time rather than Shrine
  * reaching into other schemas — see ADR-0001.
  */
+/** A contributor that has not answered by now is reported as indeterminate, not as broken. */
+export const HEALTH_CHECK_TIMEOUT_MS = 5_000;
+
+const TIMED_OUT = Symbol('health-check-timeout');
+
 export class HealthRegistry {
   private readonly contributors: HealthContributor[] = [];
+
+  constructor(private readonly timeoutMs: number = HEALTH_CHECK_TIMEOUT_MS) {}
 
   register(contributor: HealthContributor): void {
     this.contributors.push(contributor);
@@ -54,7 +61,19 @@ export class HealthRegistry {
       selected.map(async (contributor): Promise<HealthCheckReport> => {
         const startedAt = Date.now();
         try {
-          const result = await contributor.check();
+          const result = await this.withTimeout(contributor.check());
+          if (result === TIMED_OUT) {
+            // `unhealthy` would assert the dependency is broken; all we know is that the check
+            // did not answer. `unknown` says exactly that, and readiness still refuses to
+            // report ready on it.
+            return {
+              name: contributor.name,
+              status: 'unknown',
+              message: `The check did not answer within ${this.timeoutMs}ms, so its state is unknown.`,
+              detail: { timeout_ms: this.timeoutMs },
+              durationMs: Date.now() - startedAt,
+            };
+          }
           return {
             ...result,
             // The contributor's registered name wins: a check that omits it would otherwise
@@ -64,7 +83,8 @@ export class HealthRegistry {
             durationMs: Date.now() - startedAt,
           };
         } catch (error) {
-          // A contributor that throws is itself a health signal; never let it break the report.
+          // A thrown error *is* evidence — a refused connection, a failed query — so it stays
+          // `unhealthy`. Only the absence of an answer is `unknown`.
           return {
             name: contributor.name,
             status: 'unhealthy',
@@ -78,6 +98,24 @@ export class HealthRegistry {
 
     checks.sort((a, b) => a.name.localeCompare(b.name));
     return { status: worstStatus(checks.map((check) => check.status)), checks };
+  }
+
+  private async withTimeout(
+    check: Promise<HealthCheckResult>,
+  ): Promise<HealthCheckResult | typeof TIMED_OUT> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        check,
+        new Promise<typeof TIMED_OUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMED_OUT), this.timeoutMs);
+          // One slow contributor must not keep the process alive at shutdown.
+          timer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 }
 

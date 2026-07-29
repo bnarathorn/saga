@@ -300,6 +300,36 @@ describe('idempotency', () => {
     const retry = await admin.post('/api/projects', { name: 'Not Taken' }, headers);
     expect(retry.status).toBe(201);
   });
+
+  it('covers job retry, which spec 12.7 names alongside claim acquisition', async () => {
+    // This protects a *client that retries with the same key*. A human double-click sends two
+    // requests with no key at all, which is why the Guild Hall button disables while in flight.
+    const admin = await harness.loginAs('admin');
+    const probe = await admin.post('/api/shrine/jobs/probe', { echo: 'idempotent retry' });
+    await admin.post(`/api/shrine/jobs/${probe.body.job.id}/cancel`, { reason: 'to retry it' });
+
+    const headers = { 'idempotency-key': 'operator-double-click' };
+    const first = await admin.post(
+      `/api/shrine/jobs/${probe.body.job.id}/retry`,
+      { reason: 'the provider is back' },
+      headers,
+    );
+    const replay = await admin.post(
+      `/api/shrine/jobs/${probe.body.job.id}/retry`,
+      { reason: 'the provider is back' },
+      headers,
+    );
+
+    expect(first.status).toBe(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+
+    // One operator decision, one audit record.
+    const audit = await admin.get('/api/shrine/audit?limit=25');
+    const retries = audit.body.items.filter(
+      (row: { action: string }) => row.action === 'shrine.job_retry',
+    );
+    expect(retries).toHaveLength(1);
+  });
 });
 
 describe('agent tokens', () => {

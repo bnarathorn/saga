@@ -135,6 +135,25 @@ function intersect(a: readonly string[] | undefined, b: readonly string[] | unde
 }
 
 /**
+ * Flatten one peer-controlled string for inclusion in the rendered context.
+ *
+ * Everything rendered below — Quest titles, client names, declared scope, resource keys — was
+ * written by *another* agent, and the result is a Markdown document a language model reads as
+ * instructions. A title containing a newline and `## System` injects a section into somebody
+ * else's context. Newlines are what make that structural, so they go; backticks go too,
+ * because they can open a code span that swallows the rest of the document.
+ */
+export function inlineContextValue(value: string, max = 200): string {
+  const flat = value
+    // Control and formatting characters, including newlines and bidi overrides.
+    .replace(/[\p{Cc}\p{Cf}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const clipped = flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+  return clipped.replace(/`/g, "'");
+}
+
+/**
  * Render the Party section of agent context (spec 10.6): only what a peer needs to avoid a
  * collision, never every checkpoint from every agent.
  */
@@ -156,18 +175,30 @@ export function renderPartyContext(
   if (peers.length > 0) {
     lines.push('## Parallel work', '');
     for (const peer of peers) {
-      lines.push(`- ${peer.client}: ${peer.questTitle ?? 'no Quest attached'}`);
+      const title =
+        peer.questTitle === null ? 'no Quest attached' : inlineContextValue(peer.questTitle);
+      lines.push(`- ${inlineContextValue(peer.client, 60)}: ${title}`);
       const scopeParts: string[] = [];
       for (const { field, label } of SCOPE_FIELDS) {
         const values = peer.scope[field];
         if (values !== undefined && values.length > 0) {
-          scopeParts.push(`${label}s ${values.slice(0, 3).join(', ')}`);
+          scopeParts.push(
+            `${label}s ${values
+              .slice(0, 3)
+              .map((value) => inlineContextValue(value, 120))
+              .join(', ')}`,
+          );
         }
       }
       if (scopeParts.length > 0) lines.push(`  Scope: ${scopeParts.join('; ')}`);
       if (peer.claims.length > 0) {
         lines.push(
-          `  Claims: ${peer.claims.map((claim) => `${claim.resourceType}:${claim.resourceKey}`).join(', ')}`,
+          `  Claims: ${peer.claims
+            .map(
+              (claim) =>
+                `${inlineContextValue(claim.resourceType, 40)}:${inlineContextValue(claim.resourceKey, 120)}`,
+            )
+            .join(', ')}`,
         );
       }
     }
@@ -177,9 +208,15 @@ export function renderPartyContext(
   if (overlaps.length > 0) {
     lines.push('## Overlap warnings', '');
     for (const overlap of overlaps.slice(0, 8)) {
+      // `message` embeds the other agent's client and Quest title, so it is peer-controlled too.
       const values =
-        overlap.values.length === 0 ? '' : ` (${overlap.values.slice(0, 5).join(', ')})`;
-      lines.push(`- [${overlap.severity}] ${overlap.message}${values}`);
+        overlap.values.length === 0
+          ? ''
+          : ` (${overlap.values
+              .slice(0, 5)
+              .map((value) => inlineContextValue(value, 120))
+              .join(', ')})`;
+      lines.push(`- [${overlap.severity}] ${inlineContextValue(overlap.message, 400)}${values}`);
     }
     lines.push('');
   }
@@ -188,7 +225,9 @@ export function renderPartyContext(
     lines.push('## Claims', '');
     for (const claim of claims) {
       lines.push(
-        `- ${claim.resourceType}:${claim.resourceKey} — ${claim.mode} — held for "${claim.questTitle}" until ${claim.leaseExpiresAt.toISOString()}`,
+        `- ${inlineContextValue(claim.resourceType, 40)}:${inlineContextValue(claim.resourceKey, 120)} — ` +
+          `${inlineContextValue(claim.mode, 20)} — held for "${inlineContextValue(claim.questTitle)}" ` +
+          `until ${claim.leaseExpiresAt.toISOString()}`,
       );
     }
   }

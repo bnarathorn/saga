@@ -58,6 +58,8 @@ export interface ClaimDecisionInput {
 export type ClaimDecision =
   | { outcome: 'granted'; warnings: string[] }
   | { outcome: 'already_held'; claimId: string; warnings: string[] }
+  /** The caller already holds this resource in a different mode; change that claim in place. */
+  | { outcome: 'upgraded'; claimId: string; fromMode: ClaimMode; warnings: string[] }
   | { outcome: 'denied'; conflictingClaimIds: string[]; reason: string };
 
 /**
@@ -75,22 +77,33 @@ export function decideClaim(input: ClaimDecisionInput): ClaimDecision {
   const others = input.activeClaims.filter(
     (claim) => claim.agentRunId !== input.requestingAgentRunId,
   );
-  const own = input.activeClaims.find(
-    (claim) =>
-      claim.agentRunId === input.requestingAgentRunId && claim.mode === input.requestedMode,
-  );
+  // Matched by run alone, not by run *and* mode. Matching on both meant an agent holding a
+  // shared claim and then asking for exclusive fell through to a fresh grant, leaving it with
+  // two live claims on one resource — so releasing one silently left the other in place.
+  const own = input.activeClaims.find((claim) => claim.agentRunId === input.requestingAgentRunId);
 
-  if (own !== undefined) {
+  if (own !== undefined && own.mode === input.requestedMode) {
     // Re-claiming is idempotent: an agent that retries after a timeout must not be blocked
     // by the claim it already holds.
     return { outcome: 'already_held', claimId: own.id, warnings: [] };
   }
 
-  if (input.partyMode === 'off') {
+  /** A mode change is decided exactly like a fresh claim, then applied to the existing row. */
+  const asUpgrade = (decision: ClaimDecision): ClaimDecision => {
+    if (own === undefined || decision.outcome !== 'granted') return decision;
     return {
+      outcome: 'upgraded',
+      claimId: own.id,
+      fromMode: own.mode,
+      warnings: decision.warnings,
+    };
+  };
+
+  if (input.partyMode === 'off') {
+    return asUpgrade({
       outcome: 'granted',
       warnings: ['PARTY_MODE=off: this claim is recorded but not enforced.'],
-    };
+    });
   }
 
   const enforcing =
@@ -98,39 +111,39 @@ export function decideClaim(input: ClaimDecisionInput): ClaimDecision {
     (input.partyMode === 'advisory' && isFailClosed(input.resourceType));
 
   if (input.policy === 'shared') {
-    return { outcome: 'granted', warnings: [] };
+    return asUpgrade({ outcome: 'granted', warnings: [] });
   }
 
   if (input.policy === 'advisory') {
-    if (others.length === 0) return { outcome: 'granted', warnings: [] };
-    return {
+    if (others.length === 0) return asUpgrade({ outcome: 'granted', warnings: [] });
+    return asUpgrade({
       outcome: 'granted',
       warnings: [
         `${others.length} other agent${others.length === 1 ? '' : 's'} already claimed this ${input.resourceType}. Coordinate before making conflicting changes.`,
       ],
-    };
+    });
   }
 
   // Exclusive policy.
   if (others.length === 0) {
     if (input.requestedMode === 'shared') {
-      return {
+      return asUpgrade({
         outcome: 'granted',
         warnings: [
           `This ${input.resourceType} has an exclusive policy; a shared claim gives no protection.`,
         ],
-      };
+      });
     }
-    return { outcome: 'granted', warnings: [] };
+    return asUpgrade({ outcome: 'granted', warnings: [] });
   }
 
   if (!enforcing) {
-    return {
+    return asUpgrade({
       outcome: 'granted',
       warnings: [
         `PARTY_MODE=advisory: ${others.length} conflicting claim(s) exist on this ${input.resourceType} but were not enforced.`,
       ],
-    };
+    });
   }
 
   return {

@@ -156,3 +156,63 @@ describe('guidance when coordination is unavailable', () => {
     expect(coordinationUnavailableGuidance('module')).toContain('may continue');
   });
 });
+
+describe('mode changes on a claim the caller already holds', () => {
+  const own = (mode: 'shared' | 'exclusive'): ExistingClaim => ({
+    id: 'claim-own',
+    mode,
+    agentRunId: 'run-a',
+    workItemId: 'quest-a',
+  });
+
+  it('reports an unchanged re-claim as already held', () => {
+    const decision = decide({ activeClaims: [own('exclusive')], requestedMode: 'exclusive' });
+    expect(decision).toMatchObject({ outcome: 'already_held', claimId: 'claim-own' });
+  });
+
+  it('upgrades a shared claim in place rather than granting a second one', () => {
+    // Matching on run *and* mode meant this fell through to a fresh grant, leaving the run
+    // holding two live claims on one resource.
+    const decision = decide({ activeClaims: [own('shared')], requestedMode: 'exclusive' });
+    expect(decision).toMatchObject({
+      outcome: 'upgraded',
+      claimId: 'claim-own',
+      fromMode: 'shared',
+    });
+  });
+
+  it('downgrades exclusive to shared in place too', () => {
+    const decision = decide({ activeClaims: [own('exclusive')], requestedMode: 'shared' });
+    expect(decision).toMatchObject({ outcome: 'upgraded', fromMode: 'exclusive' });
+  });
+
+  it('still refuses an upgrade blocked by another agent', () => {
+    // The caller's own claim must not make a conflicting one invisible.
+    const decision = decide({
+      activeClaims: [own('shared'), OTHER],
+      requestedMode: 'exclusive',
+    });
+    expect(decision.outcome).toBe('denied');
+  });
+
+  it('upgrades under an advisory policy, carrying the coordination warning', () => {
+    const decision = decide({
+      policy: 'advisory',
+      resourceType: 'module',
+      activeClaims: [own('shared'), { ...OTHER, mode: 'shared' }],
+      requestedMode: 'exclusive',
+    });
+    expect(decision.outcome).toBe('upgraded');
+    expect(decision.outcome === 'upgraded' && decision.warnings[0]).toMatch(/other agent/);
+  });
+
+  it('upgrades on a shared-policy resource without any warning', () => {
+    const decision = decide({
+      policy: 'shared',
+      resourceType: 'module',
+      activeClaims: [own('shared')],
+      requestedMode: 'exclusive',
+    });
+    expect(decision).toMatchObject({ outcome: 'upgraded', warnings: [] });
+  });
+});

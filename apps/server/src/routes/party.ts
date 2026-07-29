@@ -12,10 +12,17 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../composition.js';
 import { presentAgentRun, presentClaim } from '../lib/party-presenters.js';
 import { resolveAccessibleProject } from '../lib/project-access.js';
+import { withIdempotency } from '../plugins/idempotency.js';
 import { parseOrThrow } from '../lib/validation.js';
 
 export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void {
   const party = ctx.services.party;
+
+  const idempotency = {
+    pool: ctx.pool,
+    records: ctx.repositories.idempotency,
+    retentionHours: ctx.config.retention.idempotencyHours,
+  };
 
   /**
    * Party can be switched off entirely. Reads still answer (so Guild Hall can say so), but
@@ -148,20 +155,27 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
       );
     }
 
-    const result = await party.acquireClaim({
-      projectId: run.projectId,
-      agentRunId: body.agent_run_id,
-      workItemId: body.work_item_id,
-      resourceType: body.resource_type,
-      resourceKey: body.resource_key,
-      mode: body.mode,
-      baseFingerprint: body.base_fingerprint ?? null,
-      leaseSeconds: body.lease_seconds,
-      correlationId: request.id,
-    });
+    // Spec 12.7 names claim acquisition explicitly: an agent that retries after a timeout must
+    // not be told the resource is taken by the claim its own first attempt already made.
+    return withIdempotency(idempotency, request, reply, 'party.claim', async () => {
+      const result = await party.acquireClaim({
+        projectId: run.projectId,
+        agentRunId: body.agent_run_id,
+        workItemId: body.work_item_id,
+        resourceType: body.resource_type,
+        resourceKey: body.resource_key,
+        mode: body.mode,
+        baseFingerprint: body.base_fingerprint ?? null,
+        leaseSeconds: body.lease_seconds,
+        correlationId: request.id,
+      });
 
-    void reply.status(result.alreadyHeld ? 200 : 201);
-    return { claim: presentClaim(result.claim), warnings: result.warnings };
+      return {
+        status: result.alreadyHeld ? 200 : 201,
+        body: { claim: presentClaim(result.claim), warnings: result.warnings },
+        resourceId: result.claim.id,
+      };
+    });
   });
 
   app.post('/api/party/claims/:claimId/renew', async (request) => {

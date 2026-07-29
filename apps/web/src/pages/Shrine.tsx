@@ -313,8 +313,10 @@ function JobRow({ job }: { job: JobDto }) {
     job.lease_expires_at !== null &&
     new Date(job.lease_expires_at).getTime() < Date.now();
 
+  const pending = retry.isPending || cancel.isPending || requeue.isPending;
+
   const run = () => {
-    if (open === null || reason.trim().length === 0) return;
+    if (open === null || reason.trim().length === 0 || pending) return;
     const payload = { id: job.id, reason };
     const mutation = open === 'retry' ? retry : open === 'cancel' ? cancel : requeue;
     mutation.mutate(payload, {
@@ -393,10 +395,13 @@ function JobRow({ job }: { job: JobDto }) {
                   onChange={(event) => setReason(event.target.value)}
                 />
               </div>
+              {/* An idempotency key only helps a client that retries with the *same* key;
+                  a second click is a second decision. Disabling while in flight is what
+                  actually stops one operator action becoming two audit records. */}
               <button
                 type="button"
                 className="btn-primary"
-                disabled={reason.trim().length === 0}
+                disabled={reason.trim().length === 0 || pending}
                 onClick={run}
               >
                 Confirm {open}

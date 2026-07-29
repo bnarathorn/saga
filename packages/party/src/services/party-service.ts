@@ -307,6 +307,43 @@ export class PartyService {
         return { claim: refreshed ?? existing, warnings: decision.warnings, alreadyHeld: true };
       }
 
+      if (decision.outcome === 'upgraded') {
+        // One run holds one claim per resource. Changing mode changes that row rather than
+        // adding a second, so a later release cannot leave a forgotten claim behind.
+        const upgraded = await this.deps.party.setClaimMode(tx, {
+          claimId: decision.claimId,
+          mode: input.mode,
+          leaseSeconds: input.leaseSeconds ?? this.deps.claimLeaseSeconds,
+        });
+        await this.deps.outbox.emit(tx, {
+          aggregateType: 'claim',
+          aggregateId: decision.claimId,
+          topic: 'party.claim_acquired',
+          payload: {
+            resource_type: input.resourceType,
+            resource_key: input.resourceKey,
+            mode: input.mode,
+            previous_mode: decision.fromMode,
+            work_item_id: input.workItemId,
+          },
+          correlationId: input.correlationId ?? null,
+          projectId: input.projectId,
+        });
+        if (upgraded === null) {
+          // The row is locked with the resource and was active a statement ago, so this means
+          // the claim was deleted underneath us rather than merely raced.
+          throw new SagaError('CLAIM_NOT_FOUND', 'The claim being changed no longer exists.');
+        }
+        return {
+          claim: upgraded,
+          warnings: [
+            ...decision.warnings,
+            `The existing ${decision.fromMode} claim on this ${input.resourceType} was changed to ${input.mode}.`,
+          ],
+          alreadyHeld: true,
+        };
+      }
+
       if (decision.outcome === 'denied') {
         const owner = active.find((claim) => decision.conflictingClaimIds.includes(claim.id))!;
         // The conflict body carries only what the caller needs to coordinate — never the
@@ -571,7 +608,12 @@ export class PartyService {
           observed_hash: other.currentHash,
           other_quest_id: other.workItemId,
           other_quest_title: other.workItemTitle,
-          message: `"${other.path}" was changed by "${other.workItemTitle}" since you read it. Re-read the file before writing.`,
+          other_agent_run_id: other.agentRunId,
+          other_client: other.client,
+          message:
+            `"${other.path}" was changed by "${other.workItemTitle}"` +
+            `${other.client === null ? '' : ` (agent ${other.client})`}` +
+            ' since you read it. Re-read the file before writing.',
         });
       }
     }

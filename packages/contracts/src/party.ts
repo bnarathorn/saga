@@ -195,6 +195,9 @@ export const fingerprintConflictSchema = z.object({
   observed_hash: z.string().nullable(),
   other_quest_id: uuidSchema,
   other_quest_title: z.string(),
+  /** Spec 10.4 names the Agent Run as well as the Quest. Null once the run has been reaped. */
+  other_agent_run_id: uuidSchema.nullable(),
+  other_client: z.string().nullable(),
   message: z.string(),
 });
 export type FingerprintConflictDto = z.infer<typeof fingerprintConflictSchema>;

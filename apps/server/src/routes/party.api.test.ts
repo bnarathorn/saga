@@ -220,6 +220,102 @@ describe('claims', () => {
   });
 });
 
+describe('claim idempotency and mode changes (spec 12.7)', () => {
+  it('replays an identical acquisition instead of reporting a conflict', async () => {
+    const a = await agent('Add token-family migration', 'claude-code');
+    const body = {
+      agent_run_id: a.runId,
+      work_item_id: a.questId,
+      resource_type: 'migration_sequence',
+      resource_key: 'packages/database/migrations',
+      mode: 'exclusive',
+    };
+    const key = { 'idempotency-key': 'claim-retry-0001' };
+
+    const first = await admin.post('/api/party/claims', body, key);
+    expect(first.status).toBe(201);
+
+    // An agent that retries after a timeout must not be blocked by its own first attempt.
+    const replay = await admin.post('/api/party/claims', body, key);
+    expect(replay.status).toBe(201);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(replay.body.claim.id).toBe(first.body.claim.id);
+
+    const claims = await admin.get(`/api/projects/${projectId}/party/claims`);
+    expect(claims.body.items).toHaveLength(1);
+  });
+
+  it('refuses the same key with a different body', async () => {
+    const a = await agent('Add token-family migration', 'claude-code');
+    const key = { 'idempotency-key': 'claim-retry-0002' };
+    const base = {
+      agent_run_id: a.runId,
+      work_item_id: a.questId,
+      resource_type: 'migration_sequence',
+      mode: 'exclusive',
+    };
+
+    await admin.post('/api/party/claims', { ...base, resource_key: 'one' }, key);
+    const reused = await admin.post('/api/party/claims', { ...base, resource_key: 'two' }, key);
+
+    expect(reused.status).toBe(409);
+    expect(reused.body.error.code).toBe('IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('changes the mode of a claim it already holds rather than adding a second', async () => {
+    const a = await agent('Reshape the reports module', 'claude-code');
+    const body = {
+      agent_run_id: a.runId,
+      work_item_id: a.questId,
+      resource_type: 'module',
+      resource_key: 'services/api/src/reports',
+    };
+
+    const shared = await admin.post('/api/party/claims', { ...body, mode: 'shared' });
+    expect(shared.status).toBe(201);
+
+    const exclusive = await admin.post('/api/party/claims', { ...body, mode: 'exclusive' });
+    expect(exclusive.status).toBe(200);
+    expect(exclusive.body.claim.id).toBe(shared.body.claim.id);
+    expect(exclusive.body.claim.mode).toBe('exclusive');
+    expect(exclusive.body.warnings.join(' ')).toMatch(/was changed to exclusive/);
+
+    // One run holds one claim per resource: releasing it must leave nothing behind.
+    const claims = await admin.get(`/api/projects/${projectId}/party/claims`);
+    expect(claims.body.items).toHaveLength(1);
+  });
+
+  it('still refuses an upgrade another agent is blocking', async () => {
+    const a = await agent('Reshape the reports module', 'claude-code');
+    const b = await agent('Tidy the reports module', 'codex');
+    const resource = { resource_type: 'module', resource_key: 'services/api/src/reports' };
+
+    await admin.post('/api/party/claims', {
+      ...resource,
+      agent_run_id: a.runId,
+      work_item_id: a.questId,
+      mode: 'shared',
+    });
+    await admin.post('/api/party/claims', {
+      ...resource,
+      agent_run_id: b.runId,
+      work_item_id: b.questId,
+      mode: 'shared',
+    });
+
+    // `module` is advisory by default, so the upgrade is granted with a warning rather than
+    // refused — but it must still see the other agent.
+    const upgrade = await admin.post('/api/party/claims', {
+      ...resource,
+      agent_run_id: a.runId,
+      work_item_id: a.questId,
+      mode: 'exclusive',
+    });
+    expect(upgrade.status).toBe(200);
+    expect(upgrade.body.warnings.join(' ')).toMatch(/other agent/);
+  });
+});
+
 describe('status and overlap', () => {
   it('reports two agents on different Quests and their overlap', async () => {
     const a = await agent('Work on reports', 'claude-code');
@@ -294,6 +390,31 @@ describe('file fingerprints', () => {
       path: 'src/auth/refresh.ts',
       other_quest_title: 'Also work on refresh tokens',
     });
+  });
+
+  it('names the Agent Run as well as the Quest (spec 10.4)', async () => {
+    const a = await agent('Work on refresh tokens', 'claude-code');
+    const b = await agent('Also work on refresh tokens', 'codex');
+
+    await admin.post(`/api/party/runs/${b.runId}/fingerprints`, {
+      agent_run_id: b.runId,
+      work_item_id: b.questId,
+      files: [{ path: 'src/auth/refresh.ts', current_hash: 'sha256:bbb' }],
+    });
+
+    const response = await admin.post(`/api/party/runs/${a.runId}/fingerprints`, {
+      agent_run_id: a.runId,
+      work_item_id: a.questId,
+      files: [{ path: 'src/auth/refresh.ts', base_hash: 'sha256:aaa', current_hash: 'sha256:ccc' }],
+    });
+
+    // The column was populated all along; the SELECT and the DTO simply dropped it, so a
+    // conflict could only ever be attributed to a Quest.
+    expect(response.body.conflicts[0]).toMatchObject({
+      other_agent_run_id: b.runId,
+      other_client: 'codex',
+    });
+    expect(response.body.conflicts[0].message).toContain('codex');
   });
 });
 

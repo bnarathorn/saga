@@ -500,6 +500,25 @@ export class PartyRepository {
     return (result.rowCount ?? 0) === 1;
   }
 
+  /**
+   * Change the mode of a claim the caller already holds, renewing its lease at the same time.
+   * Keeps one claim per run per resource rather than layering a second one on top.
+   */
+  async setClaimMode(
+    q: Queryable,
+    input: { claimId: string; mode: ClaimMode; leaseSeconds: number },
+  ): Promise<Claim | null> {
+    const result = await q.query(
+      `UPDATE party.claims
+          SET mode = $2,
+              lease_expires_at = now() + make_interval(secs => $3::double precision)
+        WHERE id = $1 AND state = 'active'`,
+      [input.claimId, input.mode, input.leaseSeconds],
+    );
+    if ((result.rowCount ?? 0) !== 1) return null;
+    return this.findClaimById(q, input.claimId);
+  }
+
   /** Renew every active claim held by an agent run, following its heartbeat. */
   async renewClaimsForRun(q: Queryable, agentRunId: string, leaseSeconds: number): Promise<number> {
     const result = await q.query(
@@ -609,18 +628,30 @@ export class PartyRepository {
     q: Queryable,
     input: { projectId: string; workItemId: string; paths: readonly string[] },
   ): Promise<
-    { path: string; currentHash: string | null; workItemId: string; workItemTitle: string }[]
+    {
+      path: string;
+      currentHash: string | null;
+      workItemId: string;
+      workItemTitle: string;
+      agentRunId: string | null;
+      client: string | null;
+    }[]
   > {
     if (input.paths.length === 0) return [];
+    // Spec 10.4 wants the Quest *and* the Agent Run named. The column is populated on write;
+    // it was simply never selected, so a conflict could only ever be attributed to a Quest.
     const result = await q.query<{
       path: string;
       current_hash: string | null;
       work_item_id: string;
       title: string;
+      agent_run_id: string | null;
+      client: string | null;
     }>(
-      `SELECT f.path, f.current_hash, f.work_item_id, w.title
+      `SELECT f.path, f.current_hash, f.work_item_id, w.title, f.agent_run_id, r.client
          FROM party.file_fingerprints f
          JOIN quest.work_items w ON w.id = f.work_item_id
+         LEFT JOIN party.agent_runs r ON r.id = f.agent_run_id
         WHERE f.project_id = $1
           AND f.work_item_id <> $2
           AND f.path = ANY($3::text[])
@@ -633,6 +664,8 @@ export class PartyRepository {
       currentHash: row.current_hash,
       workItemId: row.work_item_id,
       workItemTitle: row.title,
+      agentRunId: row.agent_run_id,
+      client: row.client,
     }));
   }
 

@@ -9,7 +9,7 @@ import type {
 } from '@saga/contracts';
 import type { OutboxRepository, Project, ProjectRepository } from '@saga/core';
 import type { Queryable, SagaPool } from '@saga/database';
-import { withTransaction } from '@saga/database';
+import { acquireAdvisoryLock, withTransaction } from '@saga/database';
 import {
   SagaError,
   buildPage,
@@ -30,6 +30,12 @@ import {
   type Quest,
   type QuestDependency,
 } from '../repositories/quest-repository.js';
+
+/**
+ * One lock namespace per project for every change to the Quest graph. Acyclicity spans many
+ * rows, so it cannot be a database constraint.
+ */
+const QUEST_GRAPH_LOCK = 'quest.graph';
 
 export interface QuestServiceDeps {
   pool: SagaPool;
@@ -284,6 +290,12 @@ export class QuestService {
         throw new SagaError('QUEST_DEPENDENCY_INVALID', 'A Quest cannot depend on itself.');
       }
 
+      // The acyclicity check reads the whole edge set and then adds an edge. Two concurrent
+      // additions each see an acyclic graph and together create the cycle neither could see,
+      // and nothing downstream re-checks. The lock is per project, so unrelated projects are
+      // unaffected and ordinary Quest work never touches it.
+      await acquireAdvisoryLock(tx, `${QUEST_GRAPH_LOCK}:${quest.projectId}`);
+
       const edges = await this.deps.quests.dependencyEdges(tx, quest.projectId);
       if (wouldCreateCycle(edges, workItemId, dependsOnWorkItemId)) {
         throw new SagaError(
@@ -514,6 +526,9 @@ export class QuestService {
       );
     }
     if (childId !== null) {
+      // Same read-then-write race as `addDependency`, on the parent graph; same lock, so a
+      // reparent and a dependency addition cannot interleave either.
+      await acquireAdvisoryLock(tx, `${QUEST_GRAPH_LOCK}:${projectId}`);
       const edges = await this.deps.quests.parentEdges(tx, projectId);
       if (wouldCreateCycle(edges, childId, parentId)) {
         throw new SagaError(

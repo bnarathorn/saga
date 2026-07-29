@@ -1,5 +1,5 @@
 import type { SagaPool } from '@saga/database';
-import { withTransaction } from '@saga/database';
+import { acquireAdvisoryLock, withTransaction } from '@saga/database';
 import { SagaError, buildPage, decodeCursor, type Page } from '@saga/shared';
 import { isUuid } from '@saga/shared/ids';
 import type {
@@ -11,6 +11,12 @@ import type {
 import { assertValidProjectName, normalizeProjectName } from '../normalization.js';
 import type { OutboxRepository } from '../repositories/outbox-repository.js';
 import type { ProjectRepository } from '../repositories/project-repository.js';
+
+/**
+ * One lock namespace for every operation that decides a project's name. Names and aliases live
+ * in two tables, so uniqueness cannot be a database constraint.
+ */
+const PROJECT_NAME_LOCK = 'core.project_name';
 
 export interface ProjectServiceDeps {
   pool: SagaPool;
@@ -84,6 +90,11 @@ export class ProjectService {
     const nameKey = normalizeProjectName(name);
 
     return withTransaction(this.deps.pool, async (tx) => {
+      // The collision check spans two tables, so a unique index cannot enforce it. Under READ
+      // COMMITTED two concurrent creates both see no conflict and both commit; the lock makes
+      // naming serial. It is held only for the naming step and only against other namings.
+      await acquireAdvisoryLock(tx, PROJECT_NAME_LOCK);
+
       // A new name must not collide with an existing project name *or* an existing alias,
       // otherwise `projectRef` resolution would become ambiguous.
       const aliasOwner = await this.deps.projects.findByAliasKey(tx, nameKey);
@@ -142,6 +153,9 @@ export class ProjectService {
         const nameKey = normalizeProjectName(name);
 
         if (nameKey !== locked.nameKey) {
+          // Same two-table check as `create`, and the same race: serialise on the same lock.
+          await acquireAdvisoryLock(tx, PROJECT_NAME_LOCK);
+
           const nameOwner = await this.deps.projects.findByNameKey(tx, nameKey);
           if (nameOwner !== null && nameOwner.id !== locked.id) {
             throw new SagaError(

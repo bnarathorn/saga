@@ -12,6 +12,7 @@ import {
   type MeResponse,
 } from '@saga/contracts';
 import { DEFAULT_AGENT_SCOPES, permissionsFor } from '@saga/core';
+import { withTransaction } from '@saga/database';
 import { SagaError, toIso } from '@saga/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../composition.js';
@@ -227,58 +228,85 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     return { items: tokens.map(presentAgentToken) };
   });
 
-  app.post('/api/projects/:projectRef/tokens', async (request, reply) => {
-    request.requirePermission('security:manage');
-    const { projectRef } = request.params as { projectRef: string };
-    const body = parseOrThrow(createAgentTokenRequestSchema, request.body);
-    const project = await ctx.services.projects.resolve(projectRef);
-    const actor = request.actor;
+  // Spec 17 names the token endpoints alongside login and the device flow. Rate limiting is
+  // registered with `global: false`, so a route that does not opt in has none at all.
+  const tokenRateLimit = {
+    config: {
+      rateLimit: { max: ctx.config.security.apiRateLimitPerMinute, timeWindow: '1 minute' },
+    },
+  };
 
-    const created = await auth.createAgentToken({
-      projectId: project.id,
-      projectNameKey: project.nameKey,
-      createdBy: actor.type === 'user' ? actor.userId : null,
-      name: body.name,
-      scopes: body.scopes,
-      client: body.client ?? null,
-      expiresInDays: body.expires_in_days,
-    });
+  app.post('/api/projects/:projectRef/tokens', {
+    ...tokenRateLimit,
+    handler: async (request, reply) => {
+      request.requirePermission('security:manage');
+      const { projectRef } = request.params as { projectRef: string };
+      const body = parseOrThrow(createAgentTokenRequestSchema, request.body);
+      const project = await ctx.services.projects.resolve(projectRef);
+      const actor = request.actor;
 
-    await audit.record({
-      actorType: actor.type === 'user' ? 'user' : 'agent',
-      actorId: actor.type === 'user' ? actor.userId : null,
-      actorLabel: request.actorLabel,
-      action: 'auth.token_created',
-      projectId: project.id,
-      entityType: 'agent_token',
-      entityId: created.record.id,
-      requestId: request.id,
-      metadata: { scopes: body.scopes },
-    });
+      const created = await auth.createAgentToken({
+        projectId: project.id,
+        projectNameKey: project.nameKey,
+        createdBy: actor.type === 'user' ? actor.userId : null,
+        name: body.name,
+        scopes: body.scopes,
+        client: body.client ?? null,
+        expiresInDays: body.expires_in_days,
+      });
 
-    void reply.status(201);
-    // The raw token is returned exactly once; only its hash is stored.
-    return { token: presentAgentToken(created.record), raw_token: created.rawToken };
+      await audit.record({
+        actorType: actor.type === 'user' ? 'user' : 'agent',
+        actorId: actor.type === 'user' ? actor.userId : null,
+        actorLabel: request.actorLabel,
+        action: 'auth.token_created',
+        projectId: project.id,
+        entityType: 'agent_token',
+        entityId: created.record.id,
+        requestId: request.id,
+        metadata: { scopes: body.scopes },
+      });
+
+      void reply.status(201);
+      // The raw token is returned exactly once; only its hash is stored.
+      return { token: presentAgentToken(created.record), raw_token: created.rawToken };
+    },
   });
 
-  app.post('/api/tokens/:tokenId/revoke', async (request) => {
-    request.requirePermission('security:manage');
-    const { tokenId } = request.params as { tokenId: string };
-    const body = parseOrThrow(reasonRequestSchema, request.body ?? {});
-    const actor = request.actor;
-    const token = await auth.revokeAgentToken(tokenId, actor.type === 'user' ? actor.userId : null);
-    await audit.record({
-      actorType: actor.type === 'user' ? 'user' : 'agent',
-      actorId: actor.type === 'user' ? actor.userId : null,
-      actorLabel: request.actorLabel,
-      action: 'auth.token_revoked',
-      projectId: token.projectId,
-      entityType: 'agent_token',
-      entityId: token.id,
-      reason: body.reason,
-      requestId: request.id,
-    });
-    return { token: presentAgentToken(token) };
+  app.post('/api/tokens/:tokenId/revoke', {
+    ...tokenRateLimit,
+    handler: async (request) => {
+      request.requirePermission('security:manage');
+      const { tokenId } = request.params as { tokenId: string };
+      const body = parseOrThrow(reasonRequestSchema, request.body ?? {});
+      const actor = request.actor;
+      // Spec 10.7: the revocation and its audit record are one atomic fact. Written
+      // separately, a failure between them leaves a token revoked with nobody recorded as
+      // having done it — or an audit entry for a revocation that never happened.
+      const token = await withTransaction(ctx.pool, async (tx) => {
+        const revoked = await auth.revokeAgentToken(
+          tokenId,
+          actor.type === 'user' ? actor.userId : null,
+          tx,
+        );
+        await audit.record(
+          {
+            actorType: actor.type === 'user' ? 'user' : 'agent',
+            actorId: actor.type === 'user' ? actor.userId : null,
+            actorLabel: request.actorLabel,
+            action: 'auth.token_revoked',
+            projectId: revoked.projectId,
+            entityType: 'agent_token',
+            entityId: revoked.id,
+            reason: body.reason,
+            requestId: request.id,
+          },
+          tx,
+        );
+        return revoked;
+      });
+      return { token: presentAgentToken(token) };
+    },
   });
 }
 

@@ -100,6 +100,13 @@ export const AUTO_RESUME_THRESHOLD = 0.6;
 /** Below this a candidate is not even worth suggesting. */
 const SUGGESTION_THRESHOLD = 0.15;
 
+/**
+ * Floor for a resume the caller asked for by hint rather than by Quest id. Lower than
+ * `AUTO_RESUME_THRESHOLD` because the caller supplied the intent, but not zero: attaching to a
+ * Quest too weak to suggest is the "when uncertain" case spec 9.5 says to answer with new work.
+ */
+export const HINTED_RESUME_THRESHOLD = SUGGESTION_THRESHOLD;
+
 const RESUMABLE: readonly QuestStatus[] = ['open', 'in_progress', 'waiting', 'blocked'];
 
 export function scoreCandidate(
@@ -211,7 +218,16 @@ export function classifyActivation(input: MatchInput): MatchResult {
   }
   if (input.modeHint === 'resume_work') {
     const best = scored[0];
-    if (best !== undefined && RESUMABLE.includes(best.quest.status)) {
+    // The hint supplies the "continuation intent is explicit" half of spec 9.5, but not the
+    // "confidence is high" half. A hint used to attach the top candidate whatever it scored,
+    // so a resume in a project with one unrelated open Quest silently joined that Quest. The
+    // floor is the suggestion threshold rather than the automatic one: the caller has said
+    // what they mean, so a weaker match is enough — but not a match too weak to even suggest.
+    if (
+      best !== undefined &&
+      best.confidence >= HINTED_RESUME_THRESHOLD &&
+      RESUMABLE.includes(best.quest.status)
+    ) {
       return {
         mode: 'resume_work',
         matched: best.quest,
@@ -223,7 +239,10 @@ export function classifyActivation(input: MatchInput): MatchResult {
       mode: 'new_work',
       matched: null,
       related,
-      explanation: 'The caller asked to resume, but no open Quest was a plausible match.',
+      explanation:
+        best === undefined
+          ? 'The caller asked to resume, but the project has no open Quest to resume.'
+          : `The caller asked to resume, but the best match "${best.quest.title}" scored only ${best.confidence.toFixed(2)}. Spec 9.5: when uncertain, create a new Quest and offer suggestions. Name the Quest explicitly to resume it anyway.`,
     };
   }
 

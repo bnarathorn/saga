@@ -15,12 +15,19 @@ import {
   presentSystemEvent,
   presentAuditEntry,
 } from '../lib/presenters.js';
+import { withIdempotency } from '../plugins/idempotency.js';
 import { parseOrThrow } from '../lib/validation.js';
 import { MIGRATIONS_DIR } from '../composition.js';
 import { migrationStatus } from '@saga/database';
 
 export function registerShrineRoutes(app: FastifyInstance, ctx: AppContext): void {
   const { jobs, audit, metrics } = ctx.services;
+
+  const idempotency = {
+    pool: ctx.pool,
+    records: ctx.repositories.idempotency,
+    retentionHours: ctx.config.retention.idempotencyHours,
+  };
 
   app.get('/api/shrine/health', async (request): Promise<ShrineHealthDto> => {
     // The narrow permission: every other Shrine route is server-wide and stays operator-only.
@@ -71,34 +78,38 @@ export function registerShrineRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
 
   for (const action of ['retry', 'cancel', 'requeue'] as const) {
-    app.post(`/api/shrine/jobs/:jobId/${action}`, async (request) => {
+    app.post(`/api/shrine/jobs/:jobId/${action}`, async (request, reply) => {
       // Viewers can inspect the queue but never operate it.
       request.requirePermission('shrine:operate');
       const { jobId } = request.params as { jobId: string };
       const body = parseOrThrow(jobActionRequestSchema, request.body ?? {});
       const actor = request.actor;
 
-      const job =
-        action === 'retry'
-          ? await jobs.adminRetry(jobId, request.actorLabel, body.reason)
-          : action === 'cancel'
-            ? await jobs.adminCancel(jobId, request.actorLabel, body.reason)
-            : await jobs.adminRequeue(jobId, request.actorLabel, body.reason);
+      // Spec 12.7 names job retry: a double-clicked Retry must not enqueue the work twice or
+      // write two audit records for one operator decision.
+      return withIdempotency(idempotency, request, reply, `shrine.job_${action}`, async () => {
+        const job =
+          action === 'retry'
+            ? await jobs.adminRetry(jobId, request.actorLabel, body.reason)
+            : action === 'cancel'
+              ? await jobs.adminCancel(jobId, request.actorLabel, body.reason)
+              : await jobs.adminRequeue(jobId, request.actorLabel, body.reason);
 
-      await audit.record({
-        actorType: actor.type === 'user' ? 'user' : 'agent',
-        actorId: actor.type === 'user' ? actor.userId : null,
-        actorLabel: request.actorLabel,
-        action: `shrine.job_${action}`,
-        projectId: job.projectId,
-        entityType: 'job',
-        entityId: job.id,
-        reason: body.reason,
-        requestId: request.id,
-        metadata: { job_type: job.jobType },
+        await audit.record({
+          actorType: actor.type === 'user' ? 'user' : 'agent',
+          actorId: actor.type === 'user' ? actor.userId : null,
+          actorLabel: request.actorLabel,
+          action: `shrine.job_${action}`,
+          projectId: job.projectId,
+          entityType: 'job',
+          entityId: job.id,
+          reason: body.reason,
+          requestId: request.id,
+          metadata: { job_type: job.jobType },
+        });
+
+        return { status: 200, body: { job: presentJob(job) }, resourceId: job.id };
       });
-
-      return { job: presentJob(job) };
     });
   }
 

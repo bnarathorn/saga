@@ -178,6 +178,83 @@ describe('project-scoped tokens', () => {
   });
 });
 
+describe('token endpoint hardening (spec 17)', () => {
+  it('rate-limits token creation, which is registered per route', async () => {
+    // `@fastify/rate-limit` is registered with `global: false`, so a route that does not opt
+    // in has no limit at all — which is what made `apiRateLimitPerMinute` dead configuration.
+    const limited = await createApiHarness({ config: { SAGA_API_RATE_LIMIT_PER_MINUTE: '3' } });
+    try {
+      await limited.reset();
+      const client = await limited.loginAs('admin');
+      const project = await client.post('/api/projects', { name: 'Rate Limited Project' });
+
+      const statuses: number[] = [];
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const response = await client.post(`/api/projects/${project.body.project.id}/tokens`, {
+          name: `token-${attempt}`,
+          scopes: ['project:read'],
+        });
+        statuses.push(response.status);
+      }
+
+      expect(statuses.filter((status) => status === 201).length).toBe(3);
+      expect(statuses).toContain(429);
+    } finally {
+      await limited.close();
+    }
+  });
+
+  it('rate-limits revocation as well as creation', async () => {
+    const limited = await createApiHarness({ config: { SAGA_API_RATE_LIMIT_PER_MINUTE: '2' } });
+    try {
+      await limited.reset();
+      const client = await limited.loginAs('admin');
+      const project = await client.post('/api/projects', { name: 'Revoke Limited Project' });
+      const issued = await client.post(`/api/projects/${project.body.project.id}/tokens`, {
+        name: 'to-revoke',
+        scopes: ['project:read'],
+      });
+
+      // The limit is per route, so creation above spends none of the revoke budget.
+      const statuses: number[] = [];
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const response = await client.post(`/api/tokens/${issued.body.token.id}/revoke`, {
+          reason: 'rotating credentials',
+        });
+        statuses.push(response.status);
+      }
+      expect(statuses).toContain(429);
+    } finally {
+      await limited.close();
+    }
+  });
+
+  it('records the revocation and its audit entry together (spec 10.7)', async () => {
+    const issued = await admin.post(`/api/projects/${projectId}/tokens`, {
+      name: 'audited',
+      scopes: ['project:read'],
+    });
+
+    const revoked = await admin.post(`/api/tokens/${issued.body.token.id}/revoke`, {
+      reason: 'the laptop was lost',
+    });
+    expect(revoked.status).toBe(200);
+    expect(revoked.body.token.revoked_at).toBeTruthy();
+
+    const audit = await admin.get('/api/shrine/audit?limit=25');
+    const entry = audit.body.items.find(
+      (row: { action: string; entity_id: string }) =>
+        row.action === 'auth.token_revoked' && row.entity_id === issued.body.token.id,
+    );
+    expect(entry).toBeDefined();
+    expect(entry.reason).toBe('the laptop was lost');
+
+    // And the revoked token really is dead.
+    const agent = harness.withAgentToken(issued.body.raw_token);
+    expect((await agent.get('/api/auth/me')).status).toBe(401);
+  });
+});
+
 describe('CSRF protection', () => {
   it('blocks a cookie-authenticated mutation with no CSRF header', async () => {
     const response = await admin.postWithoutCsrf('/api/projects', { name: 'Forged' });

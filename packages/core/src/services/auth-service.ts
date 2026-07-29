@@ -1,5 +1,5 @@
 import type { AgentScope, UserRole } from '@saga/contracts';
-import type { SagaPool } from '@saga/database';
+import type { Queryable, SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
 import { SagaError, addMinutes, addSeconds } from '@saga/shared';
 import type { Actor, AgentActor, UserActor } from '../security/authorization.js';
@@ -231,8 +231,16 @@ export class AuthService {
     return this.deps.agentTokens.listForProject(this.deps.pool, projectId);
   }
 
-  async revokeAgentToken(id: string, revokedBy: string | null): Promise<AgentTokenRecord> {
-    const record = await this.deps.agentTokens.revoke(this.deps.pool, id, revokedBy);
+  /**
+   * Revoke a token. `q` lets the caller run this inside its own transaction so the revocation
+   * and its audit record commit together (spec 10.7).
+   */
+  async revokeAgentToken(
+    id: string,
+    revokedBy: string | null,
+    q: Queryable = this.deps.pool,
+  ): Promise<AgentTokenRecord> {
+    const record = await this.deps.agentTokens.revoke(q, id, revokedBy);
     if (record === null) {
       throw new SagaError('NOT_FOUND', 'No active agent token matches that id.');
     }
