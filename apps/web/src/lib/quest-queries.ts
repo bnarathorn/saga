@@ -1,8 +1,10 @@
 import type {
   CheckpointDto,
+  DependencyType,
   QuestDependencyDto,
   QuestDto,
   QuestPriority,
+  QuestScope,
   QuestStatus,
   SessionDto,
 } from '@saga/contracts';
@@ -79,7 +81,13 @@ export function useCreateQuest(): UseMutationResult<
 export function useUpdateQuest(): UseMutationResult<
   { quest: QuestDto },
   Error,
-  { questId: string; status?: QuestStatus; priority?: QuestPriority; objective?: string }
+  {
+    questId: string;
+    status?: QuestStatus;
+    priority?: QuestPriority;
+    objective?: string | null;
+    scope?: QuestScope;
+  }
 > {
   const client = useQueryClient();
   return useMutation({
@@ -88,6 +96,39 @@ export function useUpdateQuest(): UseMutationResult<
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['quests'] });
       await client.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+}
+
+export function useAddDependency(): UseMutationResult<
+  { dependencies: QuestDependencyDto[] },
+  Error,
+  { questId: string; dependsOnWorkItemId: string; dependencyType: DependencyType }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ questId, dependsOnWorkItemId, dependencyType }) =>
+      api.post<{ dependencies: QuestDependencyDto[] }>(`/api/quests/${questId}/dependencies`, {
+        depends_on_work_item_id: dependsOnWorkItemId,
+        dependency_type: dependencyType,
+      }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['quests'] });
+    },
+  });
+}
+
+export function useRemoveDependency(): UseMutationResult<
+  unknown,
+  Error,
+  { questId: string; dependsOnWorkItemId: string }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ questId, dependsOnWorkItemId }) =>
+      api.del(`/api/quests/${questId}/dependencies/${dependsOnWorkItemId}`),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['quests'] });
     },
   });
 }

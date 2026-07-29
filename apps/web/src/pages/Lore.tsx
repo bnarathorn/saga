@@ -191,10 +191,36 @@ function FilterSelect({
   );
 }
 
+/** Copy for each lifecycle action, so the confirm row explains what it is about to do. */
+const LIFECYCLE_COPY = {
+  'mark-stale': {
+    button: 'Mark stale',
+    prompt: (key: string) => `Why is “${key}” no longer accurate?`,
+    note: 'The entry is kept and stays searchable; it is excluded from core context and labelled wherever it appears.',
+  },
+  archive: {
+    button: 'Archive',
+    prompt: (key: string) => `Why is “${key}” no longer needed?`,
+    note: 'The entry stops appearing in Lore, search and core context. Its version history is kept, and the audit log records this reason.',
+  },
+} as const;
+
+type LifecycleAction = keyof typeof LIFECYCLE_COPY;
+
 function EntryRow({ projectRef, entry }: { projectRef: string; entry: LoreEntryDto }) {
+  const can = useCan();
   const markStale = useLoreLifecycle('mark-stale');
+  const archive = useLoreLifecycle('archive');
   const [reason, setReason] = useState('');
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState<LifecycleAction | null>(null);
+
+  const mutation = confirming === 'archive' ? archive : markStale;
+  const copy = confirming === null ? null : LIFECYCLE_COPY[confirming];
+
+  const start = (action: LifecycleAction) => {
+    setConfirming(action);
+    setReason('');
+  };
 
   return (
     <>
@@ -225,59 +251,66 @@ function EntryRow({ projectRef, entry }: { projectRef: string; entry: LoreEntryD
         </td>
         <td className="table-cell whitespace-nowrap text-xs text-ink-500 dark:text-parchment-300/70">
           <RelativeTime value={entry.updated_at} />
-          {entry.state === 'active' && (
+          {entry.state === 'active' && can('lore:propose') && (
             <button
               type="button"
               className="btn-secondary ml-2 py-0.5 text-xs"
-              onClick={() => setConfirming(true)}
+              onClick={() => start('mark-stale')}
             >
               Mark stale
             </button>
           )}
+          {entry.state !== 'archived' && can('lore:archive') && (
+            <button
+              type="button"
+              className="btn-secondary ml-2 py-0.5 text-xs"
+              onClick={() => start('archive')}
+            >
+              Archive
+            </button>
+          )}
         </td>
       </tr>
-      {confirming && (
+      {copy !== null && (
         <tr className="bg-parchment-100/70 dark:bg-night-850/70">
           <td colSpan={6} className="px-4 py-3">
             <div className="flex flex-wrap items-end gap-2">
               <div className="flex-1">
-                <label className="field-label" htmlFor={`stale-${entry.id}`}>
-                  Why is “{entry.memory_key}” no longer accurate?
+                <label className="field-label" htmlFor={`${confirming}-${entry.id}`}>
+                  {copy.prompt(entry.memory_key)}
                 </label>
                 <input
-                  id={`stale-${entry.id}`}
+                  id={`${confirming}-${entry.id}`}
                   className="field-input"
                   autoFocus
                   value={reason}
                   onChange={(event) => setReason(event.target.value)}
                 />
-                <p className="mt-1 text-xs text-ink-500 dark:text-parchment-300/70">
-                  The entry is kept and stays searchable; it is excluded from core context and
-                  labelled wherever it appears.
-                </p>
+                <p className="mt-1 text-xs text-ink-500 dark:text-parchment-300/70">{copy.note}</p>
               </div>
               <button
                 type="button"
                 className="btn-primary"
-                disabled={reason.trim().length === 0 || markStale.isPending}
+                disabled={reason.trim().length === 0 || mutation.isPending}
                 onClick={() =>
-                  markStale.mutate(
+                  mutation.mutate(
                     { ref: projectRef, memoryKey: entry.memory_key, reason },
                     {
                       onSuccess: () => {
-                        setConfirming(false);
+                        setConfirming(null);
                         setReason('');
                       },
                     },
                   )
                 }
               >
-                Mark stale
+                {copy.button}
               </button>
-              <button type="button" className="btn-secondary" onClick={() => setConfirming(false)}>
+              <button type="button" className="btn-secondary" onClick={() => setConfirming(null)}>
                 Cancel
               </button>
             </div>
+            {mutation.isError && <ErrorState error={mutation.error} />}
           </td>
         </tr>
       )}

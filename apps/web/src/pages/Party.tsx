@@ -1,5 +1,4 @@
-import type { ClaimDto, OverlapDto, PartyStatusDto } from '@saga/contracts';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { OverlapDto } from '@saga/contracts';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
@@ -9,12 +8,10 @@ import {
   LoadingState,
   Panel,
   RelativeTime,
-  Table,
   type BadgeTone,
 } from '../components/primitives.jsx';
-import { api } from '../lib/api.js';
-import { useCan } from '../lib/permissions.jsx';
-import { POLL } from '../lib/queries.js';
+import { ClaimsTable } from '../components/ClaimsTable.jsx';
+import { usePartyClaims, usePartyStatus, useRevokeClaim } from '../lib/party-queries.js';
 
 const SEVERITY_TONE: Record<string, BadgeTone> = {
   critical: 'bad',
@@ -22,48 +19,12 @@ const SEVERITY_TONE: Record<string, BadgeTone> = {
   info: 'neutral',
 };
 
-const CLAIM_TONE: Record<string, BadgeTone> = {
-  active: 'good',
-  released: 'neutral',
-  expired: 'warn',
-  revoked: 'bad',
-};
-
 export function PartyPage() {
-  const can = useCan();
   const { projectRef = '' } = useParams();
-  const client = useQueryClient();
 
-  const status = useQuery({
-    queryKey: ['party', 'status', projectRef],
-    queryFn: ({ signal }) =>
-      api.get<PartyStatusDto>(
-        `/api/projects/${encodeURIComponent(projectRef)}/party/status`,
-        signal,
-      ),
-    // Party is live state, so it refreshes faster than durable views.
-    refetchInterval: POLL.fast,
-    enabled: projectRef.length > 0,
-  });
-
-  const history = useQuery({
-    queryKey: ['party', 'claims', projectRef],
-    queryFn: ({ signal }) =>
-      api.get<{ items: ClaimDto[] }>(
-        `/api/projects/${encodeURIComponent(projectRef)}/party/claims?include_finished=true`,
-        signal,
-      ),
-    refetchInterval: POLL.normal,
-    enabled: projectRef.length > 0,
-  });
-
-  const revoke = useMutation({
-    mutationFn: ({ claimId, reason }: { claimId: string; reason: string }) =>
-      api.post(`/api/party/claims/${claimId}/revoke`, { reason, confirm: true }),
-    onSuccess: async () => {
-      await client.invalidateQueries({ queryKey: ['party'] });
-    },
-  });
+  const status = usePartyStatus(projectRef);
+  const history = usePartyClaims(projectRef);
+  const revoke = useRevokeClaim();
 
   const [revoking, setRevoking] = useState<{ id: string; label: string } | null>(null);
   const [reason, setReason] = useState('');
@@ -186,47 +147,15 @@ export function PartyPage() {
           <EmptyState title="No claims recorded" />
         )}
         {history.data !== undefined && history.data.items.length > 0 && (
-          <Table headers={['Resource', 'Policy', 'Mode', 'Owner', 'State', 'Lease', 'Actions']}>
-            {history.data.items.map((claim) => (
-              <tr key={claim.id}>
-                <td className="table-cell font-mono text-xs">
-                  {claim.resource_type}:{claim.resource_key}
-                </td>
-                <td className="table-cell text-xs">{claim.resource_policy}</td>
-                <td className="table-cell text-xs">{claim.mode}</td>
-                <td className="table-cell text-xs">
-                  {claim.work_item_title}
-                  <span className="ml-1 text-ink-500 dark:text-parchment-300/60">
-                    ({claim.client})
-                  </span>
-                </td>
-                <td className="table-cell">
-                  <Badge tone={CLAIM_TONE[claim.state] ?? 'neutral'}>{claim.state}</Badge>
-                </td>
-                <td className="table-cell whitespace-nowrap text-xs text-ink-500 dark:text-parchment-300/70">
-                  <RelativeTime value={claim.lease_expires_at} />
-                </td>
-                <td className="table-cell">
-                  {claim.state === 'active' && can('party:revoke') ? (
-                    <button
-                      type="button"
-                      className="btn-secondary py-1 text-xs"
-                      onClick={() =>
-                        setRevoking({
-                          id: claim.id,
-                          label: `${claim.resource_type}:${claim.resource_key}`,
-                        })
-                      }
-                    >
-                      Revoke
-                    </button>
-                  ) : (
-                    <span className="text-xs text-ink-500 dark:text-parchment-300/60">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </Table>
+          <ClaimsTable
+            claims={history.data.items}
+            onRevoke={(claim) =>
+              setRevoking({
+                id: claim.id,
+                label: `${claim.resource_type}:${claim.resource_key}`,
+              })
+            }
+          />
         )}
       </Panel>
 

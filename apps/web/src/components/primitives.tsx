@@ -1,5 +1,5 @@
 import type { HealthState } from '@saga/contracts';
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { ApiError } from '../lib/api.js';
 
 export function classNames(...values: (string | false | null | undefined)[]): string {
@@ -17,11 +17,18 @@ export function Panel({
   children: ReactNode;
   className?: string;
 }) {
+  // A titled panel names itself, so it is reachable as a landmark and assertable by role.
+  const titleId = useId();
   return (
-    <section className={classNames('panel', className)}>
+    <section
+      className={classNames('panel', className)}
+      aria-labelledby={title === undefined ? undefined : titleId}
+    >
       {title !== undefined && (
         <header className="panel-header">
-          <h2 className="panel-title">{title}</h2>
+          <h2 className="panel-title" id={titleId}>
+            {title}
+          </h2>
           {actions !== undefined && <div className="flex items-center gap-2">{actions}</div>}
         </header>
       )}

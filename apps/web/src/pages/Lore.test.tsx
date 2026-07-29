@@ -134,6 +134,68 @@ describe('Lore page', () => {
     });
   });
 
+  it('requires a reason before archiving an entry', async () => {
+    const { calls } = stubFetch({
+      ...emptyLists,
+      [`/api/projects/${REF}/lore`]: {
+        body: { items: [entry()], next_cursor: null, has_more: false, memory_revision: 1 },
+      },
+      [`POST /api/projects/${REF}/lore/run.api.local/archive`]: {
+        body: { entry: entry({ state: 'archived' }) },
+      },
+    });
+    renderLore();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    const confirm = screen.getAllByRole('button', { name: 'Archive' })[1]!;
+    expect(confirm).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText(/no longer needed/), 'superseded by run.api.docker');
+    await userEvent.click(confirm);
+
+    await waitFor(() => {
+      const post = calls.find((call) => call.url.includes('/archive'));
+      expect(post?.body).toEqual({ reason: 'superseded by run.api.docker' });
+    });
+  });
+
+  it('offers archiving for a stale entry but marking stale only once', async () => {
+    stubFetch({
+      ...emptyLists,
+      [`/api/projects/${REF}/lore`]: {
+        body: {
+          items: [entry({ state: 'stale', stale_reason: 'drifted' })],
+          next_cursor: null,
+          has_more: false,
+          memory_revision: 1,
+        },
+      },
+    });
+    renderLore();
+
+    expect(await screen.findByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark stale' })).not.toBeInTheDocument();
+  });
+
+  it('offers no lifecycle action on an already archived entry', async () => {
+    stubFetch({
+      ...emptyLists,
+      [`/api/projects/${REF}/lore`]: {
+        body: {
+          items: [entry({ state: 'archived' })],
+          next_cursor: null,
+          has_more: false,
+          memory_revision: 1,
+        },
+      },
+    });
+    renderLore();
+
+    await screen.findByRole('link', { name: 'run.api.local' });
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark stale' })).not.toBeInTheDocument();
+  });
+
   it('offers approval controls for a ready update and warns about a conflict', async () => {
     stubFetch({
       ...emptyLists,

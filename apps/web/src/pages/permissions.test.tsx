@@ -76,6 +76,45 @@ describe('permission-based action visibility', () => {
     expect(screen.queryByRole('button', { name: 'Propose a Lore Entry' })).not.toBeInTheDocument();
   });
 
+  it('hides Lore lifecycle actions from a viewer', async () => {
+    stubFetch({
+      ...loreStubs,
+      [`/api/projects/${REF}/lore`]: {
+        body: {
+          items: [
+            {
+              id: '00000000-0000-4000-8000-000000000001',
+              project_id: '00000000-0000-4000-8000-000000000010',
+              memory_key: 'run.api.local',
+              category: 'running',
+              kind: 'procedure',
+              state: 'active',
+              importance: 80,
+              volatility: 'operational',
+              current_version: null,
+              last_verified_at: null,
+              stale_reason: null,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          next_cursor: null,
+          has_more: false,
+          memory_revision: 1,
+        },
+      },
+    });
+    renderWithProviders(<LorePage />, {
+      route: `/projects/${REF}/lore`,
+      path: '/projects/:projectRef/lore',
+      permissions: VIEWER_PERMISSIONS,
+    });
+
+    expect(await screen.findByRole('link', { name: 'run.api.local' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Mark stale' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Archive' })).not.toBeInTheDocument();
+  });
+
   it('offers publishing to an operator', async () => {
     stubFetch(loreStubs);
     renderWithProviders(<LorePage />, {
