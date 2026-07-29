@@ -16,7 +16,11 @@ export default defineConfig({
         resolve: { alias: sagaAliases },
         test: {
           name: 'unit',
-          include: ['packages/*/src/**/*.test.ts', 'apps/cli/src/**/*.test.ts'],
+          include: [
+            'packages/*/src/**/*.test.ts',
+            'apps/cli/src/**/*.test.ts',
+            'apps/worker/src/**/*.test.ts',
+          ],
           exclude: ['**/*.integration.test.ts', '**/node_modules/**'],
           environment: 'node',
         },

@@ -48,6 +48,9 @@ export function sanitizeConfig(config: SagaConfig, startedAt: Date): ShrineConfi
 export function describeDatabase(connectionString: string): { host: string; database: string } {
   try {
     const url = new URL(connectionString);
+    // `new URL` accepts strings with no authority at all, such as `postgres://`. Reporting an
+    // empty host would show an operator a blank field rather than saying it could not be read.
+    if (url.hostname.length === 0) return { host: REDACTED, database: REDACTED };
     return {
       host: url.port.length > 0 ? `${url.hostname}:${url.port}` : url.hostname,
       database: url.pathname.replace(/^\//, '') || REDACTED,

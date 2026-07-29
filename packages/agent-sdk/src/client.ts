@@ -106,6 +106,9 @@ export class SagaClient {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       const abort = () => controller.abort();
+      // A signal that is *already* aborted never fires the event, so it has to be checked
+      // rather than only listened to — otherwise a cancelled call still hits the network.
+      if (options.signal?.aborted === true) controller.abort();
       options.signal?.addEventListener('abort', abort, { once: true });
 
       try {
@@ -143,12 +146,16 @@ export class SagaClient {
           },
         );
 
-        if (NEVER_RETRY.has(code) || response.status < 500 || attempt === this.maxRetries) {
-          throw error;
-        }
+        // `retryable` already encodes both rules: never a conflict, never a 4xx. Deciding here
+        // and rethrowing every SagaError below keeps the two branches from disagreeing — an
+        // earlier version re-tested only the conflict set in `catch`, so a 404 was retried
+        // three times despite the check above.
+        if (!error.retryable || attempt === this.maxRetries) throw error;
         lastError = error;
       } catch (error) {
-        if (error instanceof SagaError && NEVER_RETRY.has(error.code)) throw error;
+        // Any SagaError reaching here was thrown deliberately above; only transport failures
+        // are eligible for another attempt.
+        if (error instanceof SagaError) throw error;
         if (attempt === this.maxRetries) throw error;
         lastError = error;
       } finally {
