@@ -6,6 +6,7 @@ import { LiveProvider } from './lib/live.jsx';
 import { PermissionProvider } from './lib/permissions.jsx';
 import { useMe } from './lib/queries.js';
 import { DashboardPage } from './pages/Dashboard.jsx';
+import { DevicePage } from './pages/Device.jsx';
 import { LoginPage } from './pages/Login.jsx';
 import { LorePage } from './pages/Lore.jsx';
 import { LoreEntryPage } from './pages/LoreEntry.jsx';
@@ -82,6 +83,9 @@ export function App() {
             <Route path="quests" element={<ProjectSection section="quests" />} />
             <Route path="party" element={<ProjectSection section="party" />} />
             <Route path="shrine" element={<ShrinePage />} />
+            {/* Reached by following the URL `saga connect` prints or opens
+                (`verification_uri_complete`), never by browsing, so it has no nav entry. */}
+            <Route path="device" element={<DevicePage />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

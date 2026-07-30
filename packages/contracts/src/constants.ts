@@ -1,10 +1,11 @@
 /**
- * Lore enum value lists, with no Zod import.
+ * Enum value lists, with no Zod import.
  *
  * Guild Hall needs a few of these at runtime — to render a `<select>`, to lay out a board
- * column per status. Importing them from the package barrel instead would pull the whole Zod
- * runtime and every server-side schema into the browser bundle (measured: ~20 KB gzip), so the
- * lists live here and the schema modules build their `z.enum(...)` from them.
+ * column per status, to default a set of checkboxes. Importing them from the package barrel
+ * instead would pull the whole Zod runtime and every server-side schema into the browser bundle
+ * (measured: ~20 KB gzip), so the lists live here and the schema modules build their
+ * `z.enum(...)` from them.
  *
  * Rule for this file: value declarations only, and no import that is not itself type-only.
  */
@@ -41,6 +42,17 @@ export const MEMORY_STATES = ['active', 'stale', 'archived'] as const;
 export const VERIFICATION_STATES = ['observed', 'inferred', 'verified'] as const;
 
 export const VOLATILITIES = ['stable', 'operational'] as const;
+
+export const AGENT_SCOPES = [
+  'project:read',
+  'lore:read',
+  'lore:propose',
+  'lore:publish',
+  'quest:read',
+  'quest:write',
+  'party:heartbeat',
+  'party:claim',
+] as const;
 
 export const MEMORY_RELATIONS = [
   'uses',

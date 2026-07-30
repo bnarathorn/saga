@@ -1,13 +1,42 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../lib/api.js';
 import { useLogin } from '../lib/queries.js';
+
+/** The shape `App`'s unauthenticated catch-all stashes on `Navigate`'s `state`. */
+interface LocationState {
+  from?: { pathname: string; search: string; hash: string };
+}
+
+/**
+ * Where to land after a successful sign-in.
+ *
+ * `App.tsx` redirects an unauthenticated visit to `/login` with `state={{ from: location }}` so a
+ * link like the CLI's device-approval URL survives the round trip through sign-in. Without it,
+ * `verification_uri_complete`'s `?code=` query string would be dropped and the administrator would
+ * land on the dashboard instead of the approval they were sent to make.
+ *
+ * The pathname is validated before use: it must be an in-app path, starting with a single `/` and
+ * not `//`, because a `//`-prefixed pathname makes `navigate()` resolve against another origin and
+ * attempt a cross-origin `history.pushState`, which throws instead of redirecting.
+ *
+ * Exported so this can be asserted directly — a `MemoryRouter` never touches the real history API,
+ * so an integration test cannot reproduce the throw this guards against.
+ */
+export function resolveRedirectTarget(from: LocationState['from']): string {
+  if (from === undefined) return '/';
+  if (!from.pathname.startsWith('/') || from.pathname.startsWith('//')) return '/';
+  return `${from.pathname}${from.search}${from.hash}`;
+}
 
 export function LoginPage() {
   const login = useLogin();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  const redirectTo = resolveRedirectTarget((location.state as LocationState | null)?.from);
 
   const error = login.error;
   const message =
@@ -21,7 +50,7 @@ export function LoginPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    login.mutate({ email, password }, { onSuccess: () => navigate('/') });
+    login.mutate({ email, password }, { onSuccess: () => navigate(redirectTo, { replace: true }) });
   };
 
   return (

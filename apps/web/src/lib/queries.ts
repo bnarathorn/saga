@@ -1,5 +1,8 @@
 import type {
+  AgentTokenDto,
   AuditLogDto,
+  DeviceApproveRequest,
+  DevicePendingView,
   JobDto,
   MeResponse,
   MetricsSummaryDto,
@@ -48,6 +51,7 @@ export const queryKeys = {
   schema: ['shrine', 'schema'] as const,
   metrics: ['shrine', 'metrics'] as const,
   audit: (params?: string) => ['shrine', 'audit', params ?? ''] as const,
+  devicePending: ['device', 'pending'] as const,
 };
 
 export function useMe(): UseQueryResult<MeResponse> {
@@ -80,12 +84,46 @@ export function useLogout(): UseMutationResult<unknown, Error, void> {
   });
 }
 
-export function useProjects(params = ''): UseQueryResult<ListResponse<ProjectSummaryDto>> {
+/**
+ * Requests waiting on `POST /api/auth/device/approve`. The server requires `security:manage`
+ * for this endpoint, so `enabled` lets the page skip the request entirely for a caller who
+ * would only get a 403 back — the same pattern `useEvents` uses for its project gate.
+ */
+export function useDevicePending(enabled = true): UseQueryResult<{ items: DevicePendingView[] }> {
+  return useQuery({
+    queryKey: queryKeys.devicePending,
+    queryFn: ({ signal }) =>
+      api.get<{ items: DevicePendingView[] }>('/api/auth/device/pending', signal),
+    refetchInterval: POLL.fast,
+    enabled,
+  });
+}
+
+export function useApproveDevice(): UseMutationResult<
+  { token: AgentTokenDto },
+  Error,
+  DeviceApproveRequest
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      api.post<{ token: AgentTokenDto }>('/api/auth/device/approve', input),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['device'] });
+    },
+  });
+}
+
+export function useProjects(
+  params = '',
+  enabled = true,
+): UseQueryResult<ListResponse<ProjectSummaryDto>> {
   return useQuery({
     queryKey: queryKeys.projects(params),
     queryFn: ({ signal }) =>
       api.get<ListResponse<ProjectSummaryDto>>(`/api/projects${params}`, signal),
     refetchInterval: POLL.normal,
+    enabled,
   });
 }
 

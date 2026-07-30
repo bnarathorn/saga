@@ -1,5 +1,8 @@
 import { ERROR_CODES, MAX_PAGE_SIZE } from '@saga/shared';
 import { z } from 'zod';
+import { AGENT_SCOPES } from './constants.js';
+
+export { AGENT_SCOPES };
 
 export const uuidSchema = z.string().uuid();
 export const isoTimestampSchema = z.string().datetime({ offset: true });
@@ -38,16 +41,6 @@ export const idempotencyHeaderSchema = z.object({
   'idempotency-key': z.string().min(8).max(200).optional(),
 });
 
-export const AGENT_SCOPES = [
-  'project:read',
-  'lore:read',
-  'lore:propose',
-  'lore:publish',
-  'quest:read',
-  'quest:write',
-  'party:heartbeat',
-  'party:claim',
-] as const;
 export const agentScopeSchema = z.enum(AGENT_SCOPES);
 export type AgentScope = z.infer<typeof agentScopeSchema>;
 

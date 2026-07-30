@@ -155,6 +155,82 @@ describe('the Guild Hall route table', () => {
     expect(screen.queryByRole('navigation', { name: 'Primary' })).not.toBeInTheDocument();
   });
 
+  it('returns an unauthenticated visitor to the page they were sent to, query string intact', async () => {
+    // The CLI's `verification_uri_complete` carries the device code as `?code=`. Losing that
+    // query string across the login bounce would defeat the whole device-approval flow, so
+    // this exercises the full round trip: bounced to `/login`, signs in, lands back on
+    // `/device?code=…` rather than the dashboard.
+    let loggedIn = false;
+    stubFetch({
+      ...stubs,
+      '/api/auth/me': () => ({
+        body: loggedIn ? adminMe : { authenticated: false, actor_type: 'anonymous' },
+      }),
+      'POST /api/auth/login': () => {
+        loggedIn = true;
+        return {
+          body: { user: adminMe.user, csrf_token: 'test-csrf-token', expires_at: new Date().toISOString() },
+        };
+      },
+      '/api/auth/device/pending': { body: { items: [] } },
+      // A project must exist for the approval form to render at all (see Device.test.tsx's
+      // no-active-projects case) — this test is about the login round trip, not that empty
+      // state, so it stubs one active project to keep the form on screen.
+      '/api/projects?status=active&limit=200': { body: { ...empty, items: [projectSummary()] } },
+    });
+    renderApp('/device?code=WORD-WORD');
+
+    // Bounced through login first — the dashboard and Device page are both absent.
+    const emailField = await screen.findByLabelText(/email/i);
+    expect(screen.queryByText('Approve a device sign-in')).not.toBeInTheDocument();
+
+    await userEvent.type(emailField, 'admin@saga.test');
+    await userEvent.type(screen.getByLabelText(/password/i), 'correct horse');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Lands on the device-approval page it was originally sent to, not `/`.
+    expect(await screen.findByText('Approve a device sign-in')).toBeInTheDocument();
+    expect(screen.getByLabelText('Device code')).toHaveValue('WORD-WORD');
+  });
+
+  it('falls back to `/` instead of throwing when the stashed location is a `//`-prefixed pathname', async () => {
+    // A location whose pathname starts with `//` (e.g. a user typing `https://host//evil.com`)
+    // would make `navigate()` attempt a cross-origin `history.pushState`, which throws a
+    // SecurityError rather than redirecting. This is not exploitable — an attacker gains
+    // nothing over linking to their site directly — but landing safely on `/` instead of
+    // crashing the app is a cheap guard worth having.
+    let loggedIn = false;
+    stubFetch({
+      ...stubs,
+      '/api/auth/me': () => ({
+        body: loggedIn ? adminMe : { authenticated: false, actor_type: 'anonymous' },
+      }),
+      'POST /api/auth/login': () => {
+        loggedIn = true;
+        return {
+          body: { user: adminMe.user, csrf_token: 'test-csrf-token', expires_at: new Date().toISOString() },
+        };
+      },
+    });
+    // The catch-all route stashes this location as `state.from` before bouncing to `/login`,
+    // the same mechanism the round-trip test above exercises — only the pathname here is the
+    // `//`-prefixed one under test.
+    renderApp('//evil.com');
+
+    const emailField = await screen.findByLabelText(/email/i);
+    await userEvent.type(emailField, 'admin@saga.test');
+    await userEvent.type(screen.getByLabelText(/password/i), 'correct horse');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Landed on the dashboard, and no not-found fallback. Note this asserts the end state only:
+    // it passes with the guard reverted, because `MemoryRouter` never calls the real
+    // `history.pushState` and so cannot reproduce the SecurityError the guard exists to avoid.
+    // The guard itself is asserted directly in `Login.test.tsx` — do not treat this case as its
+    // regression test.
+    expect(await screen.findByText('Dashboard', { selector: 'h1' })).toBeInTheDocument();
+    expect(screen.queryByText(NOT_FOUND)).not.toBeInTheDocument();
+  });
+
   it('stays on screen and explains itself when the API cannot be reached', async () => {
     stubFetch({
       '/api/auth/me': {
