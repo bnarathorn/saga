@@ -27,13 +27,13 @@
     "test:web": "vitest run --project web",
     "test:all": "vitest run",
     "test:e2e": "playwright test",
-    "db:migrate": "tsx db/cli.ts migrate",
-    "db:status": "tsx db/cli.ts status",
-    "db:seed": "tsx db/cli.ts seed",
-    "db:reset": "tsx db/reset.ts",
+    "db:migrate": "tsc -b packages/database && tsx db/cli.ts migrate",
+    "db:status": "tsc -b packages/database && tsx db/cli.ts status",
+    "db:seed": "tsc -b packages/database && tsx db/cli.ts seed",
+    "db:reset": "tsc -b packages/database && tsx db/reset.ts",
     "openapi:generate": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts",
     "openapi:check": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts --check",
-    "saga": "tsx apps/cli/src/main.ts",
+    "saga": "tsc -b packages/agent-sdk && tsx apps/cli/src/main.ts",
     "demo": "tsc -b packages/agent-sdk && tsx scripts/demo.ts"
   },
   "devDependencies": {

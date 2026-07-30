@@ -50,7 +50,7 @@ export function checkApiCompatibility(
       message: `This CLI is ${cliVersion}; the server speaks ${serverVersion}.`,
       action:
         server.major > cli.major
-          ? 'Upgrade the CLI (`npm i -g @saga/cli`) to match the server.'
+          ? 'Upgrade the CLI to match the server: pull the Saga repository, then `pnpm --filter @saga/cli build && pnpm -C apps/cli link --global`.'
           : 'This CLI is newer than the server. Upgrade the server, or use a matching CLI.',
     };
   }
