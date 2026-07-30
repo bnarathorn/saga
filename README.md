@@ -29,9 +29,15 @@ and `pgcrypto`** (or Docker, which brings its own).
 ```bash
 git clone <this repository> saga && cd saga
 cp .env.example .env
-# The compose file refuses to start without a session secret:
-printf '\nSAGA_SESSION_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
-printf 'SAGA_BOOTSTRAP_ADMIN_EMAIL=admin@saga.local\nSAGA_BOOTSTRAP_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 12)" >> .env
+# .env.example already ships a working (development-only) session secret and an empty
+# bootstrap password, so replace those two lines in place rather than appending — the
+# loader Saga's own processes use resolves duplicate keys first-wins, opposite of Docker
+# Compose, so an appended line would only take effect for one of the two:
+sed -i "s|^SAGA_SESSION_SECRET=.*|SAGA_SESSION_SECRET=$(openssl rand -hex 32)|" .env
+sed -i "s|^SAGA_BOOTSTRAP_ADMIN_PASSWORD=.*|SAGA_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)|" .env
+# .env.example points SAGA_PUBLIC_URL at the Vite dev-server port; under Compose, Guild
+# Hall is served by nginx on 8080, so that line needs to move too:
+sed -i "s|^SAGA_PUBLIC_URL=.*|SAGA_PUBLIC_URL=http://localhost:8080|" .env
 
 docker compose up -d --build
 ```

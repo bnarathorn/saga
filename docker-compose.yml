@@ -39,9 +39,15 @@ services:
       dockerfile: deploy/docker/Dockerfile
     command: ['node', 'apps/server/dist/main.js']
     environment:
-      NODE_ENV: production
+      # Defaults to production so an incomplete or missing .env fails closed rather than
+      # silently running unguarded; the local quickstart still gets development because
+      # .env.example sets NODE_ENV=development explicitly before this is interpolated.
+      NODE_ENV: ${NODE_ENV:-production}
       SAGA_API_HOST: 0.0.0.0
       SAGA_API_PORT: '4319'
+      # A stale SAGA_PUBLIC_URL in .env (the example file ships the dev-server
+      # port, 4320) overrides this default and points the device-flow
+      # verification URL at a port nothing serves under Compose.
       SAGA_PUBLIC_URL: ${SAGA_PUBLIC_URL:-http://localhost:8080}
       SAGA_COOKIE_SECURE: ${SAGA_COOKIE_SECURE:-false}
       SAGA_SESSION_SECRET: ${SAGA_SESSION_SECRET:?set SAGA_SESSION_SECRET in .env}
@@ -64,7 +70,10 @@ services:
       dockerfile: deploy/docker/Dockerfile
     command: ['node', 'apps/worker/dist/main.js']
     environment:
-      NODE_ENV: production
+      # Defaults to production so an incomplete or missing .env fails closed rather than
+      # silently running unguarded; the local quickstart still gets development because
+      # .env.example sets NODE_ENV=development explicitly before this is interpolated.
+      NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: postgres://${POSTGRES_USER:-saga}:${POSTGRES_PASSWORD:-saga}@postgres:5432/${POSTGRES_DB:-saga}
       SAGA_SESSION_SECRET: ${SAGA_SESSION_SECRET:?set SAGA_SESSION_SECRET in .env}
       SAGA_COOKIE_SECURE: ${SAGA_COOKIE_SECURE:-false}

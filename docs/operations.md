@@ -47,7 +47,28 @@ filter and `UMask=0077`. Nothing under `/opt/saga` needs to be writable at runti
 
 ```bash
 cp .env.example .env
-printf '\nSAGA_SESSION_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+# Edit the existing lines in place rather than appending: Saga's own config loader resolves
+# a duplicate key first-wins, the opposite of Docker Compose's last-wins, so an appended
+# line would only take effect for whichever process reads it that way.
+sed -i "s|^SAGA_SESSION_SECRET=.*|SAGA_SESSION_SECRET=$(openssl rand -hex 32)|" .env
+# .env.example ships development defaults for the quickstart in README.md. A reference
+# deployment is a production deployment: pin NODE_ENV=production so the config loader's
+# guards actually run (session-secret length, the dev-auth-bypass refusal, and the
+# SAGA_COOKIE_SECURE requirement below), and set SAGA_COOKIE_SECURE=true so session and
+# CSRF cookies carry the Secure flag. docker-compose.yml only defaults NODE_ENV to
+# production when .env omits the key entirely — it does not set it for you.
+sed -i "s|^NODE_ENV=.*|NODE_ENV=production|" .env
+sed -i "s|^SAGA_COOKIE_SECURE=.*|SAGA_COOKIE_SECURE=true|" .env
+# .env.example points SAGA_PUBLIC_URL at the Vite dev-server port, which is only reachable
+# on the loopback interface of a workstation running the quickstart. A reference deployment
+# sits behind nginx (deploy/nginx/guild-hall.conf), which terminates TLS, so SAGA_PUBLIC_URL
+# must be the external HTTPS origin operators and other services actually reach — not the
+# container's internal port. Replace the placeholder below with that origin. Three things
+# derive from this value: the CORS allowlist (apps/server/src/app.ts), the device-flow
+# verification URL sent to agents (${SAGA_PUBLIC_URL}/device), and whether Shrine reports
+# TLS as enabled (it infers this from the URL's scheme, so a localhost or http:// value here
+# makes Shrine misreport a TLS deployment as plaintext).
+sed -i "s|^SAGA_PUBLIC_URL=.*|SAGA_PUBLIC_URL=https://saga.example.internal|" .env
 docker compose up -d --build
 docker compose --profile ollama up -d      # optional local embeddings
 ```
