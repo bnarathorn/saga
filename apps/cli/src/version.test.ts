@@ -13,7 +13,11 @@ describe('API compatibility (spec 13.1 step 7)', () => {
   it('refuses a major mismatch and says which side to upgrade', () => {
     const older = checkApiCompatibility('2.0.0', '1.4.0');
     expect(older.verdict).toBe('incompatible');
-    expect(older.action).toMatch(/Upgrade the CLI/);
+    // Assert the instruction, not the verb. This previously matched only /Upgrade the CLI/,
+    // which is why `npm i -g @saga/cli` survived here for so long: the package is private and
+    // has never been published, so the advice could not work, but it satisfied the regex.
+    expect(older.action).toMatch(/pnpm -C apps\/cli link --global/);
+    expect(older.action).not.toMatch(/npm i -g/);
 
     const newer = checkApiCompatibility('1.0.0', '2.1.0');
     expect(newer.verdict).toBe('incompatible');

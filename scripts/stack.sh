@@ -68,6 +68,14 @@ case "${1:-up}" in
       echo "port $api_port is already serving; run '$0 down' first (or kill the stale process)" >&2
       exit 1
     fi
+    # `node --import tsx` compiles the *app* sources on the fly, but `@saga/*` imports resolve
+    # through the package exports to `dist`. Without this build the stack serves current route
+    # code on top of whatever the domain packages last compiled to — and `scripts/verify.ts`
+    # would then be certifying that build rather than the working tree. Both app tsconfigs
+    # reference all eight packages, so one invocation covers the API and the worker. `tsc` is
+    # addressed by path because this script never goes through pnpm.
+    "$ROOT/node_modules/.bin/tsc" -b apps/server apps/worker
+
     start_one api apps/server/src/main.ts
     start_one worker apps/worker/src/main.ts
     api_pid="$(cat "$RUN_DIR/api.pid")"
