@@ -58,13 +58,14 @@ never operate Shrine or manage security, whatever scopes it holds.
 | `lore:propose`    |        |    ✓     |   ✓   | `lore:propose`                   |
 | `lore:publish`    |        |    ✓     |   ✓   | `lore:publish`                   |
 | `lore:archive`    |        |    ✓     |   ✓   | —                                |
-| `quest:read`      |   ✓    |    ✓     |   ✓   | `quest:read`                     |
+| `quest:read`      |   ✓    |    ✓     |   ✓   | `quest:read`, `quest:write`      |
 | `quest:write`     |        |    ✓     |   ✓   | `quest:write`                    |
 | `party:read`      |   ✓    |    ✓     |   ✓   | `party:heartbeat`, `party:claim` |
 | `party:heartbeat` |        |    ✓     |   ✓   | `party:heartbeat`                |
 | `party:claim`     |        |    ✓     |   ✓   | `party:claim`                    |
 | `party:revoke`    |        |    ✓     |   ✓   | —                                |
-| `shrine:read`     |   ✓    |    ✓     |   ✓   | `project:read`                   |
+| `shrine:health`   |   ✓    |    ✓     |   ✓   | `project:read`                   |
+| `shrine:read`     |   ✓    |    ✓     |   ✓   | —                                |
 | `shrine:operate`  |        |    ✓     |   ✓   | —                                |
 | `security:manage` |        |          |   ✓   | —                                |
 

@@ -109,23 +109,6 @@ export function requirePermission(actor: Actor, permission: Permission): void {
   }
 }
 
-/**
- * An agent token is bound to exactly one project. This is the check that makes acceptance
- * criterion 23 true: a valid token for project A cannot read project B.
- */
-export function requireProjectAccess(actor: Actor, projectId: string): void {
-  if (actor.type === 'anonymous') {
-    throw new SagaError('UNAUTHENTICATED', 'Authentication is required.');
-  }
-  if (actor.type === 'agent' && actor.projectId !== projectId) {
-    throw new SagaError(
-      'PROJECT_SCOPE_MISMATCH',
-      'This agent token is bound to a different project.',
-      { details: { requested_project_id: projectId } },
-    );
-  }
-}
-
 export function actorLabel(actor: Actor): string {
   switch (actor.type) {
     case 'user':

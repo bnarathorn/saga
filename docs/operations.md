@@ -321,15 +321,25 @@ file is mode 0600.
 
 The `cleanup` job removes operational exhaust only:
 
-| Data                               | Default                                        |
-| ---------------------------------- | ---------------------------------------------- |
-| Finished jobs                      | 14 days                                        |
-| Delivered outbox rows              | 30 days                                        |
-| System events                      | 30 days                                        |
-| Idempotency records                | 24 hours                                       |
-| Expired web sessions, device codes | immediately                                    |
-| Dead service instances             | 24 hours                                       |
-| Superseded context snapshots       | 30 days, keeping the 5 most recent per project |
+| Data                          | Default                                              |
+| ----------------------------- | ----------------------------------------------------- |
+| Finished jobs                 | 14 days                                                |
+| Delivered outbox rows         | 30 days                                                |
+| System events                 | 30 days                                                |
+| Idempotency records           | 24 hours                                               |
+| Expired web sessions          | immediately                                            |
+| Expired device codes          | marked expired immediately; row deleted after 24 hours |
+| Dead service instances        | 24 hours                                               |
+| Superseded context snapshots  | 30 days, keeping the 5 most recent per project         |
+
+Delivered outbox rows and superseded context snapshots aren't governed by their own settings —
+`cleanup` reuses the system-events cutoff for both, so lowering `SAGA_SYSTEM_EVENT_RETENTION_DAYS`
+quietly shortens outbox and snapshot retention along with it.
+
+Device codes go through two steps, not one: a stale pending or approved code is marked
+`expired` (and stops working) as soon as it passes its own expiry, but the row is only deleted
+once it is a full day past that expiry — the delete runs against a fixed 24-hour cutoff, not the
+system-events setting above.
 
 **Durable Lore and Quest history is archived, never deleted.** Marking an entry stale keeps
 its content and adds a reason; archiving hides it from search and context but preserves every

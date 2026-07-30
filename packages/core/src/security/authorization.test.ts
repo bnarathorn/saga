@@ -7,7 +7,6 @@ import {
   can,
   permissionsFor,
   requirePermission,
-  requireProjectAccess,
   type AgentActor,
   type UserActor,
 } from './authorization.js';
@@ -171,29 +170,6 @@ describe('requirePermission', () => {
 
   it('passes silently when the permission is held', () => {
     expect(() => requirePermission(user('admin'), 'security:manage')).not.toThrow();
-  });
-});
-
-describe('requireProjectAccess', () => {
-  const OTHER = '00000000-0000-4000-8000-000000000099';
-
-  it('refuses a token bound to a different project (acceptance criterion 23)', () => {
-    expect(() => requireProjectAccess(agent([]), OTHER)).toThrow(/bound to a different project/);
-  });
-
-  it('allows the project the token is bound to', () => {
-    const actor = agent([]);
-    expect(() => requireProjectAccess(actor, actor.projectId)).not.toThrow();
-  });
-
-  it('does not restrict a web user to one project', () => {
-    expect(() => requireProjectAccess(user('viewer'), OTHER)).not.toThrow();
-  });
-
-  it('refuses an anonymous caller before it looks at the project', () => {
-    expect(() => requireProjectAccess({ type: 'anonymous' }, OTHER)).toThrow(
-      /Authentication is required/,
-    );
   });
 });
 
