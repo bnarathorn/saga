@@ -112,6 +112,16 @@ single `test:all`, because the integration and api projects truncate shared tabl
 not run concurrently. The OpenAPI step is what spec 22.3 requires — generated artifacts must
 never drift from the Zod contracts they come from.
 
+Both `openapi:generate` and `openapi:check` run `tsc -b packages/contracts` first, and that build
+is load-bearing rather than tidiness. Every `@saga/*` package exports only `./dist`, and there is
+no `paths` mapping, so `tsx scripts/generate-openapi.ts` resolves the contracts — and, through
+them, `ERROR_CODES` from `@saga/shared` — to compiled output. Without the build the generator
+renders the _previous_ build's schemas: removing an error code from `src` and regenerating once
+produced no diff at all, and `--check` then compared two equally stale artifacts and reported
+success. A guard that cannot fail is worse than no guard, so the build stays in the command.
+`tsc -b` is incremental, and CI has already built everything by the typecheck step, so it costs
+about a second there.
+
 PostgreSQL comes from a `pgvector/pgvector:pg16` service container. Two databases are created,
 not one:
 

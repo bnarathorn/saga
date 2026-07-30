@@ -31,8 +31,8 @@
     "db:status": "tsx db/cli.ts status",
     "db:seed": "tsx db/cli.ts seed",
     "db:reset": "tsx db/reset.ts",
-    "openapi:generate": "tsx scripts/generate-openapi.ts",
-    "openapi:check": "tsx scripts/generate-openapi.ts --check",
+    "openapi:generate": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts",
+    "openapi:check": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts --check",
     "saga": "tsx apps/cli/src/main.ts",
     "demo": "tsx scripts/demo.ts"
   },
