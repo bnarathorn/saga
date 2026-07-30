@@ -6,6 +6,21 @@ How Codex, Claude Code and other agents use Saga, and the policy they should fol
 
 ## 1. Setup
 
+`saga` is not published to any registry — it is the Saga repository's `apps/cli` workspace
+package, whose `bin` entry points at a compiled `dist/main.js`. From inside the Saga
+repository, build it once and link it onto your `PATH`:
+
+```bash
+pnpm --filter @saga/cli build
+pnpm -C apps/cli link --global
+```
+
+(If pnpm reports `ERR_PNPM_NO_GLOBAL_BIN_DIR`, it has no global bin directory configured yet;
+run `pnpm setup` once, open a new shell, and repeat the `link` command above.)
+
+With `saga` on `PATH`, move to the project you want Saga to manage — not the Saga repository
+itself, since `saga connect` binds whatever directory it is run from — and connect it:
+
 ```bash
 cd /path/to/your/project      # plain folder, Git without a remote, or SVN — all fine
 saga connect

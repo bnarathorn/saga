@@ -92,6 +92,27 @@ project.
 
 ---
 
+## Connecting an agent
+
+The `saga` command is not published to any registry — it is the workspace package
+`apps/cli`, whose `bin` entry points at a compiled `dist/main.js`, not at the TypeScript
+source. Build it once and link it onto your `PATH`:
+
+```bash
+pnpm --filter @saga/cli build
+pnpm -C apps/cli link --global
+```
+
+If pnpm reports `ERR_PNPM_NO_GLOBAL_BIN_DIR`, it has no global bin directory configured yet;
+run `pnpm setup` once, open a new shell so the change takes effect, and repeat the `link`
+command above.
+
+`saga --version` should now work from any directory. From inside the project you want Saga to
+manage — not from the Saga repository itself — run `saga connect`; see
+[`docs/agent-integration.md`](docs/agent-integration.md) for the rest of the flow.
+
+---
+
 ## Repository layout
 
 ```text
