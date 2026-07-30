@@ -34,7 +34,7 @@
     "openapi:generate": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts",
     "openapi:check": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts --check",
     "saga": "tsx apps/cli/src/main.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsc -b packages/agent-sdk && tsx scripts/demo.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.18.0",

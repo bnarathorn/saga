@@ -101,6 +101,12 @@ pnpm demo                          # the full section-25 demonstration
 version control — the same code path an agent takes through `saga mcp`. It found a real defect
 that no unit test would have: Quest embedding jobs whose payload the handler could not parse.
 
+`pnpm demo` builds `packages/agent-sdk` first, for the same reason the OpenAPI scripts build
+`packages/contracts`. The handlers themselves are imported by relative path and so always come
+from source, but they import `@saga/agent-sdk` and `@saga/shared`, which resolve to `dist` —
+so without the build the demo exercises current handlers against a previously-built SDK, which
+is the layer the coverage suites found real defects in.
+
 ---
 
 ## Continuous integration
