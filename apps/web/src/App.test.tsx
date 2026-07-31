@@ -169,7 +169,11 @@ describe('the Guild Hall route table', () => {
       'POST /api/auth/login': () => {
         loggedIn = true;
         return {
-          body: { user: adminMe.user, csrf_token: 'test-csrf-token', expires_at: new Date().toISOString() },
+          body: {
+            user: adminMe.user,
+            csrf_token: 'test-csrf-token',
+            expires_at: new Date().toISOString(),
+          },
         };
       },
       '/api/auth/device/pending': { body: { items: [] } },
@@ -208,7 +212,11 @@ describe('the Guild Hall route table', () => {
       'POST /api/auth/login': () => {
         loggedIn = true;
         return {
-          body: { user: adminMe.user, csrf_token: 'test-csrf-token', expires_at: new Date().toISOString() },
+          body: {
+            user: adminMe.user,
+            csrf_token: 'test-csrf-token',
+            expires_at: new Date().toISOString(),
+          },
         };
       },
     });

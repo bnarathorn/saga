@@ -321,16 +321,16 @@ file is mode 0600.
 
 The `cleanup` job removes operational exhaust only:
 
-| Data                          | Default                                              |
-| ----------------------------- | ----------------------------------------------------- |
-| Finished jobs                 | 14 days                                                |
-| Delivered outbox rows         | 30 days                                                |
-| System events                 | 30 days                                                |
-| Idempotency records           | 24 hours                                               |
-| Expired web sessions          | immediately                                            |
-| Expired device codes          | marked expired immediately; row deleted after 24 hours |
-| Dead service instances        | 24 hours                                               |
-| Superseded context snapshots  | 30 days, keeping the 5 most recent per project         |
+| Data                         | Default                                                |
+| ---------------------------- | ------------------------------------------------------ |
+| Finished jobs                | 14 days                                                |
+| Delivered outbox rows        | 30 days                                                |
+| System events                | 30 days                                                |
+| Idempotency records          | 24 hours                                               |
+| Expired web sessions         | immediately                                            |
+| Expired device codes         | marked expired immediately; row deleted after 24 hours |
+| Dead service instances       | 24 hours                                               |
+| Superseded context snapshots | 30 days, keeping the 5 most recent per project         |
 
 Delivered outbox rows and superseded context snapshots aren't governed by their own settings —
 `cleanup` reuses the system-events cutoff for both, so lowering `SAGA_SYSTEM_EVENT_RETENTION_DAYS`

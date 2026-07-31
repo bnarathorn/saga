@@ -106,8 +106,7 @@ export function useApproveDevice(): UseMutationResult<
 > {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input) =>
-      api.post<{ token: AgentTokenDto }>('/api/auth/device/approve', input),
+    mutationFn: (input) => api.post<{ token: AgentTokenDto }>('/api/auth/device/approve', input),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['device'] });
     },

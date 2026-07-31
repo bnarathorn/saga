@@ -1,7 +1,12 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { projectSummary, renderWithProviders, stubFetch, VIEWER_PERMISSIONS } from '../test-utils.jsx';
+import {
+  projectSummary,
+  renderWithProviders,
+  stubFetch,
+  VIEWER_PERMISSIONS,
+} from '../test-utils.jsx';
 import { DevicePage } from './Device.jsx';
 
 /**
@@ -29,7 +34,15 @@ function approvedToken(overrides: Record<string, unknown> = {}) {
     project_id: '00000000-0000-4000-8000-000000000010',
     name: 'ERP Backoffice agent',
     token_prefix: 'sagat_ab12',
-    scopes: ['project:read', 'lore:read', 'lore:propose', 'quest:read', 'quest:write', 'party:heartbeat', 'party:claim'],
+    scopes: [
+      'project:read',
+      'lore:read',
+      'lore:propose',
+      'quest:read',
+      'quest:write',
+      'party:heartbeat',
+      'party:claim',
+    ],
     client: 'saga-cli',
     created_at: new Date().toISOString(),
     last_used_at: null,
@@ -72,7 +85,9 @@ describe('Device page', () => {
   it('shows an explanatory empty state and offers no Approve control when there are no active projects', async () => {
     stubFetch({
       '/api/auth/device/pending': { body: { items: [pendingItem()] } },
-      '/api/projects?status=active&limit=200': { body: { items: [], next_cursor: null, has_more: false } },
+      '/api/projects?status=active&limit=200': {
+        body: { items: [], next_cursor: null, has_more: false },
+      },
     });
     renderWithProviders(<DevicePage />, { route: '/device?code=WORD-WORD' });
 

@@ -84,15 +84,15 @@ higher package registers a contributor at composition time:
 bottom shows the whole system's shape.
 
 TypeScript project references, generated from one spec (`scripts/scaffold-packages.mjs`), make
-an *import* across the boundary a build error. That guarantee stops at the language boundary,
+an _import_ across the boundary a build error. That guarantee stops at the language boundary,
 though: references cannot see inside a SQL string, so a repository is free to name another
 domain's schema in a query and the build will not notice it. Three call sites do this today,
 each a deliberate exception rather than an oversight:
 
-| Site | Crosses | Why it stands |
-| ---- | ------- | -------------- |
+| Site                                                                              | Crosses                                                                                              | Why it stands                                                                                                                                                                                                                                                              |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `packages/core/src/repositories/outbox-repository.ts:142-156` (`listUnprojected`) | Core reads `shrine.system_events` — the lower-reads-higher case the contributor mechanism exists for | The anti-join backs a rare, bounded repair job over a retention-capped table. Postgres hash-joins the anti-join regardless of an expression index on the JSON path, so routing it through a contributor would add ceremony without changing the query plan (`HANDOFF.md`). |
-| `packages/party/src/repositories/party-repository.ts:121` and `:653` | Party reads `quest.work_items` to embed a Quest's title in a Party read result | Party already depends on `@saga/quest` at the package level, so the join doesn't cross the *build* boundary — only the "never reads another domain's tables" sentence. It is a same-request denormalized read, not business logic that belongs in Quest. |
+| `packages/party/src/repositories/party-repository.ts:121` and `:653`              | Party reads `quest.work_items` to embed a Quest's title in a Party read result                       | Party already depends on `@saga/quest` at the package level, so the join doesn't cross the _build_ boundary — only the "never reads another domain's tables" sentence. It is a same-request denormalized read, not business logic that belongs in Quest.                   |
 
 Neither exception writes into another domain's tables, and neither has produced the coupling
 the rule exists to prevent: no code outside Core depends on the shape of `shrine.system_events`,
@@ -102,19 +102,19 @@ and no code outside Party depends on the joined Quest title being present.
 
 ## 3. State ownership
 
-| State                       | Owner                                            |
-| --------------------------- | ------------------------------------------------ |
-| Current Lore version        | `lore.memory_items.current_version_id`           |
-| Project Lore revision       | `core.projects.memory_revision`                  |
-| Active core context         | `core.projects.active_context_snapshot_id`       |
-| Current Quest state         | `quest.work_items`                               |
-| Latest continuation         | `quest.work_items.latest_checkpoint_id`          |
-| An online agent process     | `party.agent_runs` with an unexpired lease       |
-| Resource ownership          | `party.claims` with an unexpired lease           |
-| Credentials and sessions    | `security.users`, `security.web_sessions`, `security.agent_tokens`, `security.device_codes` — Core (`packages/core/src/repositories/security-repository.ts`) |
-| The administrative audit trail | `security.audit_logs` — Shrine (`packages/shrine/src/services/audit-service.ts`) |
-| The actual source code      | the local filesystem, Git, SVN or a working copy |
-| The actual deployment state | the deployment platform, never Saga              |
+| State                          | Owner                                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Current Lore version           | `lore.memory_items.current_version_id`                                                                                                                       |
+| Project Lore revision          | `core.projects.memory_revision`                                                                                                                              |
+| Active core context            | `core.projects.active_context_snapshot_id`                                                                                                                   |
+| Current Quest state            | `quest.work_items`                                                                                                                                           |
+| Latest continuation            | `quest.work_items.latest_checkpoint_id`                                                                                                                      |
+| An online agent process        | `party.agent_runs` with an unexpired lease                                                                                                                   |
+| Resource ownership             | `party.claims` with an unexpired lease                                                                                                                       |
+| Credentials and sessions       | `security.users`, `security.web_sessions`, `security.agent_tokens`, `security.device_codes` — Core (`packages/core/src/repositories/security-repository.ts`) |
+| The administrative audit trail | `security.audit_logs` — Shrine (`packages/shrine/src/services/audit-service.ts`)                                                                             |
+| The actual source code         | the local filesystem, Git, SVN or a working copy                                                                                                             |
+| The actual deployment state    | the deployment platform, never Saga                                                                                                                          |
 
 Saga stores knowledge, intent, progress, handoffs, fingerprints and coordination state. It
 does not merge source code, and a record in Saga never means a deployment succeeded.

@@ -111,8 +111,8 @@ export function DevicePage() {
           Approve a device sign-in
         </h1>
         <p className="mt-1 text-sm text-ink-500 dark:text-parchment-300/70">
-          `saga connect` printed a code and opened this page. Confirm the code matches what the
-          CLI is showing, then pick the project it should work in.
+          `saga connect` printed a code and opened this page. Confirm the code matches what the CLI
+          is showing, then pick the project it should work in.
         </p>
       </div>
 
