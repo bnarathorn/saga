@@ -63,6 +63,11 @@ jobs:
 
       - run: pnpm lint
 
+      # Formatting is not style-policing: it drifted once already, when subagent-written files
+      # landed unformatted and nothing caught it. `eslint-config-prettier` (eslint.config.js)
+      # means ESLint and Prettier do not fight over the same lines.
+      - run: pnpm format:check
+
       - run: pnpm typecheck
 
       # Spec 22.3: generated artifacts must never drift from the Zod contracts they come from.
