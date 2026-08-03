@@ -22,12 +22,17 @@ The web console is called **Guild Hall**.
 ## Quick start
 
 Requirements: **Node.js 22+**, **pnpm 9+**, and **PostgreSQL 15+ with `pgvector`, `pg_trgm`
-and `pgcrypto`** (or Docker, which brings its own).
+and `pgcrypto`** (or Docker, which brings its own). Compose v2 is a separate CLI plugin, and
+Docker packaged by an older distribution often arrives without it — check with
+`docker compose version`, not `docker --version`.
+
+The repository is private: run `gh auth login`, or use a token with the `repo` scope, or the
+clone fails on `could not read Username for 'https://github.com'`.
 
 ### With Docker
 
 ```bash
-git clone <this repository> saga && cd saga
+git clone https://github.com/bnarathorn/saga.git saga && cd saga
 cp .env.example .env
 # .env.example already ships a working (development-only) session secret and an empty
 # bootstrap password, so replace those two lines in place rather than appending — the
@@ -48,7 +53,7 @@ just generated (`grep SAGA_BOOTSTRAP .env`).
 ### Without Docker
 
 ```bash
-git clone <this repository> saga && cd saga
+git clone https://github.com/bnarathorn/saga.git saga && cd saga
 pnpm install
 cp .env.example .env      # then set SAGA_BOOTSTRAP_ADMIN_PASSWORD
 

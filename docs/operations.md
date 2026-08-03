@@ -26,22 +26,122 @@ Assets: [`deploy/nginx/guild-hall.conf`](../deploy/nginx/guild-hall.conf),
 
 ### systemd
 
+Nothing here needs Docker. Node 22+ must be on a system-wide path — the units run
+`/usr/bin/node`, so an `nvm`, `fnm`, `asdf` or Volta install under a home directory is invisible
+to the service account.
+
+**1. The service account.**
+
 ```bash
 sudo useradd --system --home /opt/saga --shell /usr/sbin/nologin saga
-sudo install -d -o saga -g saga /opt/saga
+```
+
+**2. Build the release into `/opt/saga`.** The units run
+`/usr/bin/node apps/server/dist/main.js` with `WorkingDirectory=/opt/saga`, so that directory has
+to be a built checkout — source, `node_modules` and `dist` together.
+
+```bash
+sudo install -d -o "$USER" -g "$USER" /opt/saga
+git clone https://github.com/bnarathorn/saga.git /opt/saga    # private: gh auth login first
+cd /opt/saga
+pnpm install --frozen-lockfile
+pnpm build                          # server, worker and Guild Hall's static build
+sudo chown -R saga:saga /opt/saga
+```
+
+Build as an administrator and hand the tree over afterwards, as above: the `saga` account is
+`nologin` with no git credentials of its own, and the units never write to `/opt/saga`, so it
+only ever needs to read it. Do not run `pnpm link --global` on the server — the `saga` CLI belongs
+on developer machines ([agent-integration.md](agent-integration.md)), and against a checkout the
+invoking user no longer owns it fails with `EPERM … chmod` while still exiting `0`.
+
+**3. The database.** One database, one role, three extensions. The Compose path gets these from
+its postgres image; here you create them.
+
+```bash
+# Debian and Ubuntu ship neither the 16 packages nor pgvector in their default repositories.
+# Add PostgreSQL's own first: https://wiki.postgresql.org/wiki/Apt
+sudo apt install postgresql-16 postgresql-16-pgvector
+
+sudo -u postgres psql <<'SQL'
+CREATE ROLE saga LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD 'a strong password';
+CREATE DATABASE saga OWNER saga;
+SQL
+
+sudo -u postgres psql -d saga <<'SQL'
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+SQL
+```
+
+`db/migrations/0001_initial.sql` issues those three `CREATE EXTENSION` statements itself, but
+creating them as `postgres` first means the migration role does not need the privilege, which is
+what lets the application role be `NOSUPERUSER`. pgvector has to be installed as a server package
+first or `CREATE EXTENSION vector` fails with `could not open extension control file`.
+
+**4. Configuration.**
+
+```bash
 sudo install -d -o root -g saga -m 0750 /etc/saga
 sudo install -o root -g saga -m 0640 deploy/systemd/saga.env.example /etc/saga/saga.env
-sudoedit /etc/saga/saga.env        # set SAGA_SESSION_SECRET and DATABASE_URL
+sudoedit /etc/saga/saga.env
+```
 
+The example sets `NODE_ENV=production`, `SAGA_COOKIE_SECURE=true` and `SAGA_API_HOST=127.0.0.1`.
+Replace `SAGA_SESSION_SECRET`, `DATABASE_URL`, `SAGA_PUBLIC_URL` and
+`SAGA_BOOTSTRAP_ADMIN_PASSWORD`. There is no signup page and no default account: without both
+`SAGA_BOOTSTRAP_ADMIN_*` values the server starts correctly and nobody can sign in. Delete the
+password line once you have signed in and restart `saga-api`. systemd reads the file directly, so
+values are not shell-expanded and need no quoting.
+
+**5. Embeddings.** The example points at Ollama and `nomic-embed-text` but installs neither.
+
+```bash
+ollama pull nomic-embed-text
+ollama show nomic-embed-text | grep 'embedding length'   # 768
+```
+
+Any other width dead-letters every embedding job while Lore keeps publishing text-only — see
+[ADR-0006](adr/) and section 5 of the setup guide. Set `SAGA_EMBEDDING_PROVIDER=openai` to skip
+this step.
+
+**6. Start the units.**
+
+```bash
 sudo cp deploy/systemd/saga-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now saga-migrate saga-api saga-worker
+curl -s localhost:4319/health/ready
 ```
 
 `saga-api` and `saga-worker` both `Requires=saga-migrate.service`, so the schema is current
 before either serves traffic. The units are hardened: no new privileges, private tmp and
 devices, `ProtectSystem=strict`, an empty capability bounding set, a `@system-service` syscall
 filter and `UMask=0077`. Nothing under `/opt/saga` needs to be writable at runtime.
+
+**7. nginx.** Copy the static build somewhere nginx serves it, then install both configuration
+files — `guild-hall.conf` includes `saga-headers.conf`, which resolves against nginx's prefix.
+
+```bash
+sudo install -d -o www-data -g www-data /var/www/saga-app
+sudo rsync -a --delete /opt/saga/apps/web/dist/ /var/www/saga-app/
+sudo cp deploy/nginx/guild-hall.conf /etc/nginx/sites-available/
+sudo cp deploy/nginx/saga-headers.conf /etc/nginx/
+sudo ln -s /etc/nginx/sites-available/guild-hall.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Repeat the `rsync` on every upgrade — Guild Hall is independent of the API, which also means
+nothing redeploys it for you. `server_name`, the two `ssl_certificate` paths and `root` are
+placeholders; `nginx -t` fails until the certificate exists, which is deliberate, because
+`SAGA_COOKIE_SECURE=true` makes a plaintext origin a console nobody can sign in to.
+
+If the API, nginx and a `saga` CLI all live on one host and `SAGA_PUBLIC_URL` is a public name,
+that host may not be able to reach itself by it — most routers do not hairpin, so the name
+resolves to a WAN address that refuses the connection and `saga connect` fails before it starts.
+A split-horizon `/etc/hosts` entry pointing the name at `127.0.0.1` fixes it without changing
+`SAGA_PUBLIC_URL`.
 
 ### Docker Compose
 
@@ -127,7 +227,8 @@ pnpm db:migrate    # apply pending
 1. **Back up first.** `pg_dump` before every upgrade; forward-only migrations have no `down`.
 2. Read the release notes for migrations that rewrite data.
 3. `systemctl stop saga-worker` — let in-flight jobs finish or expire.
-4. Deploy the new build to `/opt/saga`.
+4. Deploy the new build to `/opt/saga` — the clone/install/build sequence in
+   [section 1](#systemd), then `rsync` `apps/web/dist` to nginx's root again.
 5. `systemctl restart saga-migrate` — one-shot, advisory-locked, safe to run twice.
 6. `systemctl restart saga-api saga-worker`.
 7. Check `/api/shrine/schema`: `current_version` must equal `expected_version`.
