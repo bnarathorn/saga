@@ -227,11 +227,28 @@ pnpm db:migrate    # apply pending
 1. **Back up first.** `pg_dump` before every upgrade; forward-only migrations have no `down`.
 2. Read the release notes for migrations that rewrite data.
 3. `systemctl stop saga-worker` — let in-flight jobs finish or expire.
-4. Deploy the new build to `/opt/saga` — the clone/install/build sequence in
-   [section 1](#systemd), then `rsync` `apps/web/dist` to nginx's root again.
+4. Deploy the new build to `/opt/saga`, then `rsync` `apps/web/dist` to nginx's root again:
+
+   ```bash
+   sudo chown -R "$USER":"$USER" /opt/saga     # the tree belongs to saga between deploys
+   git -C /opt/saga pull --ff-only
+   cd /opt/saga && pnpm install --frozen-lockfile && pnpm build
+   sudo chown -R saga:saga /opt/saga
+   sudo rsync -a --delete /opt/saga/apps/web/dist/ /var/www/saga-app/
+   sudo chown -R www-data:www-data /var/www/saga-app
+   ```
+
+   The two `chown` passes are the whole trick. `/opt/saga` is owned by `saga` so the units can
+   read it and nothing can write it at runtime, which also means `git pull` as yourself stops on
+   `detected dubious ownership in repository at '/opt/saga'` — git refuses to act on a tree it
+   does not trust. Take it, build, hand it back. Do not add it to `safe.directory` and build as
+   `saga` instead: that account is `nologin` with no git credentials and no reason to gain write
+   access to its own code.
+
 5. `systemctl restart saga-migrate` — one-shot, advisory-locked, safe to run twice.
 6. `systemctl restart saga-api saga-worker`.
-7. Check `/api/shrine/schema`: `current_version` must equal `expected_version`.
+7. Check `/api/shrine/schema`: `current_version` must equal `expected_version`. It needs
+   authentication; `/health/ready` reports the same two numbers without a token.
 
 **Failure behaviour.** If a migration fails, earlier migrations stay applied and the failing
 one is not recorded, so the ledger is accurate and the run is repeatable after a fix. One
