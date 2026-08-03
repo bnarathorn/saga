@@ -236,10 +236,41 @@ export async function doctorCommand(argv: string[]): Promise<number> {
   checks.push({
     name: 'guild hall',
     status: 'ok',
-    message: `${serverUrl.replace(/:\d+$/, ':4320')} (or wherever nginx serves the static build).`,
+    message: guildHallUrl(serverUrl),
   });
 
   return report(checks, flags.json === true);
+}
+
+// Every deployment except the development stack serves Guild Hall from the API's own origin:
+// nginx serves the static build at / and proxies /api to the same host and port, which is what
+// makes the console same-origin and CORS-free. Talking to the API on its own loopback port is the
+// one case where the console lives elsewhere — `pnpm dev` runs Vite beside it on 4320.
+const DEV_API_PORT = '4319';
+const DEV_WEB_PORT = '4320';
+
+export function guildHallUrl(serverUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(serverUrl);
+  } catch {
+    return serverUrl;
+  }
+
+  const loopback =
+    url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
+  if (loopback && url.port === DEV_API_PORT) {
+    url.port = DEV_WEB_PORT;
+    return `${display(url)} (development stack: Vite serves Guild Hall separately).`;
+  }
+
+  return `${display(url)} (served from this origin).`;
+}
+
+// A server URL may carry a path prefix — everything else in this command appends to it rather
+// than to the origin — so only the trailing slash of a bare origin is dropped.
+function display(url: URL): string {
+  return url.pathname === '/' ? url.origin : url.href.replace(/\/$/, '');
 }
 
 function report(checks: Check[], json: boolean): number {

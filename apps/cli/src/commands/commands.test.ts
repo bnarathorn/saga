@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetLocalChanges } from '../local-changes.js';
 import { detectWorkspace, loadConfig } from '../workspace.js';
 import { connectCommand, matchesProject } from './connect.js';
-import { doctorCommand } from './doctor.js';
+import { doctorCommand, guildHallUrl } from './doctor.js';
 import { statusCommand } from './status.js';
 
 /**
@@ -230,6 +230,41 @@ describe('matchesProject', () => {
     expect(matchesProject('erp backoffice', target)).toBe(true);
     expect(matchesProject('  ERP Backoffice  ', target)).toBe(true);
     expect(matchesProject('Warehouse', target)).toBe(false);
+  });
+});
+
+describe('guildHallUrl', () => {
+  it('reports the server origin, because nginx serves the console from it', () => {
+    expect(guildHallUrl('https://saga.example.internal')).toBe(
+      'https://saga.example.internal (served from this origin).',
+    );
+    // A non-default port is part of the origin, not a dev-server tell.
+    expect(guildHallUrl('https://saga.example.internal:8443/')).toBe(
+      'https://saga.example.internal:8443 (served from this origin).',
+    );
+    // Compose publishes both halves on 8080.
+    expect(guildHallUrl('http://localhost:8080')).toBe(
+      'http://localhost:8080 (served from this origin).',
+    );
+  });
+
+  it('points at Vite only when talking to the dev API port on loopback', () => {
+    for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+      expect(guildHallUrl(`http://${host}:4319`)).toBe(
+        `http://${host}:4320 (development stack: Vite serves Guild Hall separately).`,
+      );
+    }
+    // Same port, but reached over the network: nginx is in front, so the console is here.
+    expect(guildHallUrl('https://saga.example.internal:4319')).toBe(
+      'https://saga.example.internal:4319 (served from this origin).',
+    );
+  });
+
+  it('keeps a path prefix and survives an unparseable URL', () => {
+    expect(guildHallUrl('https://example.test/saga')).toBe(
+      'https://example.test/saga (served from this origin).',
+    );
+    expect(guildHallUrl('not a url')).toBe('not a url');
   });
 });
 
