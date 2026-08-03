@@ -8,6 +8,7 @@ import {
 } from '../test-utils.jsx';
 import { LorePage } from './Lore.jsx';
 import { ProjectsPage } from './Projects.jsx';
+import { ProjectTokensPage } from './ProjectTokens.jsx';
 import { QuestBoardPage } from './QuestBoard.jsx';
 
 /**
@@ -140,5 +141,22 @@ describe('permission-based action visibility', () => {
 
     expect(await screen.findByText('No Quests yet')).toBeInTheDocument();
     expect(screen.queryByLabelText('New Quest')).not.toBeInTheDocument();
+  });
+
+  it('hides agent tokens from an operator, who holds every permission but this one', async () => {
+    // Unlike the cases above, the whole page is withheld rather than one control: listing a
+    // project's tokens takes `security:manage`, which only an admin holds. An operator can retry
+    // a failed job but must not see or revoke credentials.
+    const { calls } = stubFetch({
+      [`GET /api/projects/${REF}/tokens`]: { body: { items: [] } },
+    });
+    renderWithProviders(<ProjectTokensPage />, {
+      route: `/projects/${REF}/tokens`,
+      path: '/projects/:projectRef/tokens',
+      permissions: ['project:read', 'shrine:read', 'shrine:operate'],
+    });
+
+    expect(await screen.findByText(/security:manage/)).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
   });
 });

@@ -20,11 +20,16 @@ const TABS = [
   { to: 'party', label: 'Party', end: false },
   { to: 'relations', label: 'Relations', end: false },
   { to: 'activity', label: 'Activity', end: false },
+  // Tokens is the one tab not everyone sees. The page refuses on its own for a caller without
+  // the permission, so hiding the tab is courtesy, not the access control (ADR-0009).
+  { to: 'tokens', label: 'Tokens', end: false, permission: 'security:manage' as const },
 ];
 
 export function ProjectDetailPage() {
   const { projectRef = '' } = useParams();
   const project = useProject(projectRef);
+  const can = useCan();
+  const tabs = TABS.filter((tab) => tab.permission === undefined || can(tab.permission));
   // The top-level Lore/Quest Board/Party entries need a project to act on (spec 1).
   useEffect(() => rememberProject(projectRef), [projectRef]);
 
@@ -55,7 +60,7 @@ export function ProjectDetailPage() {
         className="border-b border-parchment-300 dark:border-night-800"
       >
         <ul className="-mb-px flex flex-wrap gap-1">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <li key={tab.label}>
               <NavLink
                 to={tab.to}
