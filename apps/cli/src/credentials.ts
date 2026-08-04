@@ -6,12 +6,7 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
-export type CredentialBackend =
-  | 'keychain'
-  | 'secret-service'
-  | 'wincred'
-  | 'file'
-  | 'environment';
+export type CredentialBackend = 'keychain' | 'secret-service' | 'wincred' | 'file' | 'environment';
 
 export interface CredentialStoreStatus {
   backend: CredentialBackend;

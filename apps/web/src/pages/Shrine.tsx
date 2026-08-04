@@ -1,5 +1,7 @@
 import type { JobDto, LatencyDto, MetricsSummaryDto } from '@saga/contracts';
+import { JOB_STATES, JOB_TYPES } from '@saga/contracts/constants';
 import { useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Badge,
   EmptyState,
@@ -25,6 +27,14 @@ import {
   useShrineConfig,
 } from '../lib/queries.js';
 
+/**
+ * A URL value is only passed to the API when it is one the API accepts. A hand-edited or stale
+ * link would otherwise turn the panel into a 400 instead of a job list.
+ */
+function allowedParam<T extends string>(value: string | null, allowed: readonly T[]): T | '' {
+  return value !== null && (allowed as readonly string[]).includes(value) ? (value as T) : '';
+}
+
 const JOB_STATE_TONE: Record<string, BadgeTone> = {
   queued: 'neutral',
   claimed: 'info',
@@ -36,11 +46,30 @@ const JOB_STATE_TONE: Record<string, BadgeTone> = {
 
 export function ShrinePage() {
   const can = useCan();
+  const [searchParams, setSearchParams] = useSearchParams();
   const health = useHealth();
   const services = useServices();
   const schema = useSchemaVersion();
   const config = useShrineConfig();
-  const jobs = useJobs('?limit=25');
+
+  // The recurring jobs — `session_reaper` and `party_reaper` every five minutes, `cleanup`
+  // hourly — outnumber everything else, so the newest 25 rows are otherwise almost all
+  // periodic ticks and real work never reaches the first page.
+  const jobType = allowedParam(searchParams.get('job_type'), JOB_TYPES);
+  const jobState = allowedParam(searchParams.get('state'), JOB_STATES);
+  const jobQuery = new URLSearchParams({ limit: '25' });
+  if (jobType !== '') jobQuery.set('job_type', jobType);
+  if (jobState !== '') jobQuery.set('state', jobState);
+  const jobs = useJobs(`?${jobQuery.toString()}`);
+  const jobFiltered = jobType !== '' || jobState !== '';
+
+  const setJobFilter = (key: 'job_type' | 'state', value: string): void => {
+    const next = new URLSearchParams(searchParams);
+    if (value.length === 0) next.delete(key);
+    else next.set(key, value);
+    setSearchParams(next, { replace: true });
+  };
+
   const events = useEvents('?limit=25');
   const audit = useAuditLog('?limit=25');
   const metrics = useMetrics();
@@ -118,28 +147,68 @@ export function ShrinePage() {
       <Panel
         title="Job queue"
         actions={
-          // The probe is the only job Guild Hall can enqueue: there is no arbitrary payload
-          // editor and no command runner here, by design.
-          can('shrine:operate') ? (
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={probe.isPending}
-              onClick={() => probe.mutate({ echo: 'Guild Hall probe' })}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="sr-only" htmlFor="filter-job-type">
+              Filter by job type
+            </label>
+            <select
+              id="filter-job-type"
+              className="field-input w-44 py-1 text-xs"
+              value={jobType}
+              onChange={(event) => setJobFilter('job_type', event.target.value)}
             >
-              {probe.isPending ? 'Queueing…' : 'Queue a probe job'}
-            </button>
-          ) : null
+              <option value="">All job types</option>
+              {JOB_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+            <label className="sr-only" htmlFor="filter-job-state">
+              Filter by job state
+            </label>
+            <select
+              id="filter-job-state"
+              className="field-input w-32 py-1 text-xs"
+              value={jobState}
+              onChange={(event) => setJobFilter('state', event.target.value)}
+            >
+              <option value="">All states</option>
+              {JOB_STATES.map((state) => (
+                <option key={state} value={state}>
+                  {state}
+                </option>
+              ))}
+            </select>
+            {/* The probe is the only job Guild Hall can enqueue: there is no arbitrary payload
+                editor and no command runner here, by design. */}
+            {can('shrine:operate') && (
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={probe.isPending}
+                onClick={() => probe.mutate({ echo: 'Guild Hall probe' })}
+              >
+                {probe.isPending ? 'Queueing…' : 'Queue a probe job'}
+              </button>
+            )}
+          </div>
         }
       >
         {jobs.isPending && <LoadingState />}
         {jobs.isError && <ErrorState error={jobs.error} onRetry={() => void jobs.refetch()} />}
-        {jobs.data?.items.length === 0 && (
-          <EmptyState
-            title="The queue is empty"
-            description="Queue a probe job to confirm the worker is draining the queue."
-          />
-        )}
+        {jobs.data?.items.length === 0 &&
+          (jobFiltered ? (
+            <EmptyState
+              title="No jobs match this filter"
+              description="Nothing in the retained history has that type and state. Clear the filter to see the whole queue."
+            />
+          ) : (
+            <EmptyState
+              title="The queue is empty"
+              description="Queue a probe job to confirm the worker is draining the queue."
+            />
+          ))}
         {jobs.data !== undefined && jobs.data.items.length > 0 && (
           <Table headers={['Type', 'State', 'Attempts', 'Created', 'Last error', 'Actions']}>
             {jobs.data.items.map((job) => (

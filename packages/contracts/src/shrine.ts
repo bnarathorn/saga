@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import { isoTimestampSchema, nullableIsoTimestampSchema, uuidSchema } from './common.js';
+import { JOB_STATES, JOB_TYPES } from './constants.js';
+
+export { JOB_STATES, JOB_TYPES };
 
 export const HEALTH_STATES = ['healthy', 'degraded', 'unhealthy', 'unknown'] as const;
 export const healthStateSchema = z.enum(HEALTH_STATES);
@@ -51,29 +54,9 @@ export const serviceInstanceSchema = z.object({
 });
 export type ServiceInstanceDto = z.infer<typeof serviceInstanceSchema>;
 
-export const JOB_TYPES = [
-  'noop',
-  'embedding',
-  'context_snapshot',
-  'memory_validation',
-  'stale_detection',
-  'cleanup',
-  'outbox_delivery',
-  'event_projection',
-  'session_reaper',
-  'party_reaper',
-] as const;
 export const jobTypeSchema = z.enum(JOB_TYPES);
 export type JobType = z.infer<typeof jobTypeSchema>;
 
-export const JOB_STATES = [
-  'queued',
-  'claimed',
-  'retrying',
-  'succeeded',
-  'failed',
-  'cancelled',
-] as const;
 export const jobStateSchema = z.enum(JOB_STATES);
 export type JobState = z.infer<typeof jobStateSchema>;
 

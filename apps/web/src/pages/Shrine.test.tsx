@@ -117,9 +117,10 @@ const stubs = {
   '/api/shrine/metrics-summary': { body: { metrics: metrics() } },
 };
 
-function renderShrine(permissions?: readonly Permission[]) {
+function renderShrine(permissions?: readonly Permission[], route?: string) {
   return renderWithProviders(<ShrinePage />, {
     ...(permissions === undefined ? {} : { permissions }),
+    ...(route === undefined ? {} : { route }),
   });
 }
 
@@ -169,6 +170,37 @@ describe('Shrine', () => {
 
     expect(await screen.findByText('migration pending')).toBeInTheDocument();
     expect(screen.getByText(/current 5 \/ expected 6/)).toBeInTheDocument();
+  });
+
+  it('narrows the queue to one job type, since the reapers otherwise fill the page', async () => {
+    const { calls } = stubFetch({
+      ...stubs,
+      '/api/shrine/jobs?limit=25&job_type=memory_validation': {
+        body: { ...empty, items: [job()] },
+      },
+    });
+    renderShrine();
+
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Filter by job type'),
+      'memory_validation',
+    );
+
+    await waitFor(() => {
+      expect(
+        calls.some((call) => call.url === '/api/shrine/jobs?limit=25&job_type=memory_validation'),
+      ).toBe(true);
+    });
+  });
+
+  it('ignores a filter value the API would reject rather than showing an error', async () => {
+    // The filters live in the URL, so a hand-edited or stale link reaches the page directly.
+    // `job_type` is dropped as unknown; `state` is kept, so the request stays valid.
+    stubFetch({ ...stubs, '/api/shrine/jobs?limit=25&state=queued': { body: empty } });
+    renderShrine(undefined, '/?job_type=not_a_job_type&state=queued');
+
+    const panel = await screen.findByRole('region', { name: 'Job queue' });
+    expect(await within(panel).findByText('No jobs match this filter')).toBeInTheDocument();
   });
 
   it('requires a reason before retrying a failed job', async () => {

@@ -54,6 +54,28 @@ export const AGENT_SCOPES = [
   'party:claim',
 ] as const;
 
+export const JOB_TYPES = [
+  'noop',
+  'embedding',
+  'context_snapshot',
+  'memory_validation',
+  'stale_detection',
+  'cleanup',
+  'outbox_delivery',
+  'event_projection',
+  'session_reaper',
+  'party_reaper',
+] as const;
+
+export const JOB_STATES = [
+  'queued',
+  'claimed',
+  'retrying',
+  'succeeded',
+  'failed',
+  'cancelled',
+] as const;
+
 export const MEMORY_RELATIONS = [
   'uses',
   'exposes',
