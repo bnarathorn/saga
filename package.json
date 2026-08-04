@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Saga \u2014 shared project memory, work continuity, and coordination for coding agents.",
+  "description": "Saga — shared project memory, work continuity, and coordination for coding agents.",
   "engines": {
     "node": ">=22.0.0"
   },
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "build": "tsc -b tsconfig.build.json && pnpm --filter @saga/web build",
+    "build": "tsc -b tsconfig.build.json && pnpm --filter @saga/web build && pnpm --filter @saga/cli bundle",
     "clean": "tsc -b tsconfig.build.json --clean && rimraf \"packages/*/dist\" \"apps/*/dist\" apps/web/dist",
     "dev": "node scripts/dev.mjs",
     "dev:server": "pnpm --filter @saga/server dev",
