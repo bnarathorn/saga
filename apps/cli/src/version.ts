@@ -6,7 +6,16 @@
  * warning rather than a failure — an unreadable version string is not evidence of breakage.
  */
 
-/** This CLI's own version. Injected at build time; the fallback matches `package.json`. */
+/**
+ * This CLI's own version, and the only definition of it — `saga --version`, the MCP server's
+ * advertised version and the compatibility check below all read this one.
+ *
+ * Deliberately not `SAGA_VERSION`: that names the *server's* version and is set in the server's
+ * own environment (deploy/systemd/saga.env.example). Running `saga` on the host that serves the
+ * API would then hand `checkApiCompatibility` the same number on both sides, so a CLI too old to
+ * talk to that server would report itself compatible with it. Injected at build time; the
+ * fallback matches `package.json`.
+ */
 export const CLI_VERSION = process.env.SAGA_CLI_VERSION ?? '0.1.0';
 
 export type CompatibilityVerdict = 'compatible' | 'unknown' | 'incompatible';

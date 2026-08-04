@@ -1,6 +1,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CLI_VERSION } from '../version.js';
 import { SessionHeartbeat } from './heartbeat.js';
 import { zodToJsonSchema } from './json-schema.js';
 import { TOOLS, buildToolContext, toToolError } from './server.js';
@@ -25,7 +26,7 @@ export async function runMcpServer(clientName = 'saga-mcp'): Promise<void> {
   }
 
   const server = new Server(
-    { name: 'saga', version: process.env.SAGA_VERSION ?? '0.1.0' },
+    { name: 'saga', version: CLI_VERSION },
     { capabilities: { tools: {} } },
   );
 

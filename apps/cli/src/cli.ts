@@ -1,4 +1,9 @@
-export const CLI_VERSION = process.env.SAGA_VERSION ?? '0.1.0';
+import { CLI_VERSION } from './version.js';
+
+// Re-exported because this module used to define it, and `saga --version` is the reason it is
+// read here at all. The definition lives in ./version.ts, next to the check that compares it
+// against the server.
+export { CLI_VERSION };
 
 const USAGE = `saga — shared project memory and work continuity for coding agents
 
@@ -14,6 +19,12 @@ Options:
   -v, --version             Show the CLI version
       --json                Machine-readable output (status, doctor)
       --server <url>        Override the Saga server URL
+      --token <value>       Authorize with this token instead of the device flow;
+                            it is not stored (connect). SAGA_TOKEN does the same
+                            without putting the token in the process list
+      --project <name>      Fail unless the token is bound to this project,
+                            by name or id (connect)
+      --reauth              Discard stored credentials and authorize again (connect)
       --debug               Print stack traces
 `;
 
