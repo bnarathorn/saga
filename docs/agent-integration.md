@@ -73,6 +73,23 @@ keychain, or from `SAGA_TOKEN` in CI.
 
 Verify with `saga doctor`. It exits non-zero only for real failures, so it is safe in CI.
 
+### Staying current
+
+```bash
+saga update           # install the build this server is serving
+saga update --check   # report what is available, install nothing
+```
+
+The server serves the CLI that was built with it, so `saga update` is how a client picks up a
+server upgrade: it downloads `GET /api/cli/saga`, replaces the file the command is running
+from, and runs the result before keeping it. A download that is not a CLI build is refused, and
+a build that does not run is rolled back — so the command cannot leave a machine without the
+command that would fix it.
+
+It needs no token; the endpoint is public. If the CLI lives somewhere the user cannot write —
+`/usr/local/bin`, say — the command says so and changes nothing, and elevated privileges or a
+per-user install (`~/.local/bin/saga`) are the two ways forward.
+
 ---
 
 ## 2. The integration policy

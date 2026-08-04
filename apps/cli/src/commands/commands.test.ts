@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +14,7 @@ import { detectWorkspace, loadConfig } from '../workspace.js';
 import { connectCommand, matchesProject } from './connect.js';
 import { doctorCommand, guildHallUrl } from './doctor.js';
 import { statusCommand } from './status.js';
+import { updateCommand } from './update.js';
 
 /**
  * The CLI commands, driven end to end against a stubbed API.
@@ -444,5 +452,107 @@ describe('saga status', () => {
     const report = JSON.parse(stdout) as { project: unknown };
     // The token still resolves a project even with no binding, so status stays useful.
     expect(report.project).not.toBeNull();
+  });
+});
+
+/**
+ * `saga update` replaces the file the CLI is running from, so every test here points
+ * `process.argv[1]` at a throwaway copy: a bug in this command must never be able to overwrite
+ * the binary running the test suite.
+ */
+describe('saga update', () => {
+  const CLI_URL = `${SERVER}/api/cli/saga`;
+  let installed: string;
+  let originalArgv1: string | undefined;
+
+  /** Big enough to pass the truncation check, and a real program so verification can run it. */
+  function build(version: string, exitCode = 0): string {
+    const program =
+      `#!/usr/bin/env node\n` +
+      (exitCode === 0 ? `console.log(${JSON.stringify(version)});\n` : `process.exit(1);\n`);
+    return program + `// ${'x'.repeat(120_000)}\n`;
+  }
+
+  function stubDownload(body: string, version: string | null = '0.2.0') {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        calls.push(input.toString());
+        return new Response(body, {
+          headers: {
+            'content-type': 'application/octet-stream',
+            ...(version === null ? {} : { 'x-saga-cli-version': version }),
+          },
+        });
+      }),
+    );
+    return { calls };
+  }
+
+  beforeEach(() => {
+    mkdirSync(join(root, 'bin'), { recursive: true });
+    installed = join(root, 'bin', 'saga');
+    writeFileSync(installed, build('0.1.0'), { mode: 0o755 });
+    originalArgv1 = process.argv[1];
+    process.argv[1] = installed;
+  });
+
+  afterEach(() => {
+    if (originalArgv1 !== undefined) process.argv[1] = originalArgv1;
+  });
+
+  it('installs the build the server is serving', async () => {
+    stubDownload(build('0.2.0'));
+
+    const code = await updateCommand(['--server', SERVER]);
+
+    expect(code).toBe(0);
+    expect(readFileSync(installed, 'utf8')).toContain('0.2.0');
+    expect(stdout).toContain('0.1.0');
+    expect(stdout).toContain('0.2.0');
+    // No temporary or backup file is left behind next to the installed CLI.
+    expect(readdirSync(join(root, 'bin'))).toEqual(['saga']);
+  });
+
+  it('reports what is available without touching anything under --check', async () => {
+    const { calls } = stubDownload(build('0.2.0'));
+
+    const code = await updateCommand(['--server', SERVER, '--check', '--json']);
+
+    expect(code).toBe(0);
+    expect(calls).toEqual([CLI_URL]);
+    const report = JSON.parse(stdout) as { available_version: string; up_to_date: boolean };
+    expect(report.available_version).toBe('0.2.0');
+    expect(report.up_to_date).toBe(false);
+    expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
+  });
+
+  it('does nothing when the installed build is the one being served', async () => {
+    stubDownload(build('0.1.0'), '0.1.0');
+
+    const code = await updateCommand(['--server', SERVER]);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain('already');
+    expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
+  });
+
+  it('refuses a response that is not a CLI build rather than installing it', async () => {
+    // A captive portal or a proxy answering for the server is the realistic case.
+    stubDownload('<html>Sign in to the guest network</html>', null);
+
+    await expect(updateCommand(['--server', SERVER])).rejects.toThrow(/not a Saga CLI build/);
+    expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
+  });
+
+  it('restores the previous CLI when the downloaded one does not run', async () => {
+    stubDownload(build('0.2.0', 1));
+
+    await expect(updateCommand(['--server', SERVER])).rejects.toThrow(/restored from backup/);
+
+    // The whole point: a broken download must not take away the command that fixes it.
+    expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
+    expect(readdirSync(join(root, 'bin'))).toEqual(['saga']);
   });
 });

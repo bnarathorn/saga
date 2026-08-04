@@ -4,6 +4,7 @@ import { registerCommand, runCli } from './cli.js';
 import { connectCommand, parseFlags } from './commands/connect.js';
 import { doctorCommand } from './commands/doctor.js';
 import { statusCommand } from './commands/status.js';
+import { updateCommand } from './commands/update.js';
 import { CredentialStore } from './credentials.js';
 import { describeLocalChanges } from './local-changes.js';
 import { detectWorkspace, findBinding, loadConfig } from './workspace.js';
@@ -11,6 +12,7 @@ import { detectWorkspace, findBinding, loadConfig } from './workspace.js';
 registerCommand('connect', connectCommand);
 registerCommand('status', statusCommand);
 registerCommand('doctor', doctorCommand);
+registerCommand('update', updateCommand);
 
 registerCommand('mcp', async () => {
   // Imported lazily so `saga status` does not pay for the MCP SDK.

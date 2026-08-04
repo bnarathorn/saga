@@ -17,6 +17,7 @@ saga connect   Bind a folder to a Saga project (guided)
 saga status    Show server, project, Quest and Party state
 saga doctor    Diagnose configuration and connectivity
 saga mcp       Run the MCP stdio server for the current folder
+saga update    Install the CLI build the server is serving
 saga logout    Remove the stored credentials for a server
 ```
 

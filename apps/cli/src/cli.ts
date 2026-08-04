@@ -12,12 +12,17 @@ Usage:
   saga status               Show server, project, Quest and Party state
   saga doctor               Diagnose configuration and connectivity
   saga mcp                  Run the MCP stdio server for this folder
+  saga update               Install the CLI build this server is serving
   saga logout               Remove the stored credentials for this server
 
 Options:
   -h, --help                Show this help
   -v, --version             Show the CLI version
-      --json                Machine-readable output (status, doctor)
+      --json                Machine-readable output (status, doctor, update)
+      --check               Report the available version without installing it
+                            (update)
+      --force               Reinstall even when the versions already match
+                            (update)
       --server <url>        Override the Saga server URL
       --token <value>       Authorize with this token instead of the device flow;
                             it is not stored (connect). SAGA_TOKEN does the same
