@@ -44,14 +44,21 @@ to be a built checkout — source, `node_modules` and `dist` together.
 sudo install -d -o "$USER" -g "$USER" /opt/saga
 git clone https://github.com/bnarathorn/saga.git /opt/saga    # private: gh auth login first
 cd /opt/saga
-pnpm install --frozen-lockfile
-pnpm build                          # server, worker and Guild Hall's static build
+PNPM_STORE_DIR=/opt/saga/.pnpm-store pnpm install --frozen-lockfile
+pnpm build                          # server, worker, Guild Hall's static build, and the CLI
 sudo chown -R saga:saga /opt/saga
 ```
 
 Build as an administrator and hand the tree over afterwards, as above: the `saga` account is
 `nologin` with no git credentials of its own, and the units never write to `/opt/saga`, so it
-only ever needs to read it. Do not run `pnpm link --global` on the server — the `saga` CLI belongs
+only ever needs to read it.
+
+`PNPM_STORE_DIR` keeps that `chown` inside this tree. pnpm hardlinks packages into
+`node_modules` from a content-addressable store in the deploying user's home, and ownership
+belongs to the inode rather than the path, so a recursive `chown` follows those links and
+rewrites the store too — after which that user's next `pnpm install` anywhere on the machine
+fails with `EPERM: operation not permitted, chmod`. The upgrade procedure below carries the same
+flag for the same reason. Do not run `pnpm link --global` on the server — the `saga` CLI belongs
 on developer machines ([agent-integration.md](agent-integration.md)), and against a checkout the
 invoking user no longer owns it fails with `EPERM … chmod` while still exiting `0`.
 
@@ -232,7 +239,7 @@ pnpm db:migrate    # apply pending
    ```bash
    sudo chown -R "$USER":"$USER" /opt/saga     # the tree belongs to saga between deploys
    git -C /opt/saga pull --ff-only
-   cd /opt/saga && pnpm install --frozen-lockfile && pnpm build
+   cd /opt/saga && PNPM_STORE_DIR=/opt/saga/.pnpm-store pnpm install --frozen-lockfile && pnpm build
    sudo chown -R saga:saga /opt/saga
    sudo rsync -a --delete /opt/saga/apps/web/dist/ /var/www/saga-app/
    sudo chown -R www-data:www-data /var/www/saga-app
@@ -244,6 +251,20 @@ pnpm db:migrate    # apply pending
    does not trust. Take it, build, hand it back. Do not add it to `safe.directory` and build as
    `saga` instead: that account is `nologin` with no git credentials and no reason to gain write
    access to its own code.
+
+   `PNPM_STORE_DIR` is what keeps the second `chown` from reaching outside this tree, and it is
+   not optional. pnpm does not copy packages into `node_modules`; it hardlinks them from its
+   content-addressable store, which by default lives in the deploying user's home. Ownership is a
+   property of the inode, not of the path, so `chown -R saga:saga /opt/saga` follows every one of
+   those links and rewrites the store as well — thousands of files in a directory this deployment
+   does not own, shared with every other checkout on the machine. The symptom arrives later and
+   nowhere near here: any `pnpm install` by that user then dies on
+   `EPERM: operation not permitted, chmod`, because pnpm cannot chmod a file it no longer owns,
+   and the only repair is deleting the store and re-downloading it. Pointing the store inside
+   `/opt/saga` makes the deploy self-contained, at the cost of one store per deployment.
+
+   Sizing note: that store is a few hundred megabytes and is not shared with anything else on the
+   host. `pnpm store prune` inside `/opt/saga` reclaims what old deploys left behind.
 
 5. `systemctl restart saga-migrate` — one-shot, advisory-locked, safe to run twice.
 6. `systemctl restart saga-api saga-worker`.
