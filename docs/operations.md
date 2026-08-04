@@ -452,7 +452,8 @@ independently of the API, which is exactly the intended behaviour. Check the API
 
 **`saga doctor` reports the credential store as a file.** No OS keychain helper was found.
 Install `libsecret-tools` on Linux, or set `SAGA_TOKEN` for non-interactive use. The token
-file is mode 0600.
+file is mode 0600. With `SAGA_TOKEN` set, the check reports `environment` and is not a
+warning — that token is used in preference to anything stored.
 
 ---
 

@@ -103,12 +103,30 @@ describe('CredentialStore', () => {
   });
 
   it('says plainly when the token is on disk rather than in a keychain', async () => {
-    process.env.SAGA_TOKEN = 'ci-token';
     const status = await new CredentialStore().status();
 
     expect(status.backend).toBe('file');
     expect(status.detail).toContain('0600');
     expect(status.detail).toContain('credentials.json');
+  });
+
+  it('reports the environment as the backend when SAGA_TOKEN is set', async () => {
+    process.env.SAGA_TOKEN = 'ci-token';
+    const status = await new CredentialStore().status();
+
+    // Reporting the file store here would tell the user to set SAGA_TOKEN, which they did.
+    expect(status.backend).toBe('environment');
+    expect(status.detail).toContain('SAGA_TOKEN');
+  });
+
+  it('still stores and clears real credentials while SAGA_TOKEN is set', async () => {
+    const store = new CredentialStore();
+    await store.set(SERVER, 'stored-token');
+    process.env.SAGA_TOKEN = 'ci-token';
+
+    expect(await new CredentialStore().set(SERVER, 'stored-token-2')).toBe('file');
+    await new CredentialStore().clear(SERVER);
+    expect(existsSync(filePath())).toBe(false);
   });
 
   it('never writes the token into the reported status detail', async () => {

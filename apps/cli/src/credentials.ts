@@ -6,7 +6,12 @@ import { promisify } from 'node:util';
 
 const run = promisify(execFile);
 
-export type CredentialBackend = 'keychain' | 'secret-service' | 'wincred' | 'file';
+export type CredentialBackend =
+  | 'keychain'
+  | 'secret-service'
+  | 'wincred'
+  | 'file'
+  | 'environment';
 
 export interface CredentialStoreStatus {
   backend: CredentialBackend;
@@ -15,6 +20,11 @@ export interface CredentialStoreStatus {
 }
 
 const SERVICE = 'saga-cli';
+
+function envToken(): string | null {
+  const value = process.env.SAGA_TOKEN;
+  return value !== undefined && value.length > 0 ? value : null;
+}
 
 /**
  * Token storage.
@@ -26,16 +36,22 @@ const SERVICE = 'saga-cli';
 export class CredentialStore {
   private backendCache: CredentialBackend | null = null;
 
+  /** Where the token this process will use actually comes from. */
   async backend(): Promise<CredentialBackend> {
+    // An explicit environment token bypasses storage entirely (CI and containers), so it is
+    // the backend — reporting it as the file store would tell the user to do what they did.
+    if (envToken() !== null) return 'environment';
+    return this.storageBackend();
+  }
+
+  /** Where a token would be written to or read from on this machine, ignoring SAGA_TOKEN. */
+  private async storageBackend(): Promise<CredentialBackend> {
     if (this.backendCache !== null) return this.backendCache;
     this.backendCache = await this.detect();
     return this.backendCache;
   }
 
   private async detect(): Promise<CredentialBackend> {
-    // An explicit environment token bypasses storage entirely (CI and containers).
-    if (process.env.SAGA_TOKEN !== undefined && process.env.SAGA_TOKEN.length > 0) return 'file';
-
     const os = platform();
     try {
       if (os === 'darwin') {
@@ -58,6 +74,12 @@ export class CredentialStore {
   async status(): Promise<CredentialStoreStatus> {
     const backend = await this.backend();
     switch (backend) {
+      case 'environment':
+        return {
+          backend,
+          available: true,
+          detail: 'SAGA_TOKEN from the environment. Nothing is read from or written to storage.',
+        };
       case 'keychain':
         return { backend, available: true, detail: 'macOS Keychain via `security`.' };
       case 'secret-service':
@@ -87,11 +109,11 @@ export class CredentialStore {
 
   async get(serverUrl: string): Promise<string | null> {
     // CI and non-interactive environments win over stored credentials.
-    const fromEnv = process.env.SAGA_TOKEN;
-    if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv;
+    const fromEnv = envToken();
+    if (fromEnv !== null) return fromEnv;
 
     const account = this.accountFor(serverUrl);
-    const backend = await this.backend();
+    const backend = await this.storageBackend();
 
     try {
       if (backend === 'keychain') {
@@ -132,7 +154,9 @@ export class CredentialStore {
 
   async set(serverUrl: string, token: string): Promise<CredentialBackend> {
     const account = this.accountFor(serverUrl);
-    const backend = await this.backend();
+    // Storing is about the machine, not about this process: SAGA_TOKEN must not divert a
+    // token away from the keychain it belongs in.
+    const backend = await this.storageBackend();
 
     try {
       if (backend === 'keychain') {
@@ -176,7 +200,7 @@ export class CredentialStore {
 
   async clear(serverUrl: string): Promise<void> {
     const account = this.accountFor(serverUrl);
-    const backend = await this.backend();
+    const backend = await this.storageBackend();
     try {
       if (backend === 'keychain') {
         await run('security', ['delete-generic-password', '-s', SERVICE, '-a', account], {

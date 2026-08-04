@@ -63,6 +63,7 @@ export async function doctorCommand(argv: string[]): Promise<number> {
   const keychain = await credentials.status();
   checks.push({
     name: 'credential storage',
+    // A token from the environment is a deliberate choice, not a fallback: no warning.
     status: keychain.backend === 'file' ? 'warning' : 'ok',
     message: keychain.detail,
     ...(keychain.backend === 'file'
