@@ -10,21 +10,30 @@ export interface McpConfigInput {
 }
 
 /**
- * Write MCP server configuration for Codex and Claude Code.
+ * Write MCP server configuration for Claude Code and Codex.
  *
- * Both are written project-locally rather than into a user-global file: a machine may have
- * several Saga projects, and a global entry would point them all at one. The token is never
- * written here — the MCP server reads it from the keychain via `saga`'s own credential store.
+ * Claude Code is written project-locally: a machine may have several Saga projects, and a
+ * global entry would point them all at one. Codex has no project-level MCP configuration —
+ * it reads `mcp_servers` from `$CODEX_HOME/config.toml`, defaulting to `~/.codex/config.toml`
+ * — so its entry is necessarily global. A project-local file Codex never opens looks like
+ * configuration and does nothing, which is the worse failure: the agent then has no Saga tools
+ * at all, and reaches for the API by hand instead.
+ *
+ * The token is never written here — the MCP server reads it from the keychain via `saga`'s own
+ * credential store.
  */
 export interface McpConfigResult {
   written: string[];
   /** Files left alone because they no longer parse. Never overwritten — see `readJson`. */
   skipped: string[];
+  /** Files that already configure Saga, left byte-for-byte as they are. */
+  unchanged: string[];
 }
 
 export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
   const written: string[] = [];
   const skipped: string[] = [];
+  const unchanged: string[] = [];
 
   const entry = {
     command: 'saga',
@@ -48,20 +57,12 @@ export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
     written.push(claudePath);
   }
 
-  // Codex: `.codex/config.json` at the project root.
-  const codexPath = join(input.root, '.codex', 'config.json');
-  const codex = readJson(codexPath);
-  if (codex === 'unparseable') {
-    skipped.push(codexPath);
-  } else {
-    const existing = codex ?? {};
-    const codexServers = (existing.mcpServers as Record<string, unknown> | undefined) ?? {};
-    existing.mcpServers = { ...codexServers, saga: entry };
-    writeJson(codexPath, existing);
-    written.push(codexPath);
-  }
+  // Codex: `mcp_servers` in its own TOML configuration, which is user-global.
+  const codexPath = codexConfigPath();
+  if (writeCodexEntry(codexPath, input) === 'written') written.push(codexPath);
+  else unchanged.push(codexPath);
 
-  return { written, skipped };
+  return { written, skipped, unchanged };
 }
 
 /** Render the same configuration for a user to paste elsewhere. */
@@ -81,8 +82,77 @@ export function renderMcpConfig(input: McpConfigInput): string {
   );
 }
 
+/** Where Codex reads `mcp_servers` from. `CODEX_HOME` wins, as it does for Codex itself. */
+export function codexConfigPath(): string {
+  const home = process.env.CODEX_HOME;
+  return home !== undefined && home.length > 0
+    ? join(home, 'config.toml')
+    : join(homedir(), '.codex', 'config.toml');
+}
+
+const CODEX_SERVER_TABLE = '[mcp_servers.saga]';
+
+/**
+ * Append a Codex `mcp_servers.saga` entry, or leave the file exactly as it is.
+ *
+ * Deliberately no TOML parser: rewriting a file Saga does not own would reformat it and drop
+ * its comments. Appending is safe because the two tables go last, so no later key can be
+ * captured by them, and an entry that already exists is never rewritten — a user who edited
+ * theirs keeps their edit.
+ */
+function writeCodexEntry(path: string, input: McpConfigInput): 'written' | 'unchanged' {
+  const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  if (existing.includes(CODEX_SERVER_TABLE)) return 'unchanged';
+
+  const block =
+    `${CODEX_SERVER_TABLE}\n` +
+    `command = "saga"\n` +
+    `args = ["mcp"]\n\n` +
+    `[mcp_servers.saga.env]\n` +
+    `SAGA_SERVER_URL = ${tomlString(input.serverUrl)}\n` +
+    `SAGA_PROJECT = ${tomlString(input.projectRef)}\n`;
+
+  const separator = existing.length === 0 ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${existing}${separator}${block}`);
+  noteLocalChange(path);
+  return 'written';
+}
+
+/** A TOML basic string escapes the same characters a JSON string does. */
+function tomlString(value: string): string {
+  return JSON.stringify(value);
+}
+
 export function mcpConfigPaths(root: string): string[] {
-  return [join(root, '.mcp.json'), join(root, '.codex', 'config.json')];
+  return [join(root, '.mcp.json'), codexConfigPath()];
+}
+
+/**
+ * Whether each configuration file actually registers Saga. A Codex configuration exists on
+ * most machines regardless of Saga, so its presence proves nothing on its own.
+ */
+export function mcpConfigStatus(root: string): { path: string; configured: boolean }[] {
+  const claudePath = join(root, '.mcp.json');
+  const claude = readJson(claudePath);
+  const codexPath = codexConfigPath();
+
+  return [
+    {
+      path: claudePath,
+      configured:
+        claude !== null &&
+        claude !== 'unparseable' &&
+        typeof claude.mcpServers === 'object' &&
+        claude.mcpServers !== null &&
+        'saga' in (claude.mcpServers as Record<string, unknown>),
+    },
+    {
+      path: codexPath,
+      configured:
+        existsSync(codexPath) && readFileSync(codexPath, 'utf8').includes(CODEX_SERVER_TABLE),
+    },
+  ];
 }
 
 export function globalClaudeConfigPath(): string {

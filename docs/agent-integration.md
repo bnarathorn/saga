@@ -30,14 +30,14 @@ saga connect
 browser device flow, detects the project root, binds the folder to a project, reports whether
 Lore bootstrap is required, and writes MCP configuration.
 
-It writes two files, both project-local so a machine can host several Saga projects:
+It writes two files:
 
-| File                 | For         |
-| -------------------- | ----------- |
-| `.mcp.json`          | Claude Code |
-| `.codex/config.json` | Codex       |
+| File                                                 | For         | Scope                                                      |
+| ---------------------------------------------------- | ----------- | ---------------------------------------------------------- |
+| `.mcp.json` at the project root                      | Claude Code | project-local                                              |
+| `$CODEX_HOME/config.toml`, or `~/.codex/config.toml` | Codex       | user-global (Codex has no project-level MCP configuration) |
 
-Both contain:
+Claude Code reads JSON:
 
 ```json
 {
@@ -50,6 +50,23 @@ Both contain:
   }
 }
 ```
+
+Codex reads TOML, and only from its own home — a `.codex/config.json` beside the code is never
+opened. The entry is appended, and an entry that already exists is left exactly as it is:
+
+```toml
+[mcp_servers.saga]
+command = "saga"
+args = ["mcp"]
+
+[mcp_servers.saga.env]
+SAGA_SERVER_URL = "https://saga.example.internal"
+SAGA_PROJECT = "…"
+```
+
+`codex mcp list` is the quickest confirmation that Codex can see it. Because that file is
+user-global, a machine hosting several Saga projects points Codex at one of them; per-project
+work is what `.mcp.json` and Claude Code give you.
 
 **No token is written here.** The MCP server reads the credential from the operating-system
 keychain, or from `SAGA_TOKEN` in CI.

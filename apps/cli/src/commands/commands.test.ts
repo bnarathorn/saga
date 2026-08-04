@@ -99,6 +99,8 @@ beforeEach(() => {
   process.chdir(root);
   process.env.XDG_CONFIG_HOME = home;
   process.env.XDG_DATA_HOME = join(home, 'data');
+  // `saga connect` writes Codex's user-global configuration, which must never be the real one.
+  process.env.CODEX_HOME = join(home, 'codex');
   process.env.SAGA_TOKEN = 'agent-token';
   resetLocalChanges();
 

@@ -220,6 +220,11 @@ export async function connectCommand(argv: string[]): Promise<number> {
     projectRef: project.project.id,
   });
   for (const file of mcp.written) out.write(`MCP configuration written: ${file}\n`);
+  for (const file of mcp.unchanged) {
+    out.write(
+      `MCP configuration already present: ${file} (left as it is; edit it by hand to change the project).\n`,
+    );
+  }
   for (const file of mcp.skipped) {
     out.write(
       `MCP configuration NOT written: ${file} exists but is not valid JSON. ` +

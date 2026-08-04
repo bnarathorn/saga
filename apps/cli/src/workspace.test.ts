@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderMcpConfig, writeMcpConfig } from './mcp-config.js';
+import { mcpConfigStatus, renderMcpConfig, writeMcpConfig } from './mcp-config.js';
 import {
   detectWorkspace,
   findBinding,
@@ -184,6 +184,19 @@ describe('bindings', () => {
 });
 
 describe('MCP configuration', () => {
+  // Codex reads one user-global file, so every test here points CODEX_HOME at a temporary
+  // directory: none of them may touch the configuration of the machine running them.
+  let codexHome: string;
+
+  beforeEach(() => {
+    codexHome = mkdtempSync(join(tmpdir(), 'saga-codex-'));
+    process.env.CODEX_HOME = codexHome;
+  });
+
+  afterEach(() => {
+    delete process.env.CODEX_HOME;
+  });
+
   it('writes project-local configuration for Claude Code and Codex', () => {
     const { written } = writeMcpConfig({
       root,
@@ -199,8 +212,48 @@ describe('MCP configuration', () => {
       env: { SAGA_SERVER_URL: 'https://saga.test', SAGA_PROJECT: 'project-uuid' },
     });
 
-    const codex = JSON.parse(readFileSync(join(root, '.codex', 'config.json'), 'utf8'));
-    expect(codex.mcpServers.saga.command).toBe('saga');
+    // Codex reads TOML from its own home, and nothing from the project folder: a
+    // `.codex/config.json` beside the code would look configured and do nothing.
+    const codex = readFileSync(join(codexHome, 'config.toml'), 'utf8');
+    expect(codex).toContain('[mcp_servers.saga]');
+    expect(codex).toContain('command = "saga"');
+    expect(codex).toContain('SAGA_PROJECT = "project-uuid"');
+    expect(existsSync(join(root, '.codex', 'config.json'))).toBe(false);
+  });
+
+  it('appends to a Codex configuration without disturbing what is already there', () => {
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-5"\n\n[mcp_servers.other]\n');
+    writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+
+    const codex = readFileSync(join(codexHome, 'config.toml'), 'utf8');
+    expect(codex).toContain('model = "gpt-5"');
+    expect(codex).toContain('[mcp_servers.other]');
+    expect(codex).toContain('[mcp_servers.saga]');
+  });
+
+  it('never rewrites a Codex entry the user may have edited', () => {
+    const original = '[mcp_servers.saga]\ncommand = "/opt/saga/bin/saga"\nargs = ["mcp"]\n';
+    writeFileSync(join(codexHome, 'config.toml'), original);
+
+    const { written, unchanged } = writeMcpConfig({
+      root,
+      serverUrl: 'https://saga.test',
+      projectRef: 'p',
+    });
+
+    expect(readFileSync(join(codexHome, 'config.toml'), 'utf8')).toBe(original);
+    expect(unchanged).toContain(join(codexHome, 'config.toml'));
+    expect(written).toEqual([join(root, '.mcp.json')]);
+  });
+
+  it('reports Saga as configured only where an entry actually names it', () => {
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-5"\n');
+    writeFileSync(join(root, '.mcp.json'), JSON.stringify({ mcpServers: { other: {} } }));
+
+    expect(mcpConfigStatus(root).every((entry) => !entry.configured)).toBe(true);
+
+    writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+    expect(mcpConfigStatus(root).every((entry) => entry.configured)).toBe(true);
   });
 
   it('never writes a token into MCP configuration', () => {

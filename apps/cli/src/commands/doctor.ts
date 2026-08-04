@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { SagaClient } from '@saga/agent-sdk';
 import { CredentialStore } from '../credentials.js';
-import { mcpConfigPaths } from '../mcp-config.js';
+import { mcpConfigStatus } from '../mcp-config.js';
 import { checkApiCompatibility } from '../version.js';
 import { configPath, detectWorkspace, findBinding, loadConfig } from '../workspace.js';
 import { parseFlags } from './connect.js';
@@ -225,13 +225,17 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     });
   }
 
-  const mcpPaths = mcpConfigPaths(workspace.root);
-  const present = mcpPaths.filter((path) => existsSync(path));
+  // A file that exists but does not name Saga is the failure worth catching: the agent has no
+  // Saga tools and will reach for the API by hand, or for nothing at all.
+  const configured = mcpConfigStatus(workspace.root).filter((entry) => entry.configured);
   checks.push({
     name: 'mcp configuration',
-    status: present.length > 0 ? 'ok' : 'warning',
-    message: present.length > 0 ? present.join(', ') : 'No MCP configuration found in this folder.',
-    ...(present.length > 0 ? {} : { action: 'Run `saga connect` to write it.' }),
+    status: configured.length > 0 ? 'ok' : 'warning',
+    message:
+      configured.length > 0
+        ? configured.map((entry) => entry.path).join(', ')
+        : 'No agent on this machine is configured to run the Saga MCP server.',
+    ...(configured.length > 0 ? {} : { action: 'Run `saga connect` to write it.' }),
   });
 
   checks.push({
