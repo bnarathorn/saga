@@ -34,6 +34,11 @@ FROM deps AS build
 COPY . .
 RUN pnpm exec tsc -b tsconfig.build.json
 RUN pnpm --filter @saga/web build
+# The client executable the API hands out at /api/cli/saga. Built here so that every deployment
+# can install a CLI without a clone, and so the one it serves is the one this image was built
+# from. `apps/cli/pack` is not matched by the `apps/*` workspace glob, so the runtime install
+# below leaves it alone.
+RUN pnpm --filter @saga/cli bundle
 
 # ---------------------------------------------------------------------------
 # runtime — production dependencies plus compiled output

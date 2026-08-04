@@ -19,6 +19,9 @@ const NOT_IN_OPENAPI = new Set([
   'GET /health/ready',
   // The service banner.
   'GET /api',
+  // Hands out the CLI executable itself. Not an application resource, and a generated client
+  // has no use for a binary download.
+  'GET /api/cli/saga',
   // Long-lived text/event-stream; OpenAPI cannot usefully describe the frame protocol.
   'GET /api/events/stream',
   // Bounded fixture endpoint for proving the queue drains (documented in operations.md).

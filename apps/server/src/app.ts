@@ -9,6 +9,7 @@ import type { AppContext } from './composition.js';
 import { registerAuth } from './plugins/auth.js';
 import { registerErrorHandler } from './plugins/error-handler.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerCliRoutes } from './routes/cli.js';
 import { registerEventRoutes } from './routes/events.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerLoreRoutes } from './routes/lore.js';
@@ -99,6 +100,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   });
 
   registerHealthRoutes(app, ctx);
+  registerCliRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerProjectRoutes(app, ctx, {
     // Each domain contributes its own per-project counters (ADR-0001).

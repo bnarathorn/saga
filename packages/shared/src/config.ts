@@ -104,6 +104,17 @@ export const configSchema = z.object({
     systemEventDays: intFromEnv(30),
     idempotencyHours: intFromEnv(24),
   }),
+
+  cli: z.object({
+    // Where `pnpm --filter @saga/cli bundle` left the client executable that the API hands out
+    // at /api/cli/saga. Left unset the route resolves it from its own compiled location, which
+    // is right for both the container image and a systemd deployment running from a working
+    // tree; it exists for layouts that keep the build output somewhere else entirely.
+    artifactDir: z
+      .string()
+      .optional()
+      .transform((value) => (value === undefined || value === '' ? null : value)),
+  }),
 });
 
 export type SagaConfig = z.infer<typeof configSchema>;
@@ -169,6 +180,9 @@ export function loadConfig(env: EnvSource = process.env): SagaConfig {
       jobDays: env.SAGA_JOB_RETENTION_DAYS,
       systemEventDays: env.SAGA_SYSTEM_EVENT_RETENTION_DAYS,
       idempotencyHours: env.SAGA_IDEMPOTENCY_RETENTION_HOURS,
+    },
+    cli: {
+      artifactDir: env.SAGA_CLI_ARTIFACT_DIR,
     },
   };
 
