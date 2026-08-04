@@ -226,11 +226,7 @@ export async function connectCommand(argv: string[]): Promise<number> {
     );
   }
   for (const file of mcp.skipped) {
-    out.write(
-      `MCP configuration NOT written: ${file} exists but is not valid JSON. ` +
-        `Saga left it untouched rather than discarding the servers it defines. ` +
-        `Fix the JSON and re-run \`saga connect\`, or paste the block from \`saga mcp --print\`.\n`,
-    );
+    out.write(`MCP configuration NOT written: ${file.path} — ${file.reason}.\n`);
   }
 
   out.write(

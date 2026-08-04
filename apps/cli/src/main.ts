@@ -32,8 +32,17 @@ registerCommand('logout', async (argv) => {
     process.stderr.write('No server is configured for this folder.\n');
     return 1;
   }
-  await new CredentialStore().clear(serverUrl);
+  const credentials = new CredentialStore();
+  await credentials.clear(serverUrl);
   process.stdout.write(`Removed the stored credentials for ${serverUrl}.\n`);
+  // Clearing storage does not clear the environment, and `get` prefers the environment: without
+  // this line the next command still authenticates and logout looks like it failed.
+  if ((await credentials.backend()) === 'environment') {
+    process.stdout.write(
+      'SAGA_TOKEN is still set in this shell, and it takes precedence over stored credentials.\n' +
+        '  Run `unset SAGA_TOKEN` to finish signing out of this session.\n',
+    );
+  }
   return 0;
 });
 

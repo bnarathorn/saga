@@ -461,7 +461,10 @@ describe('saga status', () => {
  * the binary running the test suite.
  */
 describe('saga update', () => {
-  const CLI_URL = `${SERVER}/api/cli/saga`;
+  // HTTPS, because `saga update` refuses to install an executable fetched over plain HTTP
+  // from a remote host — see the two transport tests at the end of this block.
+  const SECURE_SERVER = 'https://saga.test';
+  const CLI_URL = `${SECURE_SERVER}/api/cli/saga`;
   let installed: string;
   let originalArgv1: string | undefined;
 
@@ -505,7 +508,7 @@ describe('saga update', () => {
   it('installs the build the server is serving', async () => {
     stubDownload(build('0.2.0'));
 
-    const code = await updateCommand(['--server', SERVER]);
+    const code = await updateCommand(['--server', SECURE_SERVER]);
 
     expect(code).toBe(0);
     expect(readFileSync(installed, 'utf8')).toContain('0.2.0');
@@ -518,7 +521,7 @@ describe('saga update', () => {
   it('reports what is available without touching anything under --check', async () => {
     const { calls } = stubDownload(build('0.2.0'));
 
-    const code = await updateCommand(['--server', SERVER, '--check', '--json']);
+    const code = await updateCommand(['--server', SECURE_SERVER, '--check', '--json']);
 
     expect(code).toBe(0);
     expect(calls).toEqual([CLI_URL]);
@@ -531,7 +534,7 @@ describe('saga update', () => {
   it('does nothing when the installed build is the one being served', async () => {
     stubDownload(build('0.1.0'), '0.1.0');
 
-    const code = await updateCommand(['--server', SERVER]);
+    const code = await updateCommand(['--server', SECURE_SERVER]);
 
     expect(code).toBe(0);
     expect(stdout).toContain('already');
@@ -542,17 +545,52 @@ describe('saga update', () => {
     // A captive portal or a proxy answering for the server is the realistic case.
     stubDownload('<html>Sign in to the guest network</html>', null);
 
-    await expect(updateCommand(['--server', SERVER])).rejects.toThrow(/not a Saga CLI build/);
+    await expect(updateCommand(['--server', SECURE_SERVER])).rejects.toThrow(
+      /not a Saga CLI build/,
+    );
     expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
   });
 
   it('restores the previous CLI when the downloaded one does not run', async () => {
     stubDownload(build('0.2.0', 1));
 
-    await expect(updateCommand(['--server', SERVER])).rejects.toThrow(/restored from backup/);
+    await expect(updateCommand(['--server', SECURE_SERVER])).rejects.toThrow(
+      /restored from backup/,
+    );
 
     // The whole point: a broken download must not take away the command that fixes it.
     expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
     expect(readdirSync(join(root, 'bin'))).toEqual(['saga']);
+  });
+
+  it('refuses to install an executable fetched over plain HTTP from a remote host', async () => {
+    // This command runs what it downloads, so an on-path attacker would choose what runs here.
+    const { calls } = stubDownload(build('0.2.0'));
+
+    await expect(updateCommand(['--server', 'http://saga.example.internal'])).rejects.toThrow(
+      /Refusing to install an executable downloaded over http:/,
+    );
+
+    expect(calls).toEqual([]);
+    expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
+  });
+
+  it('allows plain HTTP to loopback, which is the development stack', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(build('0.2.0'), { headers: { 'x-saga-cli-version': '0.2.0' } }),
+      ),
+    );
+
+    expect(await updateCommand(['--server', 'http://localhost:4319'])).toBe(0);
+    expect(readFileSync(installed, 'utf8')).toContain('0.2.0');
+  });
+
+  it('installs over plain HTTP only when the user says so explicitly', async () => {
+    stubDownload(build('0.2.0'));
+
+    expect(await updateCommand(['--server', 'http://saga.example.internal', '--insecure'])).toBe(0);
+    expect(readFileSync(installed, 'utf8')).toContain('0.2.0');
   });
 });

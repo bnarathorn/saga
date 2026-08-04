@@ -73,7 +73,9 @@ export class CredentialStore {
         return {
           backend,
           available: true,
-          detail: 'SAGA_TOKEN from the environment. Nothing is read from or written to storage.',
+          // Storage is still read and written by `connect` and `logout`; what the environment
+          // changes is which token every command *uses*.
+          detail: 'SAGA_TOKEN from the environment, in preference to any stored credential.',
         };
       case 'keychain':
         return { backend, available: true, detail: 'macOS Keychain via `security`.' };

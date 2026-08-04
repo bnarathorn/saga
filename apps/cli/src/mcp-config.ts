@@ -24,15 +24,15 @@ export interface McpConfigInput {
  */
 export interface McpConfigResult {
   written: string[];
-  /** Files left alone because they no longer parse. Never overwritten — see `readJson`. */
-  skipped: string[];
+  /** Files left alone because writing to them would damage what is there, with the reason why. */
+  skipped: { path: string; reason: string }[];
   /** Files that already configure Saga, left byte-for-byte as they are. */
   unchanged: string[];
 }
 
 export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
   const written: string[] = [];
-  const skipped: string[] = [];
+  const skipped: { path: string; reason: string }[] = [];
   const unchanged: string[] = [];
 
   const entry = {
@@ -48,7 +48,12 @@ export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
   const claudePath = join(input.root, '.mcp.json');
   const claude = readJson(claudePath);
   if (claude === 'unparseable') {
-    skipped.push(claudePath);
+    skipped.push({
+      path: claudePath,
+      reason:
+        'it exists but is not valid JSON. Saga left it untouched rather than discarding the ' +
+        'servers it defines. Fix the JSON and re-run `saga connect`',
+    });
   } else {
     const existing = claude ?? {};
     const claudeServers = (existing.mcpServers as Record<string, unknown> | undefined) ?? {};
@@ -59,8 +64,17 @@ export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
 
   // Codex: `mcp_servers` in its own TOML configuration, which is user-global.
   const codexPath = codexConfigPath();
-  if (writeCodexEntry(codexPath, input) === 'written') written.push(codexPath);
-  else unchanged.push(codexPath);
+  const codex = writeCodexEntry(codexPath, input);
+  if (codex === 'written') written.push(codexPath);
+  else if (codex === 'unchanged') unchanged.push(codexPath);
+  else
+    skipped.push({
+      path: codexPath,
+      reason:
+        'it defines `mcp_servers` as an inline table, and appending a second definition of that ' +
+        'key would make the file unparseable. Add a `saga` entry to that table by hand: ' +
+        '{ command = "saga", args = ["mcp"] }',
+    });
 
   return { written, skipped, unchanged };
 }
@@ -90,7 +104,17 @@ export function codexConfigPath(): string {
     : join(homedir(), '.codex', 'config.toml');
 }
 
-const CODEX_SERVER_TABLE = '[mcp_servers.saga]';
+/**
+ * A real `[mcp_servers.saga]` table header, not a mention of one.
+ *
+ * Anchored to the start of a line and rejecting a leading `#`, because a commented-out example
+ * is exactly what someone who tried to configure this by hand leaves behind — and treating that
+ * as configured would report success while Codex still has no Saga tools.
+ */
+const CODEX_SERVER_TABLE = /^[^\S\n]*\[mcp_servers\.saga\]/m;
+
+/** `mcp_servers = { … }` defines the same key as an inline table; appending would duplicate it. */
+const CODEX_INLINE_TABLE = /^[^\S\n]*mcp_servers[^\S\n]*=/m;
 
 /**
  * Append a Codex `mcp_servers.saga` entry, or leave the file exactly as it is.
@@ -100,12 +124,15 @@ const CODEX_SERVER_TABLE = '[mcp_servers.saga]';
  * captured by them, and an entry that already exists is never rewritten — a user who edited
  * theirs keeps their edit.
  */
-function writeCodexEntry(path: string, input: McpConfigInput): 'written' | 'unchanged' {
+function writeCodexEntry(path: string, input: McpConfigInput): 'written' | 'unchanged' | 'skipped' {
   const existing = existsSync(path) ? readFileSync(path, 'utf8') : '';
-  if (existing.includes(CODEX_SERVER_TABLE)) return 'unchanged';
+  if (CODEX_SERVER_TABLE.test(existing)) return 'unchanged';
+  // Appending `[mcp_servers.saga]` under an inline `mcp_servers = { … }` defines the key twice,
+  // which makes the whole file unparseable — Codex would lose every server, not just gain none.
+  if (CODEX_INLINE_TABLE.test(existing)) return 'skipped';
 
   const block =
-    `${CODEX_SERVER_TABLE}\n` +
+    `[mcp_servers.saga]\n` +
     `command = "saga"\n` +
     `args = ["mcp"]\n\n` +
     `[mcp_servers.saga.env]\n` +
@@ -149,8 +176,7 @@ export function mcpConfigStatus(root: string): { path: string; configured: boole
     },
     {
       path: codexPath,
-      configured:
-        existsSync(codexPath) && readFileSync(codexPath, 'utf8').includes(CODEX_SERVER_TABLE),
+      configured: existsSync(codexPath) && CODEX_SERVER_TABLE.test(readFileSync(codexPath, 'utf8')),
     },
   ];
 }

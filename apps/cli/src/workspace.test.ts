@@ -246,6 +246,35 @@ describe('MCP configuration', () => {
     expect(written).toEqual([join(root, '.mcp.json')]);
   });
 
+  it('treats a commented-out Codex entry as absent, because Codex does', () => {
+    // What someone who tried to configure this by hand leaves behind. Reading it as configured
+    // would report success while Codex still has no Saga tools.
+    writeFileSync(join(codexHome, 'config.toml'), '# [mcp_servers.saga]\n# command = "saga"\n');
+
+    const { written } = writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+
+    expect(written).toContain(join(codexHome, 'config.toml'));
+    expect(mcpConfigStatus(root).every((entry) => entry.configured)).toBe(true);
+  });
+
+  it('refuses to append beside an inline mcp_servers table it would make unparseable', () => {
+    const original = 'mcp_servers = { other = { command = "other" } }\n';
+    writeFileSync(join(codexHome, 'config.toml'), original);
+
+    const { written, skipped } = writeMcpConfig({
+      root,
+      serverUrl: 'https://saga.test',
+      projectRef: 'p',
+    });
+
+    // Two definitions of one key is a TOML error: Codex would lose every server, not just gain
+    // none. Claude Code's file is still written.
+    expect(readFileSync(join(codexHome, 'config.toml'), 'utf8')).toBe(original);
+    expect(written).toEqual([join(root, '.mcp.json')]);
+    expect(skipped[0]?.path).toBe(join(codexHome, 'config.toml'));
+    expect(skipped[0]?.reason).toContain('inline table');
+  });
+
   it('reports Saga as configured only where an entry actually names it', () => {
     writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-5"\n');
     writeFileSync(join(root, '.mcp.json'), JSON.stringify({ mcpServers: { other: {} } }));

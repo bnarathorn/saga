@@ -23,6 +23,8 @@ Options:
                             (update)
       --force               Reinstall even when the versions already match
                             (update)
+      --insecure            Allow update over plain HTTP to a non-loopback host
+                            (update)
       --server <url>        Override the Saga server URL
       --token <value>       Authorize with this token instead of the device flow;
                             it is not stored (connect). SAGA_TOKEN does the same

@@ -47,6 +47,7 @@ export async function updateCommand(argv: string[]): Promise<number> {
 
   const target = check ? null : installPath();
   const url = `${serverUrl.replace(/\/$/, '')}/api/cli/saga`;
+  assertTransportIsTrustworthy(url, argv.includes('--insecure'));
 
   const response = await fetch(url).catch(() => null);
   if (response === null || !response.ok) {
@@ -150,6 +151,38 @@ export function installPath(argv1: string | undefined = process.argv[1]): string
     );
   }
   return resolved;
+}
+
+/**
+ * Refuse to install what an unencrypted connection returned.
+ *
+ * Every other command sends a token over the same connection and risks that token; this one
+ * takes what comes back, marks it executable and runs it. Over plain HTTP anyone on the path
+ * chooses what this machine executes, and `saga doctor` reporting the URL as a warning is not
+ * a safeguard against that. Loopback is exempt because nothing is on the path, which keeps the
+ * development stack (`http://localhost:4319`) working.
+ */
+function assertTransportIsTrustworthy(url: string, allowInsecure: boolean): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new SagaError('BAD_REQUEST', `"${url}" is not a valid server URL.`);
+  }
+
+  const loopback =
+    parsed.hostname === 'localhost' ||
+    parsed.hostname === '127.0.0.1' ||
+    parsed.hostname === '[::1]' ||
+    parsed.hostname === '::1';
+  if (parsed.protocol === 'https:' || loopback || allowInsecure) return;
+
+  throw new SagaError(
+    'FORBIDDEN',
+    `Refusing to install an executable downloaded over ${parsed.protocol}//. ` +
+      'Anyone on the network path could choose what this machine runs. Use the HTTPS URL for ' +
+      'this server, or pass --insecure if you genuinely trust this network.',
+  );
 }
 
 function assertLooksLikeCli(body: Buffer, url: string): void {
