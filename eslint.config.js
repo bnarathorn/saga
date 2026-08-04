@@ -98,5 +98,19 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // Static files served verbatim to the browser: no bundler, no TypeScript, browser globals.
+    files: ['apps/web/public/**/*.js'],
+    languageOptions: {
+      globals: {
+        document: 'readonly',
+        localStorage: 'readonly',
+        window: 'readonly',
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { caughtErrors: 'none' }],
+    },
+  },
   prettier,
 );

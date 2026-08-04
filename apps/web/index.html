@@ -9,20 +9,10 @@
       content="Guild Hall — the web console for Saga: project memory, work continuity and agent coordination."
     />
     <title>Guild Hall — Saga</title>
-    <script>
-      // Applied before first paint so a reload never flashes the wrong theme.
-      (function () {
-        try {
-          var stored = localStorage.getItem('saga.theme');
-          var dark =
-            stored === 'dark' ||
-            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-          document.documentElement.classList.toggle('dark', dark);
-        } catch (error) {
-          /* localStorage unavailable: fall back to the media query default in CSS */
-        }
-      })();
-    </script>
+    <!-- Applied before first paint so a reload never flashes the wrong theme. A separate file
+         rather than inline script: the reference deployment's CSP has no `script-src`, so
+         `default-src 'self'` blocks inline script and the theme was lost on every reload. -->
+    <script src="/theme.js"></script>
   </head>
   <body>
     <div id="root"></div>
