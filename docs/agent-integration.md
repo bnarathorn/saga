@@ -94,13 +94,23 @@ per-user install (`~/.local/bin/saga`) are the two ways forward.
 
 ## 2. The integration policy
 
-This is what an agent should do, and it is repeated in every tool description so the agent
-does not need to be reminded.
+This is what an agent should do. It reaches the agent twice: the MCP server returns it as
+`instructions` from `initialize`, which a host puts in front of the model before it starts
+work, and each step is repeated in the description of the tool that performs it.
+
+Tool descriptions alone are not enough. A description is read when the agent is already looking
+for a tool to call, so nothing in it can prompt the agent to act _before_ it starts — which is
+how a folder ends up bound, authorised, healthy and still absent from Guild Hall.
 
 **When starting**
 
 1. Call `saga_start_session`.
 2. Read the returned Core Context.
+
+Saga does not depend on step 1 to know an agent is here: the session and its agent run are
+opened when the client finishes `initialize`, so Party is correct even for an agent that
+ignores this policy entirely. `saga_start_session` returns that session rather than a second
+one; its job is to hand the agent its Core Context.
 
 **After receiving the first user task**
 

@@ -230,8 +230,8 @@ export async function connectCommand(argv: string[]): Promise<number> {
   }
 
   out.write(
-    `\nNext: run \`saga status\` to confirm, or start your agent — it will call ` +
-      `saga_start_session automatically.\n` +
+    `\nNext: run \`saga status\` to confirm, or start your agent — Saga opens a session as soon ` +
+      `as the agent's client connects, and Guild Hall shows it in Party.\n` +
       `Project file: ${projectFile}\n`,
   );
 

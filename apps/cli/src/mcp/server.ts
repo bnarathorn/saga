@@ -1,4 +1,5 @@
 import { SagaClient, RETRY_GUIDANCE } from '@saga/agent-sdk';
+import type { StartSessionResponse } from '@saga/contracts';
 import { SagaError, errorMessage, isSagaError } from '@saga/shared';
 import { z } from 'zod';
 import { detectWorkspace, findBinding, loadConfig, newIdempotencyKey } from '../workspace.js';
@@ -18,6 +19,14 @@ export interface McpSession {
   questRevision: number;
   projectRef: string;
   client: string;
+  /**
+   * The in-flight or settled `startSession` call, held so the session is opened once.
+   *
+   * A promise rather than the response, because `initialize` and the agent's own
+   * `saga_start_session` can both reach `openSession` before either finishes; two checks of a
+   * settled value would open two sessions for one agent. See `openSession`.
+   */
+  opening?: Promise<StartSessionResponse> | null;
 }
 
 /**
@@ -97,33 +106,82 @@ const scopeSchema = z.object({
   issue_keys: z.array(z.string()).optional(),
 });
 
+// --- session ---------------------------------------------------------------
+
+/**
+ * The integration policy, carried in the MCP `initialize` result (spec 14).
+ *
+ * A tool description is only read when the agent is already looking for a tool to call, so it
+ * cannot tell an agent to do something *before* it starts work. `instructions` is the one part
+ * of the protocol a host puts in front of the model at the start of the session, which is where
+ * this belongs. It repeats the policy in `docs/agent-integration.md` §2 deliberately: an agent
+ * that only ever sees this string must still follow the whole lifecycle.
+ */
+export const MCP_INSTRUCTIONS =
+  'This folder is bound to a Saga project — shared memory and work continuity across agents.\n' +
+  'Before reading any file, call saga_start_session and read the Core Context it returns.\n' +
+  'On the first user task call saga_activate_task with the request verbatim, and read the ' +
+  'returned Task and Continuation context before editing anything.\n' +
+  'Call saga_checkpoint at every milestone and before context compaction. Claim shared ' +
+  'resources with saga_claim_resource before risky operations. Record durable knowledge with ' +
+  'saga_remember — never transient state, never credentials.\n' +
+  'Call saga_end_session with a final handoff before you stop, so the next session can continue.';
+
+/**
+ * Open the session for this folder, at most once per process.
+ *
+ * Called both by `saga_start_session` and by the server itself as soon as a client finishes
+ * `initialize`. A client attaching to this folder *is* an agent working in it, and leaving the
+ * registration to the tool call makes Party presence depend on the model choosing to make it:
+ * a folder that is bound, authorised and healthy then stays invisible in Guild Hall for the
+ * whole session, with nothing in `saga doctor` to show for it.
+ *
+ * Idempotent because both callers run for every agent that follows its instructions. A failed
+ * attempt clears the guard, so a later tool call can try again rather than inheriting a dead
+ * session for the life of the process.
+ */
+export function openSession(ctx: McpToolContext, agent?: string): Promise<StartSessionResponse> {
+  ctx.session.opening ??= startSession(ctx, agent).catch((error: unknown) => {
+    ctx.session.opening = null;
+    throw error;
+  });
+  return ctx.session.opening;
+}
+
+async function startSession(ctx: McpToolContext, agent?: string): Promise<StartSessionResponse> {
+  const started = await ctx.client.startSession(
+    {
+      project: ctx.session.projectRef,
+      client: ctx.session.client,
+      agent,
+      workspace_key: ctx.workspace.workspaceKey,
+      workspace_label: ctx.workspace.workspaceLabel,
+    },
+    { idempotencyKey: newIdempotencyKey() },
+  );
+
+  ctx.session.sessionId = started.session_id;
+  ctx.session.agentRunId = started.agent_run_id;
+  // From here a single tool call can outlast the lease, so the heartbeat runs on its own
+  // timer rather than on the request cycle.
+  ctx.heartbeat?.start();
+  return started;
+}
+
 // --- tools -----------------------------------------------------------------
 
 export const TOOLS: McpTool[] = [
   {
     name: 'saga_start_session',
     description:
-      'Open a Saga session for this folder. Returns short Core Context and whether Lore bootstrap is required. Call this first, before reading any files. It does NOT attach a Quest and does NOT load any handoff — that happens in saga_activate_task once you know what the user wants.',
+      'Open a Saga session for this folder. Returns short Core Context and whether Lore bootstrap is required. Call this first, before reading any files. Safe to call once at the start of every session: the session is opened when your client connects, so this returns the one already open rather than a second. It does NOT attach a Quest and does NOT load any handoff — that happens in saga_activate_task once you know what the user wants.',
     inputSchema: z.object({
       agent: z.string().optional().describe('Agent name, e.g. "claude" or "codex".'),
     }),
     async handler(args, ctx) {
-      const started = await ctx.client.startSession(
-        {
-          project: ctx.session.projectRef,
-          client: ctx.session.client,
-          agent: (args.agent as string | undefined) ?? undefined,
-          workspace_key: ctx.workspace.workspaceKey,
-          workspace_label: ctx.workspace.workspaceLabel,
-        },
-        { idempotencyKey: newIdempotencyKey() },
-      );
-
-      ctx.session.sessionId = started.session_id;
-      ctx.session.agentRunId = started.agent_run_id;
-      // From here a single tool call can outlast the lease, so the heartbeat runs on its own
-      // timer rather than on the request cycle.
-      ctx.heartbeat?.start();
+      // `agent` is ignored when the session is already open. The name the client reported at
+      // `initialize` is the more reliable of the two anyway — it is not the model's guess.
+      const started = await openSession(ctx, args.agent as string | undefined);
 
       return {
         session_id: started.session_id,
@@ -411,6 +469,9 @@ export const TOOLS: McpTool[] = [
       ctx.session.sessionId = null;
       ctx.session.agentRunId = null;
       ctx.session.questId = null;
+      // Clearing the guard too, so an agent that carries on working after ending its session
+      // opens a new one rather than talking to a session the server has already closed.
+      ctx.session.opening = null;
 
       return {
         session_state: result.session.state,

@@ -1,10 +1,11 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { errorMessage } from '@saga/shared';
 import { CLI_VERSION } from '../version.js';
 import { SessionHeartbeat } from './heartbeat.js';
 import { zodToJsonSchema } from './json-schema.js';
-import { TOOLS, buildToolContext, toToolError } from './server.js';
+import { MCP_INSTRUCTIONS, TOOLS, buildToolContext, openSession, toToolError } from './server.js';
 
 /**
  * The Saga MCP stdio server.
@@ -27,8 +28,34 @@ export async function runMcpServer(clientName = 'saga-mcp'): Promise<void> {
 
   const server = new Server(
     { name: 'saga', version: CLI_VERSION },
-    { capabilities: { tools: {} } },
+    // `instructions` is the only part of the protocol a host shows the model before it starts
+    // work; tool descriptions are read when a tool is already being chosen. Without it, an agent
+    // has the tools and no reason to call any of them.
+    { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
   );
+
+  /**
+   * Register the agent the moment a client attaches, without waiting to be asked.
+   *
+   * The client reporting `initialize` for this folder is the fact Party wants to record: an
+   * agent is working here. Deferring that to `saga_start_session` makes it conditional on the
+   * model reading its instructions, and a model that skips them leaves no trace at all — no
+   * session, no agent run, nothing in Guild Hall, while every check still reports healthy.
+   */
+  server.oninitialized = () => {
+    // With no binding or no credentials there is nothing to open a session against; the reasons
+    // have already gone to stderr, and a failing POST would only repeat them less clearly.
+    if (problems.length > 0) return;
+    // Deferred a tick because `initialized` is a notification: a client that writes it in the
+    // same chunk as its `initialize` request has it dispatched before the SDK's own initialize
+    // handler records `clientInfo`, and the agent would be registered nameless. A host that
+    // waits for the response — every real one — is unaffected.
+    setImmediate(() => {
+      void openSession(context, server.getClientVersion()?.name).catch((error: unknown) => {
+        process.stderr.write(`saga-mcp: could not open a session: ${errorMessage(error)}\n`);
+      });
+    });
+  };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map((tool) => ({

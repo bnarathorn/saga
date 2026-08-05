@@ -1,7 +1,13 @@
 import { SagaError } from '@saga/shared';
 import { describe, expect, it } from 'vitest';
 import { zodToJsonSchema } from './json-schema.js';
-import { TOOLS, toToolError, type McpToolContext } from './server.js';
+import {
+  MCP_INSTRUCTIONS,
+  TOOLS,
+  openSession,
+  toToolError,
+  type McpToolContext,
+} from './server.js';
 
 const REQUIRED_TOOLS = [
   'saga_start_session',
@@ -201,5 +207,132 @@ describe('error rendering', () => {
     const error = new Error('boom');
     const result = toToolError(error);
     expect(result.content[0]!.text).not.toContain('at ');
+  });
+});
+
+describe('server instructions', () => {
+  // A host shows `instructions` to the model before it starts work, which is the only place the
+  // policy can reach an agent that has not yet decided to call a tool.
+  it('carries the whole session lifecycle', () => {
+    for (const tool of [
+      'saga_start_session',
+      'saga_activate_task',
+      'saga_checkpoint',
+      'saga_remember',
+      'saga_end_session',
+    ]) {
+      expect(MCP_INSTRUCTIONS).toContain(tool);
+    }
+  });
+
+  it('says when to call the first two, not just that they exist', () => {
+    expect(MCP_INSTRUCTIONS).toMatch(/[Bb]efore reading any file/);
+    expect(MCP_INSTRUCTIONS).toMatch(/before editing anything/);
+  });
+
+  it('repeats the limits on what may be remembered', () => {
+    expect(MCP_INSTRUCTIONS).toMatch(/never credentials/);
+  });
+});
+
+describe('opening the session', () => {
+  function response(sessionId: string) {
+    return {
+      session_id: sessionId,
+      state: 'awaiting_task',
+      project: { id: 'project-1', name: 'Project' },
+      project_revision: 0,
+      core_context: 'core',
+      bootstrap_required: false,
+      bootstrap_plan: null,
+      open_quests: [],
+      agent_run_id: `run-${sessionId}`,
+    };
+  }
+
+  /** A context whose client records every `startSession`, and a heartbeat that records starts. */
+  function opening(startSession: (input: unknown) => Promise<unknown>) {
+    const ctx = context();
+    let started = 0;
+    ctx.client = {
+      startSession: async (input: unknown) => startSession(input),
+    } as unknown as McpToolContext['client'];
+    ctx.heartbeat = {
+      start: () => {
+        started += 1;
+      },
+      stop: () => undefined,
+    };
+    return { ctx, heartbeats: () => started };
+  }
+
+  it('opens one session when initialize and the agent both ask', async () => {
+    let calls = 0;
+    const { ctx } = opening(async () => {
+      calls += 1;
+      // Resolving on a later tick is the case the guard exists for: a settled-value check would
+      // let the second caller through while the first request is still in flight.
+      await Promise.resolve();
+      return response('session-1');
+    });
+
+    const [first, second] = await Promise.all([openSession(ctx, 'claude'), openSession(ctx)]);
+
+    expect(calls).toBe(1);
+    expect(first.session_id).toBe('session-1');
+    expect(second.session_id).toBe('session-1');
+  });
+
+  it('records the session and its agent run, and starts the heartbeat', async () => {
+    const { ctx, heartbeats } = opening(async () => response('session-1'));
+
+    await openSession(ctx, 'claude');
+
+    expect(ctx.session.sessionId).toBe('session-1');
+    expect(ctx.session.agentRunId).toBe('run-session-1');
+    expect(heartbeats()).toBe(1);
+  });
+
+  it('reports the workspace, so Party can tell two checkouts apart', async () => {
+    let seen: Record<string, unknown> = {};
+    const { ctx } = opening(async (input) => {
+      seen = input as Record<string, unknown>;
+      return response('session-1');
+    });
+
+    await openSession(ctx, 'claude');
+
+    expect(seen.workspace_key).toBe('k');
+    expect(seen.workspace_label).toBe('machine:project');
+    expect(seen.agent).toBe('claude');
+  });
+
+  it('lets a later caller retry after a failure', async () => {
+    let calls = 0;
+    const { ctx } = opening(async () => {
+      calls += 1;
+      if (calls === 1) throw new SagaError('INTERNAL_ERROR', 'the server was restarting');
+      return response('session-2');
+    });
+
+    await expect(openSession(ctx)).rejects.toMatchObject({ code: 'INTERNAL_ERROR' });
+    // A poisoned guard would leave the folder without a session for the life of the process.
+    await expect(openSession(ctx)).resolves.toMatchObject({ session_id: 'session-2' });
+    expect(calls).toBe(2);
+  });
+
+  it('returns the open session from saga_start_session rather than a second one', async () => {
+    let calls = 0;
+    const { ctx } = opening(async () => {
+      calls += 1;
+      return response('session-1');
+    });
+    const start = TOOLS.find((tool) => tool.name === 'saga_start_session')!;
+
+    await openSession(ctx, 'claude');
+    const result = (await start.handler({ agent: 'claude' }, ctx)) as { session_id: string };
+
+    expect(calls).toBe(1);
+    expect(result.session_id).toBe('session-1');
   });
 });
