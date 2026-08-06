@@ -33,7 +33,7 @@ The web console is **Guild Hall**. Agents reach Saga over MCP or the typed `@sag
 ```text
 apps/       server (Fastify) · worker · web (Guild Hall) · cli (`saga` + MCP server)
 packages/   shared · contracts · database · core · shrine · quest · lore · party · agent-sdk
-db/         forward-only migrations 0001–0006, seeds
+db/         forward-only migrations 0001–0007, seeds
 deploy/     Docker, nginx, systemd, saga-tools
 docs/       architecture · api · agent-integration · operations · security · testing · adr/
 scripts/    dev, stack, verify, demo, openapi generation, package scaffolding
@@ -83,6 +83,11 @@ Product shape, not implementation detail. Changing one of these is a product dec
 - **A new session never inherits an unrelated handoff.** Startup is two-phase: core context first,
   then the first task classifies as `new_work`, `resume_work` or `inquiry`.
 - **Coordination is optional.** `PARTY_MODE=off` leaves Lore and Quest fully usable.
+- **A Quest closes because someone said so, never because Saga inferred it.** An agent declares
+  the outcome with `quest_status` on its final handoff; the project's `quest_completion_mode`
+  decides whether that lands or waits for Guild Hall. Nothing reads the work state and concludes
+  the job is done — `completed` is outside `RESUMABLE` and no tool can reopen it, so a wrong
+  close silently forks the work.
 - **Saga is not source control or a deployment platform.** External systems stay authoritative for
   code, databases and deployments.
 
@@ -97,7 +102,7 @@ tokenizer (0007).
 ## 5. State
 
 Phases 0–6 are delivered: foundation and Shrine, Lore, Quest, CLI and MCP, Party, then hardening.
-Schema version 6. Every phase landed with its suites green, and each found real defects worth
+Schema version 7. Every phase landed with its suites green, and each found real defects worth
 knowing about — a `conflict` write inside a transaction that then rolled back, unspecified
 `RETURNING` row order in the job-claim CTE, a dedupe unique-violation caught in JavaScript that had
 already aborted the PostgreSQL transaction (now `ON CONFLICT DO NOTHING`), and an `embedding` job
@@ -110,7 +115,7 @@ Measured 2026-08-06, not copied forward — re-measure rather than trust this ta
 | ------------------------------------ | -------------------------- |
 | `pnpm lint` / `typecheck`            | clean                      |
 | `pnpm openapi:check`                 | up to date (73 paths)      |
-| unit / integration / api / web / e2e | 479 / 136 / 146 / 128 / 8  |
+| unit / integration / api / web / e2e | 488 / 136 / 152 / 139 / 8  |
 | `scripts/verify.ts`                  | 75/75 against a live stack |
 
 ---

@@ -75,7 +75,7 @@ export function ShrinePage() {
               <dd className="tabular-nums">{data.memory_revision}</dd>
               <dt className="text-ink-500 dark:text-parchment-300/70">Active snapshot</dt>
               <dd className="font-mono text-xs">{data.active_context_snapshot_id ?? 'none'}</dd>
-              <dt className="text-ink-500 dark:text-parchment-300/70">Approval mode</dt>
+              <dt className="text-ink-500 dark:text-parchment-300/70">Lore approval</dt>
               <dd>{data.lore_approval_mode}</dd>
               <dt className="text-ink-500 dark:text-parchment-300/70">Lifecycle</dt>
               <dd>{data.status}</dd>

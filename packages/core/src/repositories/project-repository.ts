@@ -1,7 +1,12 @@
 import type { Queryable } from '@saga/database';
 import { isUniqueViolation } from '@saga/database';
 import { SagaError } from '@saga/shared';
-import type { LoreApprovalMode, Project, ProjectStatus } from '../domain/project.js';
+import type {
+  LoreApprovalMode,
+  Project,
+  ProjectStatus,
+  QuestCompletionMode,
+} from '../domain/project.js';
 import { normalizeProjectName } from '../normalization.js';
 
 interface ProjectRow {
@@ -13,12 +18,14 @@ interface ProjectRow {
   memory_revision: number;
   active_context_snapshot_id: string | null;
   lore_approval_mode: string;
+  quest_completion_mode: string;
   created_at: Date;
   updated_at: Date;
 }
 
 const COLUMNS = `id, name, name_key, description, status, memory_revision,
-                 active_context_snapshot_id, lore_approval_mode, created_at, updated_at`;
+                 active_context_snapshot_id, lore_approval_mode, quest_completion_mode,
+                 created_at, updated_at`;
 
 function toProject(row: ProjectRow): Project {
   return {
@@ -30,6 +37,7 @@ function toProject(row: ProjectRow): Project {
     memoryRevision: row.memory_revision,
     activeContextSnapshotId: row.active_context_snapshot_id,
     loreApprovalMode: row.lore_approval_mode as LoreApprovalMode,
+    questCompletionMode: row.quest_completion_mode as QuestCompletionMode,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -40,6 +48,7 @@ export interface CreateProjectRow {
   nameKey: string;
   description: string | null;
   loreApprovalMode: LoreApprovalMode;
+  questCompletionMode: QuestCompletionMode;
 }
 
 export interface ProjectRepository {
@@ -62,7 +71,11 @@ export interface ProjectRepository {
   update(
     q: Queryable,
     id: string,
-    fields: { description?: string | null; loreApprovalMode?: LoreApprovalMode },
+    fields: {
+      description?: string | null;
+      loreApprovalMode?: LoreApprovalMode;
+      questCompletionMode?: QuestCompletionMode;
+    },
   ): Promise<Project>;
   setStatus(q: Queryable, id: string, status: ProjectStatus): Promise<Project>;
   addAlias(q: Queryable, projectId: string, alias: string, aliasKey: string): Promise<void>;
@@ -78,10 +91,17 @@ export class PgProjectRepository implements ProjectRepository {
   async create(q: Queryable, input: CreateProjectRow): Promise<Project> {
     try {
       const result = await q.query<ProjectRow>(
-        `INSERT INTO core.projects (name, name_key, description, lore_approval_mode)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO core.projects
+           (name, name_key, description, lore_approval_mode, quest_completion_mode)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING ${COLUMNS}`,
-        [input.name, input.nameKey, input.description, input.loreApprovalMode],
+        [
+          input.name,
+          input.nameKey,
+          input.description,
+          input.loreApprovalMode,
+          input.questCompletionMode,
+        ],
       );
       return toProject(result.rows[0]!);
     } catch (error) {
@@ -196,7 +216,11 @@ export class PgProjectRepository implements ProjectRepository {
   async update(
     q: Queryable,
     id: string,
-    fields: { description?: string | null; loreApprovalMode?: LoreApprovalMode },
+    fields: {
+      description?: string | null;
+      loreApprovalMode?: LoreApprovalMode;
+      questCompletionMode?: QuestCompletionMode;
+    },
   ): Promise<Project> {
     const assignments: string[] = [];
     const values: unknown[] = [id];
@@ -208,6 +232,10 @@ export class PgProjectRepository implements ProjectRepository {
     if (fields.loreApprovalMode !== undefined) {
       values.push(fields.loreApprovalMode);
       assignments.push(`lore_approval_mode = $${values.length}`);
+    }
+    if (fields.questCompletionMode !== undefined) {
+      values.push(fields.questCompletionMode);
+      assignments.push(`quest_completion_mode = $${values.length}`);
     }
     if (assignments.length === 0) {
       const existing = await this.findById(q, id);

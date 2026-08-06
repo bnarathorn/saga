@@ -269,8 +269,10 @@ export function ProjectOverview() {
           <dd className="font-mono text-xs">{data.name_key}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Also known as</dt>
           <dd>{data.aliases.length === 0 ? '—' : data.aliases.join(', ')}</dd>
-          <dt className="text-ink-500 dark:text-parchment-300/70">Approval mode</dt>
+          <dt className="text-ink-500 dark:text-parchment-300/70">Lore approval</dt>
           <dd>{data.lore_approval_mode}</dd>
+          <dt className="text-ink-500 dark:text-parchment-300/70">Quest completion</dt>
+          <dd>{data.quest_completion_mode}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Created</dt>
           <dd>
             <RelativeTime value={data.created_at} />

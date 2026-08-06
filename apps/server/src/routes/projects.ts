@@ -111,6 +111,7 @@ export function registerProjectRoutes(
           name: body.name,
           description: body.description ?? null,
           loreApprovalMode: body.lore_approval_mode,
+          questCompletionMode: body.quest_completion_mode,
           correlationId: request.id,
         });
         await audit.record({
@@ -152,6 +153,7 @@ export function registerProjectRoutes(
       name: body.name,
       description: body.description,
       loreApprovalMode: body.lore_approval_mode,
+      questCompletionMode: body.quest_completion_mode,
       correlationId: request.id,
     });
 

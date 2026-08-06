@@ -114,6 +114,7 @@ export function projectSummary(overrides: Record<string, unknown> = {}) {
     memory_revision: 3,
     active_context_snapshot_id: '00000000-0000-4000-8000-000000000020',
     lore_approval_mode: 'auto',
+    quest_completion_mode: 'auto',
     aliases: [],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
