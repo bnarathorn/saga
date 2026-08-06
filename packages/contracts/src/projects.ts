@@ -8,6 +8,17 @@ export const LORE_APPROVAL_MODES = ['auto', 'manual'] as const;
 export const loreApprovalModeSchema = z.enum(LORE_APPROVAL_MODES);
 
 /**
+ * Whether an agent may close its own Quest, or a person does it in Guild Hall.
+ *
+ * The same question `lore_approval_mode` answers for Lore, and deliberately the same two
+ * values: `auto` honours what the agent declares at its final handoff, `manual` records the
+ * declaration and leaves the Quest open. Neither mode ever *infers* completion — a Quest
+ * closes because an agent said so, or because a person did.
+ */
+export const QUEST_COMPLETION_MODES = ['auto', 'manual'] as const;
+export const questCompletionModeSchema = z.enum(QUEST_COMPLETION_MODES);
+
+/**
  * A project is identified by its name alone. Repository URL, branch, commit and remote are
  * deliberately absent from the contract — see ADR-0001 and the greenfield boundary.
  */
@@ -25,6 +36,7 @@ export const projectSchema = z.object({
   memory_revision: z.number().int().nonnegative(),
   active_context_snapshot_id: uuidSchema.nullable(),
   lore_approval_mode: loreApprovalModeSchema,
+  quest_completion_mode: questCompletionModeSchema,
   aliases: z.array(z.string()),
   created_at: isoTimestampSchema,
   updated_at: isoTimestampSchema,
@@ -53,6 +65,7 @@ export const createProjectRequestSchema = z.object({
   name: projectNameSchema,
   description: z.string().max(2_000).optional(),
   lore_approval_mode: loreApprovalModeSchema.optional(),
+  quest_completion_mode: questCompletionModeSchema.optional(),
 });
 export type CreateProjectRequest = z.infer<typeof createProjectRequestSchema>;
 
@@ -61,6 +74,7 @@ export const updateProjectRequestSchema = z
     name: projectNameSchema.optional(),
     description: z.string().max(2_000).nullable().optional(),
     lore_approval_mode: loreApprovalModeSchema.optional(),
+    quest_completion_mode: questCompletionModeSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field must be provided.',

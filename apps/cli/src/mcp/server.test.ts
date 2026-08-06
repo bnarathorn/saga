@@ -72,6 +72,49 @@ describe('tool surface', () => {
     expect(claim.description).toMatch(/do NOT proceed without the claim/i);
   });
 
+  it('warns that ending a session does not close the Quest by itself', () => {
+    const end = TOOLS.find((tool) => tool.name === 'saga_end_session')!;
+    const schema = zodToJsonSchema(end.inputSchema) as {
+      properties: { quest_status: { enum: string[]; description: string } };
+    };
+
+    expect(schema.properties.quest_status.enum).toContain('completed');
+    // An agent that stops is not an agent that finished. Saying so in the description is the
+    // only place the distinction reaches the model before it picks a value.
+    expect(schema.properties.quest_status.description).toMatch(/not merely when you are stopping/);
+    expect(schema.properties.quest_status.description).toMatch(/cannot be resumed/);
+  });
+
+  it('sends the declared Quest status and reports what the server did with it', async () => {
+    const end = TOOLS.find((tool) => tool.name === 'saga_end_session')!;
+    let sent: Record<string, unknown> = {};
+    const ctx = context({ sessionId: 'session-1', questId: 'quest-1', questRevision: 4 });
+    ctx.client = {
+      endSession: async (_id: string, input: Record<string, unknown>) => {
+        sent = input;
+        return {
+          session: { state: 'completed' },
+          handoff: { id: 'checkpoint-1' },
+          quest_revision: 5,
+          released_claims: 0,
+          quest_status: 'in_progress',
+          quest_status_held: 'The project is on quest_completion_mode "manual".',
+        };
+      },
+    } as unknown as McpToolContext['client'];
+
+    const result = (await end.handler(
+      { summary: 'done', work_state: { goal: 'g' }, quest_status: 'completed' },
+      ctx,
+    )) as { quest_status: string; quest_status_held: string };
+
+    expect(sent.quest_status).toBe('completed');
+    // The hold is the whole point of surfacing it: an agent told "completed" that reads back
+    // `in_progress` has to know a person still has to confirm, not retry.
+    expect(result.quest_status).toBe('in_progress');
+    expect(result.quest_status_held).toMatch(/manual/);
+  });
+
   it('warns that remember is for durable knowledge only', () => {
     const remember = TOOLS.find((tool) => tool.name === 'saga_remember')!;
     expect(remember.description).toMatch(/never for credentials/i);
@@ -95,6 +138,20 @@ describe('tool schemas', () => {
     expect(schema.required).toContain('work_state');
     // `expected_quest_revision` is optional: the server tracks the revision for the agent.
     expect(schema.required).not.toContain('expected_quest_revision');
+  });
+
+  it('keeps the description on an optional field, which is where most of them are', () => {
+    // Unwrapping ZodOptional without re-applying the wrapper's description dropped the hint on
+    // every optional argument — the model saw a bare type and no reason to fill it in.
+    const activate = TOOLS.find((tool) => tool.name === 'saga_activate_task')!;
+    const schema = zodToJsonSchema(activate.inputSchema) as {
+      properties: Record<string, { description?: string }>;
+    };
+
+    expect(schema.properties.requested_quest_id?.description).toMatch(/user names a Quest/);
+    expect(schema.properties.scope?.description).toMatch(/expect to touch/);
+    // The required field alongside them must keep working the way it always did.
+    expect(schema.properties.task?.description).toMatch(/verbatim/);
   });
 
   it('describes the work-state structure the specification documents', () => {

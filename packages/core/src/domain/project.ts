@@ -1,5 +1,7 @@
 export type ProjectStatus = 'active' | 'archived';
 export type LoreApprovalMode = 'auto' | 'manual';
+/** Whether an agent may close its own Quest, or a person does it in Guild Hall. */
+export type QuestCompletionMode = 'auto' | 'manual';
 
 export interface Project {
   id: string;
@@ -10,6 +12,7 @@ export interface Project {
   memoryRevision: number;
   activeContextSnapshotId: string | null;
   loreApprovalMode: LoreApprovalMode;
+  questCompletionMode: QuestCompletionMode;
   createdAt: Date;
   updatedAt: Date;
 }

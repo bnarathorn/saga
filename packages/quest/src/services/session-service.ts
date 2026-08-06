@@ -2,13 +2,21 @@ import type {
   ActivationMode,
   ModeHint,
   QuestScope,
+  QuestStatus,
   RelatedQuestDto,
   WorkState,
 } from '@saga/contracts';
 import type { OutboxRepository, Project, ProjectRepository } from '@saga/core';
 import type { SagaPool } from '@saga/database';
 import { withTransaction } from '@saga/database';
-import { SagaError } from '@saga/shared';
+import { SagaError, isSagaError } from '@saga/shared';
+
+/**
+ * Statuses an agent cannot walk back from. `completed` and `cancelled` sit outside `RESUMABLE`
+ * in `domain/activation.ts`, and no MCP tool reaches the reopen endpoint, so declaring one is
+ * the only irreversible thing the end-of-session surface can do — hence the mode gate.
+ */
+const TERMINAL_QUEST_STATUSES: readonly QuestStatus[] = ['completed', 'cancelled'];
 import { classifyActivation, deriveQuestTitle, type QuestCandidate } from '../domain/activation.js';
 import type { Checkpoint, Quest, QuestSession } from '../repositories/quest-repository.js';
 import { type QuestRepository } from '../repositories/quest-repository.js';
@@ -293,16 +301,27 @@ export class SessionService {
   async end(input: {
     sessionId: string;
     handoff?: { expectedQuestRevision: number; summary: string; workState: WorkState };
+    /** What the agent declares has become of the Quest. Never inferred from the work state. */
+    questStatus?: QuestStatus;
     correlationId?: string | null;
   }): Promise<{
     session: QuestSession;
     handoff: Checkpoint | null;
     questRevision: number | null;
     releasedClaims: number;
+    questStatus: QuestStatus | null;
+    questStatusHeld: string | null;
   }> {
     const session = await this.get(input.sessionId);
     if (session.state === 'completed') {
-      return { session, handoff: null, questRevision: null, releasedClaims: 0 };
+      return {
+        session,
+        handoff: null,
+        questRevision: null,
+        releasedClaims: 0,
+        questStatus: null,
+        questStatusHeld: null,
+      };
     }
 
     let handoff: Checkpoint | null = null;
@@ -327,6 +346,14 @@ export class SessionService {
       handoff = created.checkpoint;
       questRevision = created.questRevision;
     }
+
+    const outcome = await this.applyDeclaredQuestStatus({
+      workItemId: session.workItemId,
+      projectId: session.projectId,
+      sessionId: input.sessionId,
+      declared: input.questStatus,
+      correlationId: input.correlationId ?? null,
+    });
 
     const ended = await withTransaction(this.deps.pool, async (tx) => {
       const updated = await this.deps.quests.endSession(tx, input.sessionId, 'completed');
@@ -354,7 +381,88 @@ export class SessionService {
       releasedClaims = 0;
     }
 
-    return { session: ended, handoff, questRevision, releasedClaims };
+    return {
+      session: ended,
+      handoff,
+      questRevision,
+      releasedClaims,
+      questStatus: outcome.status,
+      questStatusHeld: outcome.held,
+    };
+  }
+
+  /**
+   * Act on the status the agent declared for its Quest, or say why it was not acted on.
+   *
+   * Two gates, and both exist because completion is one-way from the agent's side: `completed`
+   * and `cancelled` are outside `RESUMABLE` (`domain/activation.ts`), a named-but-completed
+   * Quest falls through to `new_work` rather than resuming, and no MCP tool reaches
+   * `POST /api/quests/:questId/reopen`. A wrong close silently forks the work.
+   *
+   *   1. The project's `quest_completion_mode` must be `auto` for a terminal status. On
+   *      `manual` the declaration still reaches the handoff, and a person closes the Quest.
+   *   2. No other session may still be attached to the Quest. Quest-to-session is one-to-many
+   *      — `resume_work` and `requested_quest_id` both re-attach — so one agent finishing is
+   *      not the same as the work being finished.
+   *
+   * A non-terminal status (`blocked`, `waiting`) is applied either way: it neither ends the
+   * Quest nor takes it out of the resumable set, so there is nothing to guard against.
+   */
+  private async applyDeclaredQuestStatus(input: {
+    workItemId: string | null;
+    projectId: string;
+    sessionId: string;
+    declared: QuestStatus | undefined;
+    correlationId: string | null;
+  }): Promise<{ status: QuestStatus | null; held: string | null }> {
+    if (input.workItemId === null) return { status: null, held: null };
+
+    const current = await this.deps.quests.findById(this.deps.pool, input.workItemId);
+    if (current === null) return { status: null, held: null };
+    // A session that owned a Quest reports where it left it, declaration or not, so the caller
+    // never has to guess whether silence meant "unchanged" or "no Quest".
+    if (input.declared === undefined) return { status: current.status, held: null };
+    if (current.status === input.declared) return { status: current.status, held: null };
+
+    if (TERMINAL_QUEST_STATUSES.includes(input.declared)) {
+      const project = await this.deps.projects.findById(this.deps.pool, input.projectId);
+      if (project?.questCompletionMode !== 'auto') {
+        return {
+          status: current.status,
+          held: `The project is on quest_completion_mode "manual", so "${input.declared}" was recorded in the handoff and the Quest was left open for Guild Hall.`,
+        };
+      }
+
+      const others = await this.deps.quests.listSessionsForQuest(this.deps.pool, input.workItemId);
+      const stillOpen = others.filter(
+        (other) =>
+          other.id !== input.sessionId &&
+          (other.state === 'active' || other.state === 'awaiting_task'),
+      );
+      if (stillOpen.length > 0) {
+        return {
+          status: current.status,
+          held: `${stillOpen.length} other session(s) are still attached to this Quest, so it was left open.`,
+        };
+      }
+    }
+
+    try {
+      const updated = await this.deps.questService.update(
+        input.workItemId,
+        { status: input.declared },
+        input.correlationId,
+      );
+      return { status: updated.status, held: null };
+    } catch (error) {
+      // A status declaration must never cost the agent its handoff. The checkpoint is already
+      // committed and the session still has to end; an illegal transition — someone closed the
+      // Quest in Guild Hall mid-session, say — is reported, not thrown.
+      if (isSagaError(error) && error.code === 'QUEST_STATE_INVALID') {
+        return { status: current.status, held: error.message };
+      }
+      throw error;
+    }
   }
 
   /** Mark sessions abandoned once they stop reporting. Called by the worker. */

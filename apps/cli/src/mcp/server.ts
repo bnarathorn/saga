@@ -460,10 +460,16 @@ export const TOOLS: McpTool[] = [
   {
     name: 'saga_end_session',
     description:
-      'End the session cleanly: record a final handoff for the Quest, end the durable session, end the agent run and release its claims. Always call this before you stop, so the next session can continue from where you left off.',
+      'End the session cleanly: record a final handoff for the Quest, end the durable session, end the agent run and release its claims. Always call this before you stop, so the next session can continue from where you left off. Set quest_status to say what became of the Quest — nothing infers it, so a Quest you leave unmentioned stays open for whoever picks it up next.',
     inputSchema: z.object({
       summary: z.string().optional().describe('Required when a Quest is attached.'),
       work_state: workStateSchema.optional(),
+      quest_status: z
+        .enum(['completed', 'blocked', 'waiting', 'cancelled'])
+        .optional()
+        .describe(
+          'What became of the Quest. Set "completed" only when the work itself is done, not merely when you are stopping — a completed Quest cannot be resumed and no tool can reopen it. Omit it to leave the Quest open. The project may require a person to confirm a completion, in which case the reply says so in quest_status_held.',
+        ),
     }),
     async handler(args, ctx) {
       requireSession(ctx);
@@ -484,6 +490,7 @@ export const TOOLS: McpTool[] = [
               work_state: args.work_state as never,
             }
           : undefined,
+        quest_status: args.quest_status as never,
       });
 
       ctx.heartbeat?.stop();
@@ -499,6 +506,8 @@ export const TOOLS: McpTool[] = [
         handoff_id: result.handoff?.id ?? null,
         quest_revision: result.quest_revision,
         released_claims: result.released_claims,
+        quest_status: result.quest_status,
+        quest_status_held: result.quest_status_held,
       };
     },
   },

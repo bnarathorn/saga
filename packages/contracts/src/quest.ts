@@ -294,6 +294,15 @@ export const endSessionRequestSchema = z.object({
       work_state: workStateSchema,
     })
     .optional(),
+  /**
+   * What the agent says has become of the Quest, as part of the same handoff.
+   *
+   * Only ever a declaration: nothing infers an outcome from the work state. The terminal
+   * statuses (`completed`, `cancelled`) are additionally gated on the project's
+   * `quest_completion_mode`, because they cannot be undone from the agent surface — a
+   * completed Quest is outside the resumable set, and no MCP tool can reopen one.
+   */
+  quest_status: questStatusSchema.optional(),
 });
 export type EndSessionRequest = z.infer<typeof endSessionRequestSchema>;
 
@@ -302,6 +311,13 @@ export const endSessionResponseSchema = z.object({
   handoff: checkpointSchema.nullable(),
   quest_revision: z.number().int().nullable(),
   released_claims: z.number().int(),
+  /** The Quest's status now. Null when the session owned no Quest. */
+  quest_status: questStatusSchema.nullable(),
+  /**
+   * Set when a declared status was recorded but not applied, naming why — the project is on
+   * `manual`, or another session is still attached to the Quest. Null when nothing was held.
+   */
+  quest_status_held: z.string().nullable(),
 });
 export type EndSessionResponse = z.infer<typeof endSessionResponseSchema>;
 

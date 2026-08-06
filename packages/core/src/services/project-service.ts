@@ -7,6 +7,7 @@ import type {
   Project,
   ProjectStatus,
   ProjectWithAliases,
+  QuestCompletionMode,
 } from '../domain/project.js';
 import { assertValidProjectName, normalizeProjectName } from '../normalization.js';
 import type { OutboxRepository } from '../repositories/outbox-repository.js';
@@ -28,6 +29,7 @@ export interface CreateProjectInput {
   name: string;
   description?: string | null;
   loreApprovalMode?: LoreApprovalMode;
+  questCompletionMode?: QuestCompletionMode;
   correlationId?: string;
 }
 
@@ -35,6 +37,7 @@ export interface UpdateProjectInput {
   name?: string;
   description?: string | null;
   loreApprovalMode?: LoreApprovalMode;
+  questCompletionMode?: QuestCompletionMode;
   correlationId?: string;
 }
 
@@ -111,6 +114,7 @@ export class ProjectService {
         nameKey,
         description: input.description ?? null,
         loreApprovalMode: input.loreApprovalMode ?? 'auto',
+        questCompletionMode: input.questCompletionMode ?? 'auto',
       });
 
       await this.deps.outbox.emit(tx, {
@@ -196,10 +200,21 @@ export class ProjectService {
         }
       }
 
-      if (input.description !== undefined || input.loreApprovalMode !== undefined) {
-        const fields: { description?: string | null; loreApprovalMode?: LoreApprovalMode } = {};
+      if (
+        input.description !== undefined ||
+        input.loreApprovalMode !== undefined ||
+        input.questCompletionMode !== undefined
+      ) {
+        const fields: {
+          description?: string | null;
+          loreApprovalMode?: LoreApprovalMode;
+          questCompletionMode?: QuestCompletionMode;
+        } = {};
         if (input.description !== undefined) fields.description = input.description;
         if (input.loreApprovalMode !== undefined) fields.loreApprovalMode = input.loreApprovalMode;
+        if (input.questCompletionMode !== undefined) {
+          fields.questCompletionMode = input.questCompletionMode;
+        }
         project = await this.deps.projects.update(tx, locked.id, fields);
       }
 

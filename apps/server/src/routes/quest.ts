@@ -406,6 +406,7 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
               summary: body.handoff.summary,
               workState: body.handoff.work_state,
             },
+      questStatus: body.quest_status,
       correlationId: request.id,
     });
 
@@ -414,6 +415,8 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
       handoff: result.handoff === null ? null : presentCheckpoint(result.handoff),
       quest_revision: result.questRevision,
       released_claims: result.releasedClaims,
+      quest_status: result.questStatus,
+      quest_status_held: result.questStatusHeld,
     };
   });
 

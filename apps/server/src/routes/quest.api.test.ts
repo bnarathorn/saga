@@ -340,6 +340,111 @@ describe('session end', () => {
     expect(response.body.session.state).toBe('completed');
     expect(response.body.handoff).toBeNull();
   });
+
+  it('leaves the Quest open when the handoff declares nothing', async () => {
+    const sessionId = await startSession();
+    const activated = await admin.post(`/api/sessions/${sessionId}/activate`, {
+      task: 'Add CSV report export',
+    });
+    const questId = activated.body.quest.id;
+
+    const response = await admin.post(`/api/sessions/${sessionId}/end`, {
+      handoff: { expected_quest_revision: 0, summary: 'Stopping', work_state: workState() },
+    });
+
+    // Nothing infers completion from an empty work state: ending a session is not finishing.
+    expect(response.body.quest_status).toBe('in_progress');
+    expect((await admin.get(`/api/quests/${questId}`)).body.quest.status).toBe('in_progress');
+  });
+});
+
+describe('quest completion mode', () => {
+  async function endDeclaring(sessionId: string, status: string, revision = 0) {
+    return admin.post(`/api/sessions/${sessionId}/end`, {
+      handoff: { expected_quest_revision: revision, summary: 'Done', work_state: workState() },
+      quest_status: status,
+    });
+  }
+
+  it('closes the Quest on auto when the agent says it is done', async () => {
+    await admin.patch(`/api/projects/${projectId}`, { quest_completion_mode: 'auto' });
+    const sessionId = await startSession();
+    const activated = await admin.post(`/api/sessions/${sessionId}/activate`, {
+      task: 'Add CSV report export',
+    });
+    const questId = activated.body.quest.id;
+
+    const response = await endDeclaring(sessionId, 'completed');
+
+    expect(response.body.quest_status).toBe('completed');
+    expect(response.body.quest_status_held).toBeNull();
+    // Assert the row, not the reply: a presenter echoing the request would pass otherwise.
+    const quest = await admin.get(`/api/quests/${questId}`);
+    expect(quest.body.quest.status).toBe('completed');
+    expect(quest.body.quest.completed_at).not.toBeNull();
+  });
+
+  it('holds the completion on manual and says why', async () => {
+    await admin.patch(`/api/projects/${projectId}`, { quest_completion_mode: 'manual' });
+    const sessionId = await startSession();
+    const activated = await admin.post(`/api/sessions/${sessionId}/activate`, {
+      task: 'Add CSV report export',
+    });
+    const questId = activated.body.quest.id;
+
+    const response = await endDeclaring(sessionId, 'completed');
+
+    expect(response.body.quest_status).toBe('in_progress');
+    expect(response.body.quest_status_held).toMatch(/manual/);
+    expect((await admin.get(`/api/quests/${questId}`)).body.quest.status).toBe('in_progress');
+    // The session still ends and the handoff still lands — the hold costs the agent nothing.
+    expect(response.body.session.state).toBe('completed');
+    expect(response.body.handoff.kind).toBe('final_handoff');
+  });
+
+  it('holds the completion while another session is still on the Quest', async () => {
+    await admin.patch(`/api/projects/${projectId}`, { quest_completion_mode: 'auto' });
+    const first = await startSession();
+    const activated = await admin.post(`/api/sessions/${first}/activate`, {
+      task: 'Add CSV report export',
+    });
+    const questId = activated.body.quest.id;
+
+    const second = await startSession('codex');
+    await admin.post(`/api/sessions/${second}/activate`, {
+      task: 'Add CSV report export',
+      mode_hint: 'resume_work',
+      requested_quest_id: questId,
+    });
+
+    // Resuming attaches the second session without touching the revision, so the first
+    // session's handoff is still writing against 0.
+    const response = await endDeclaring(first, 'completed');
+
+    expect(response.body.quest_status_held).toMatch(/still attached/);
+    expect((await admin.get(`/api/quests/${questId}`)).body.quest.status).toBe('in_progress');
+  });
+
+  it('applies a non-terminal status whatever the mode, since it closes nothing', async () => {
+    await admin.patch(`/api/projects/${projectId}`, { quest_completion_mode: 'manual' });
+    const sessionId = await startSession();
+    const activated = await admin.post(`/api/sessions/${sessionId}/activate`, {
+      task: 'Add CSV report export',
+    });
+    const questId = activated.body.quest.id;
+
+    const response = await endDeclaring(sessionId, 'blocked');
+
+    expect(response.body.quest_status).toBe('blocked');
+    expect(response.body.quest_status_held).toBeNull();
+    // `blocked` stays inside RESUMABLE, so there is nothing for the mode to protect.
+    expect((await admin.get(`/api/quests/${questId}`)).body.quest.status).toBe('blocked');
+  });
+
+  it('defaults a new project to auto', async () => {
+    const created = await admin.post('/api/projects', { name: 'Fresh Completion Project' });
+    expect(created.body.project.quest_completion_mode).toBe('auto');
+  });
 });
 
 describe('quest management', () => {

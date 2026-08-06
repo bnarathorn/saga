@@ -6271,6 +6271,13 @@
                               "manual"
                             ]
                           },
+                          "quest_completion_mode": {
+                            "type": "string",
+                            "enum": [
+                              "auto",
+                              "manual"
+                            ]
+                          },
                           "aliases": {
                             "type": "array",
                             "items": {
@@ -6343,6 +6350,7 @@
                           "memory_revision",
                           "active_context_snapshot_id",
                           "lore_approval_mode",
+                          "quest_completion_mode",
                           "aliases",
                           "created_at",
                           "updated_at",
@@ -6811,6 +6819,13 @@
                       "auto",
                       "manual"
                     ]
+                  },
+                  "quest_completion_mode": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
                   }
                 },
                 "required": [
@@ -6872,6 +6887,13 @@
                             "manual"
                           ]
                         },
+                        "quest_completion_mode": {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ]
+                        },
                         "aliases": {
                           "type": "array",
                           "items": {
@@ -6896,6 +6918,7 @@
                         "memory_revision",
                         "active_context_snapshot_id",
                         "lore_approval_mode",
+                        "quest_completion_mode",
                         "aliases",
                         "created_at",
                         "updated_at"
@@ -7495,6 +7518,13 @@
                             "manual"
                           ]
                         },
+                        "quest_completion_mode": {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ]
+                        },
                         "aliases": {
                           "type": "array",
                           "items": {
@@ -7567,6 +7597,7 @@
                         "memory_revision",
                         "active_context_snapshot_id",
                         "lore_approval_mode",
+                        "quest_completion_mode",
                         "aliases",
                         "created_at",
                         "updated_at",
@@ -8038,6 +8069,13 @@
                       "auto",
                       "manual"
                     ]
+                  },
+                  "quest_completion_mode": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "manual"
+                    ]
                   }
                 }
               }
@@ -8096,6 +8134,13 @@
                             "manual"
                           ]
                         },
+                        "quest_completion_mode": {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ]
+                        },
                         "aliases": {
                           "type": "array",
                           "items": {
@@ -8120,6 +8165,7 @@
                         "memory_revision",
                         "active_context_snapshot_id",
                         "lore_approval_mode",
+                        "quest_completion_mode",
                         "aliases",
                         "created_at",
                         "updated_at"
@@ -8637,6 +8683,13 @@
                             "manual"
                           ]
                         },
+                        "quest_completion_mode": {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ]
+                        },
                         "aliases": {
                           "type": "array",
                           "items": {
@@ -8661,6 +8714,7 @@
                         "memory_revision",
                         "active_context_snapshot_id",
                         "lore_approval_mode",
+                        "quest_completion_mode",
                         "aliases",
                         "created_at",
                         "updated_at"
@@ -9178,6 +9232,13 @@
                             "manual"
                           ]
                         },
+                        "quest_completion_mode": {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ]
+                        },
                         "aliases": {
                           "type": "array",
                           "items": {
@@ -9202,6 +9263,7 @@
                         "memory_revision",
                         "active_context_snapshot_id",
                         "lore_approval_mode",
+                        "quest_completion_mode",
                         "aliases",
                         "created_at",
                         "updated_at"
@@ -27071,6 +27133,17 @@
                       "summary",
                       "work_state"
                     ]
+                  },
+                  "quest_status": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "in_progress",
+                      "waiting",
+                      "blocked",
+                      "completed",
+                      "cancelled"
+                    ]
                   }
                 }
               }
@@ -27424,13 +27497,35 @@
                     },
                     "released_claims": {
                       "type": "integer"
+                    },
+                    "quest_status": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "open",
+                        "in_progress",
+                        "waiting",
+                        "blocked",
+                        "completed",
+                        "cancelled"
+                      ]
+                    },
+                    "quest_status_held": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
                     "session",
                     "handoff",
                     "quest_revision",
-                    "released_claims"
+                    "released_claims",
+                    "quest_status",
+                    "quest_status_held"
                   ]
                 }
               }

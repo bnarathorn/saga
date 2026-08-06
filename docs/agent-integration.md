@@ -136,7 +136,7 @@ one; its job is to hand the agent its Core Context.
 **Before ending**
 
 9. Create a final handoff.
-10. Call `saga_end_session`.
+10. Call `saga_end_session`, setting `quest_status` when the Quest reached a new state.
 
 ---
 
@@ -152,7 +152,7 @@ one; its job is to hand the agent its Core Context.
 | `saga_remember`       | Propose Lore Entries. Creates a candidate; never overwrites.                                                |
 | `saga_claim_resource` | Claim a resource before a risky or exclusive operation.                                                     |
 | `saga_release_claim`  | Release as soon as the protected operation finishes. Idempotent.                                            |
-| `saga_end_session`    | Final handoff, end the session and the agent run, release claims.                                           |
+| `saga_end_session`    | Final handoff, end the session and the agent run, release claims, declare the Quest's outcome.             |
 
 ### Why session startup is two-phase
 

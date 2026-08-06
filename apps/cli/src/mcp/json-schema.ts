@@ -18,8 +18,12 @@ function convert(schema: z.ZodTypeAny): Record<string, unknown> {
   const withDescription = (value: Record<string, unknown>): Record<string, unknown> =>
     description === undefined ? value : { ...value, description };
 
-  if (schema instanceof z.ZodOptional) return convert(schema.unwrap());
-  if (schema instanceof z.ZodNullable) return convert(schema.unwrap());
+  // `.optional().describe(…)` hangs the description on the wrapper, so unwrapping without
+  // re-applying it drops the one sentence the field was written for. Five tool arguments were
+  // silently arriving at the model bare — `agent`, `requested_quest_id`, `scope`, `summary`
+  // and `quest_status`. The wrapper's description wins when both carry one.
+  if (schema instanceof z.ZodOptional) return withDescription(convert(schema.unwrap()));
+  if (schema instanceof z.ZodNullable) return withDescription(convert(schema.unwrap()));
   if (schema instanceof z.ZodDefault) {
     return withDescription({
       ...convert(schema.removeDefault()),

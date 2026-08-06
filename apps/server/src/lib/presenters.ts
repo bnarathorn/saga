@@ -20,6 +20,7 @@ export function presentProject(project: ProjectWithAliases): ProjectDto {
     memory_revision: project.memoryRevision,
     active_context_snapshot_id: project.activeContextSnapshotId,
     lore_approval_mode: project.loreApprovalMode,
+    quest_completion_mode: project.questCompletionMode,
     aliases: project.aliases,
     created_at: toIsoRequired(project.createdAt),
     updated_at: toIsoRequired(project.updatedAt),
