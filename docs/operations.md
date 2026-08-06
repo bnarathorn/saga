@@ -232,10 +232,19 @@ pnpm db:migrate    # apply pending
 
 `pnpm db:reset` drops and re-applies every schema. It is refused when `NODE_ENV=production`.
 
+#### Migrations that rewrite data
+
+Most migrations only add structure. These change existing rows, so read them before upgrading:
+
+| Migration                    | What it rewrites                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0007_quest_completion_mode` | Adds `core.projects.quest_completion_mode` and sets **every existing project to `manual`**, while new projects default to `auto`. Taking the default would have changed what agents may do on projects already installed, delivered by a column nobody reads. Turn it on per project once you want agents closing their own Quests. |
+
 ### Upgrade procedure
 
 1. **Back up first.** `pg_dump` before every upgrade; forward-only migrations have no `down`.
-2. Read the release notes for migrations that rewrite data.
+2. Read [Migrations that rewrite data](#migrations-that-rewrite-data) for anything that touches
+   existing rows, and the release notes for the rest.
 3. Deploy:
 
    ```bash

@@ -152,7 +152,7 @@ one; its job is to hand the agent its Core Context.
 | `saga_remember`       | Propose Lore Entries. Creates a candidate; never overwrites.                                                |
 | `saga_claim_resource` | Claim a resource before a risky or exclusive operation.                                                     |
 | `saga_release_claim`  | Release as soon as the protected operation finishes. Idempotent.                                            |
-| `saga_end_session`    | Final handoff, end the session and the agent run, release claims, declare the Quest's outcome.             |
+| `saga_end_session`    | Final handoff, end the session and the agent run, release claims, declare the Quest's outcome.              |
 
 ### Why session startup is two-phase
 
@@ -174,6 +174,21 @@ near-matches in `related_quests` for you to offer the user.
 
 If an inquiry session starts changing files, promote it — `saga_activate_task` again with
 `mode_hint: "new_work"`.
+
+### Saying what became of the Quest
+
+`saga_end_session` takes `quest_status`. Nothing infers it: a Quest you do not mention stays
+open for whoever picks it up next, however tidy your work state looks.
+
+Set `completed` when the work itself is done — not when you are merely stopping. A completed
+Quest is outside the resumable set, naming it by id afterwards classifies as `new_work` rather
+than resuming, and no tool here can reopen one; leaving it open costs a click, closing it
+wrongly costs the thread. `blocked` and `waiting` are safe to declare at any time.
+
+The project decides whether your word is enough. Under `quest_completion_mode: manual` the
+declaration is recorded and a person confirms it in Guild Hall, and the reply tells you so in
+`quest_status_held` — that is not a failure and not something to retry. `quest_status` in the
+reply is always what the Quest actually holds now.
 
 ---
 
