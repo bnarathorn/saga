@@ -20,7 +20,6 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SCRIPT_PATH="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
-SOURCE_REPO=${SAGA_SOURCE_REPO:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)}
 TARGET=${SAGA_TARGET:-/opt/saga}
 SERVICE_USER=${SAGA_SERVICE_USER:-saga}
 WEB_ROOT=${SAGA_WEB_ROOT:-/var/www/saga-app}
@@ -60,6 +59,15 @@ if [ -n "$REBUILD" ]; then
   say "Rebuilding $TARGET at $OLD_SHA — no commits will be moved"
   NEW_SHA=$OLD_SHA
 else
+  # Resolved here rather than at the top because --rebuild moves no commits and so
+  # must not require a readable source repository. `saga-tools` invokes this script
+  # from inside the deploy directory, which git refuses to touch for a caller who
+  # does not own it — resolving eagerly made every such run die on
+  # `detected dubious ownership` before it could reach the branch that needs none.
+  SOURCE_REPO=${SAGA_SOURCE_REPO:-$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || true)}
+  [ -n "$SOURCE_REPO" ] ||
+    die "no source repository around $SCRIPT_DIR — set SAGA_SOURCE_REPO, or pass --rebuild to build what $TARGET already has"
+
   say "Resolving $REF in $SOURCE_REPO"
   # A bundle carries named refs, not bare object ids, so the ref has to be one.
   git -C "$SOURCE_REPO" rev-parse --verify --quiet "refs/heads/$REF" >/dev/null ||
