@@ -1,3 +1,4 @@
+import { MEMORY_CATEGORIES } from '@saga/contracts';
 import { estimateTokens } from '@saga/shared';
 import { describe, expect, it } from 'vitest';
 import type { MemoryItemWithVersion } from '../domain/lore.js';
@@ -101,6 +102,21 @@ describe('section building', () => {
       'testing',
       'warnings',
     ]);
+  });
+
+  it('gives every memory category a home, so none is dropped silently', () => {
+    const oneOfEach = MEMORY_CATEGORIES.map((category) =>
+      entry({ memoryKey: `${category}.probe`, category }),
+    );
+    const built = buildSections({ items: oneOfEach, specs: CORE_SECTIONS, tokenBudget: 20_000 });
+    const placed = built.sections.flatMap((section) =>
+      section.entries.map((sectionEntry) => sectionEntry.memoryKey),
+    );
+
+    // A category no section claims is filtered out before allocation: it never reaches `omitted`
+    // either, so the snapshot renders short with nothing to show for the missing entry.
+    expect(placed.toSorted()).toEqual(MEMORY_CATEGORIES.map((c) => `${c}.probe`).toSorted());
+    expect(built.omitted).toEqual([]);
   });
 
   it('is deterministic: identical inputs render byte-identically', () => {

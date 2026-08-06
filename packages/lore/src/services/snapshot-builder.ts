@@ -17,9 +17,14 @@ export interface SectionSpec {
   reserve: number;
 }
 
-export const CORE_SECTIONS: readonly SectionSpec[] = [
+export const CORE_SECTIONS = [
   { id: 'overview', title: 'Project Overview', categories: ['overview'], reserve: 0.14 },
-  { id: 'structure', title: 'Structure', categories: ['structure'], reserve: 0.14 },
+  {
+    id: 'structure',
+    title: 'Structure',
+    categories: ['structure', 'server', 'database', 'api'],
+    reserve: 0.14,
+  },
   {
     id: 'conventions',
     title: 'Critical Coding Conventions',
@@ -34,8 +39,22 @@ export const CORE_SECTIONS: readonly SectionSpec[] = [
     categories: ['deploy', 'logs', 'debug'],
     reserve: 0.1,
   },
+  { id: 'decisions', title: 'Decisions', categories: ['decision'], reserve: 0.1 },
   { id: 'warnings', title: 'Important Warnings', categories: ['warning'], reserve: 0.14 },
-];
+] as const satisfies readonly SectionSpec[];
+
+/**
+ * Core context must have a home for every category.
+ *
+ * `buildSections` keeps only the entries a spec names, so a category listed in no core section
+ * is dropped with no section, no `omitted` entry and no error: the snapshot activates rendering
+ * an empty string, and the project reads as though nothing was ever recorded. Resolves to
+ * `never` while the sections are exhaustive, and fails the build the moment a new
+ * `MemoryCategory` is added without one.
+ */
+type CoreSectionCategory = (typeof CORE_SECTIONS)[number]['categories'][number];
+export type UncoveredCoreCategory = AssertNever<Exclude<MemoryCategory, CoreSectionCategory>>;
+type AssertNever<T extends never> = T;
 
 export const TASK_SECTIONS: readonly SectionSpec[] = [
   { id: 'warnings', title: 'Relevant Warnings', categories: ['warning'], reserve: 0.2 },
