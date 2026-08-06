@@ -31,6 +31,7 @@ function context(overrides: Partial<McpToolContext['session']> = {}): McpToolCon
       questRevision: 0,
       projectRef: 'project-1',
       client: 'test',
+      bootstrapRequired: false,
       ...overrides,
     },
     workspace: {
@@ -233,6 +234,11 @@ describe('server instructions', () => {
   it('repeats the limits on what may be remembered', () => {
     expect(MCP_INSTRUCTIONS).toMatch(/never credentials/);
   });
+
+  it('says what to do about a project that has no Lore yet', () => {
+    expect(MCP_INSTRUCTIONS).toMatch(/bootstrap_required/);
+    expect(MCP_INSTRUCTIONS).toMatch(/bootstrap_plan/);
+  });
 });
 
 describe('opening the session', () => {
@@ -334,5 +340,76 @@ describe('opening the session', () => {
 
     expect(calls).toBe(1);
     expect(result.session_id).toBe('session-1');
+  });
+});
+
+/**
+ * Nothing on the server writes the first Lore Entry: no worker job, no other tool. A plan the
+ * agent is never told to carry out leaves the project empty for every session that follows it,
+ * with `bootstrap_required` still true and every check reporting healthy.
+ */
+describe('bootstrapping a project with no Lore', () => {
+  const start = TOOLS.find((tool) => tool.name === 'saga_start_session')!;
+  const activate = TOOLS.find((tool) => tool.name === 'saga_activate_task')!;
+
+  function toolContext(bootstrapRequired: boolean): McpToolContext {
+    const ctx = context();
+    ctx.client = {
+      startSession: async () => ({
+        session_id: 'session-1',
+        state: 'awaiting_task',
+        project: { id: 'project-1', name: 'Project' },
+        project_revision: 0,
+        core_context: bootstrapRequired ? '' : 'core',
+        bootstrap_required: bootstrapRequired,
+        bootstrap_plan: bootstrapRequired ? { required: true, proposed_keys: [] } : null,
+        open_quests: [],
+        agent_run_id: 'run-1',
+      }),
+      activateSession: async () => ({
+        activation_mode: 'new_work',
+        quest: { id: 'quest-1', revision: 0 },
+        context: { core: '', task: '', continuation: null, party: null, warnings: [] },
+        related_quests: [],
+      }),
+    } as unknown as McpToolContext['client'];
+    return ctx;
+  }
+
+  it('tells the agent to carry the plan out, not merely that one exists', async () => {
+    const result = (await start.handler({}, toolContext(true))) as { next_step: string };
+
+    expect(result.next_step).toMatch(/bootstrap_plan/);
+    expect(result.next_step).toMatch(/saga_remember/);
+  });
+
+  it('leaves the next step alone for a project that already has Core Context', async () => {
+    const result = (await start.handler({}, toolContext(false))) as { next_step: string };
+
+    expect(result.next_step).not.toMatch(/saga_remember/);
+  });
+
+  it('repeats the prompt on activation, when the agent is about to read the code', async () => {
+    const ctx = toolContext(true);
+    await start.handler({}, ctx);
+
+    const activated = (await activate.handler({ task: 'add a route' }, ctx)) as {
+      next_step: string;
+    };
+
+    // By the time the first task is understood the session response is far behind: a prompt made
+    // once at session open is the one the agent has already scrolled past.
+    expect(activated.next_step).toMatch(/saga_remember/);
+  });
+
+  it('says nothing about bootstrap once the project has Lore', async () => {
+    const ctx = toolContext(false);
+    await start.handler({}, ctx);
+
+    const activated = (await activate.handler({ task: 'add a route' }, ctx)) as {
+      next_step: string;
+    };
+
+    expect(activated.next_step).not.toMatch(/saga_remember/);
   });
 });

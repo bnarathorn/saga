@@ -20,6 +20,14 @@ export interface McpSession {
   projectRef: string;
   client: string;
   /**
+   * Whether the project still has no Core Context, as reported by the last `startSession`.
+   *
+   * Held on the session because `saga_activate_task` has to repeat the bootstrap prompt: by the
+   * time an agent has read the code for its first task it is long past the `saga_start_session`
+   * response, and a plan mentioned once at session open is a plan that never gets carried out.
+   */
+  bootstrapRequired: boolean;
+  /**
    * The in-flight or settled `startSession` call, held so the session is opened once.
    *
    * A promise rather than the response, because `initialize` and the agent's own
@@ -120,6 +128,9 @@ const scopeSchema = z.object({
 export const MCP_INSTRUCTIONS =
   'This folder is bound to a Saga project — shared memory and work continuity across agents.\n' +
   'Before reading any file, call saga_start_session and read the Core Context it returns.\n' +
+  'When it reports bootstrap_required, this project has no Lore yet and nothing else will ' +
+  'create it: work through the bootstrap_plan it returns as you read the code for the first ' +
+  'task, and record what you find with saga_remember before you stop.\n' +
   'On the first user task call saga_activate_task with the request verbatim, and read the ' +
   'returned Task and Continuation context before editing anything.\n' +
   'Call saga_checkpoint at every milestone and before context compaction. Claim shared ' +
@@ -162,6 +173,7 @@ async function startSession(ctx: McpToolContext, agent?: string): Promise<StartS
 
   ctx.session.sessionId = started.session_id;
   ctx.session.agentRunId = started.agent_run_id;
+  ctx.session.bootstrapRequired = started.bootstrap_required;
   // From here a single tool call can outlast the lease, so the heartbeat runs on its own
   // timer rather than on the request cycle.
   ctx.heartbeat?.start();
@@ -192,8 +204,12 @@ export const TOOLS: McpTool[] = [
         bootstrap_required: started.bootstrap_required,
         bootstrap_plan: started.bootstrap_plan,
         open_quests: started.open_quests,
-        next_step:
-          'Wait for the first user task, then call saga_activate_task. Do not load a handoff before that.',
+        // A bootstrap plan nobody is told to carry out is a plan that never runs: no worker job
+        // and no other tool writes the first Lore Entry, so the project stays empty for every
+        // session that follows. Say so here rather than leaving it to `bootstrap_plan` alone.
+        next_step: started.bootstrap_required
+          ? 'Wait for the first user task, then call saga_activate_task. Do not load a handoff before that. This project has no Core Context yet: as you read the code for that task, work through bootstrap_plan and record each entry with saga_remember before you stop.'
+          : 'Wait for the first user task, then call saga_activate_task. Do not load a handoff before that.',
       };
     },
   },
@@ -220,15 +236,20 @@ export const TOOLS: McpTool[] = [
       ctx.session.questId = result.quest?.id ?? null;
       ctx.session.questRevision = result.quest?.revision ?? 0;
 
+      const bootstrap = ctx.session.bootstrapRequired
+        ? ' This project still has no Core Context: record what you learn about it with saga_remember, following the bootstrap_plan from saga_start_session.'
+        : '';
+
       return {
         activation_mode: result.activation_mode,
         quest: result.quest,
         context: result.context,
         related_quests: result.related_quests,
         next_step:
-          result.activation_mode === 'inquiry'
+          (result.activation_mode === 'inquiry'
             ? 'No Quest was created. If this turns into real work, call saga_activate_task again with mode_hint "new_work".'
-            : `Record checkpoints with saga_checkpoint using expected_quest_revision ${result.quest?.revision ?? 0}.`,
+            : `Record checkpoints with saga_checkpoint using expected_quest_revision ${result.quest?.revision ?? 0}.`) +
+          bootstrap,
       };
     },
   },
@@ -571,6 +592,7 @@ export async function buildToolContext(clientName: string): Promise<BuildContext
         questRevision: 0,
         projectRef: projectRef ?? '',
         client: clientName,
+        bootstrapRequired: false,
       },
       workspace: {
         root: workspace.root,

@@ -118,6 +118,7 @@ async function main(): Promise<number> {
       questRevision: 0,
       projectRef: projectId,
       client: 'claude-code',
+      bootstrapRequired: false,
     },
     workspace: {
       root: workspace.root,
