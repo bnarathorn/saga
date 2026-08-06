@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#
+# saga-tools — server-side maintenance for a systemd Saga install.
+#
+#   saga-tools update [--force]   fetch the published branch and deploy it
+#   saga-tools status             what is deployed, what is available, what is running
+#
+# `update` tracks the public repository directly: the service account needs no
+# credentials to fetch it, so the deploy host can pull its own updates instead of
+# waiting for someone to push a build across from a developer checkout. That other
+# path still exists — `deploy/update.sh` moves a commit that is not on the remote
+# yet — and this command reuses its build half rather than reimplementing it, so
+# the two cannot drift.
+#
+# Install it as root:
+#
+#   install -m 755 /opt/saga/deploy/saga-tools /usr/local/bin/saga-tools
+#
+# Run it as a user that may sudo. Every override below is an environment variable:
+#
+set -euo pipefail
+
+TARGET=${SAGA_TARGET:-/opt/saga}
+SERVICE_USER=${SAGA_SERVICE_USER:-saga}
+REMOTE=${SAGA_REMOTE:-https://github.com/bnarathorn/saga.git}
+BRANCH=${SAGA_BRANCH:-main}
+ORIGIN=${SAGA_ORIGIN:-http://127.0.0.1:4319}
+# The service account's home is the deploy directory, so anything it runs needs a
+# writable home elsewhere or it litters the checkout. See deploy/update.sh.
+BUILD_HOME=${SAGA_BUILD_HOME:-/var/tmp/saga-build-home}
+
+say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# GIT_TERMINAL_PROMPT=0 turns a credential prompt into an immediate failure. The
+# repository is public and none should ever appear; if one does, the cause is a
+# misconfigured remote, and hanging forever on a server is the worst way to say so.
+as_service() { sudo -u "$SERVICE_USER" env HOME="$BUILD_HOME" GIT_TERMINAL_PROMPT=0 "$@"; }
+target_git() { as_service git -C "$TARGET" "$@"; }
+
+served_build() {
+  curl -fsS -k "$ORIGIN/api/cli/saga" 2>/dev/null | grep -ao '0\.1\.0+g[a-z0-9.]*' | head -1 || true
+}
+
+usage() {
+  cat <<'USAGE'
+saga-tools — server-side maintenance for a systemd Saga install.
+
+  saga-tools update [--force]   Fetch the published branch and deploy it.
+                                --force rebuilds even when already up to date.
+  saga-tools status             Show the deployed commit, whether the remote is
+                                ahead, the CLI build being served, and unit state.
+
+Environment: SAGA_TARGET, SAGA_SERVICE_USER, SAGA_REMOTE, SAGA_BRANCH,
+             SAGA_ORIGIN, SAGA_BUILD_HOME.
+USAGE
+}
+
+preflight() {
+  [ -d "$TARGET/.git" ] || die "$TARGET is not a git checkout"
+  sudo -n true 2>/dev/null || sudo true || die "saga-tools needs sudo"
+  sudo install -d -o "$SERVICE_USER" -m 755 "$BUILD_HOME"
+}
+
+# The remote is a deployment detail, not something a checkout is trusted to have
+# right: a tree copied from elsewhere can name a URL nobody here can reach.
+ensure_remote() {
+  local current
+  current=$(target_git remote get-url origin 2>/dev/null || true)
+  if [ -z "$current" ]; then
+    target_git remote add origin "$REMOTE"
+  elif [ "$current" != "$REMOTE" ]; then
+    say "Pointing origin at $REMOTE (was $current)"
+    target_git remote set-url origin "$REMOTE"
+  fi
+}
+
+cmd_status() {
+  preflight
+  ensure_remote
+  local head subject remote_head behind served
+  head=$(target_git rev-parse HEAD)
+  subject=$(target_git log -1 --format='%s')
+  target_git fetch --quiet origin "$BRANCH" || die "cannot reach $REMOTE"
+  remote_head=$(target_git rev-parse FETCH_HEAD)
+  behind=$(target_git rev-list --count "HEAD..$remote_head")
+
+  printf 'deployed  %s  %s\n' "${head:0:10}" "$subject"
+  if [ "$head" = "$remote_head" ]; then
+    printf 'remote    up to date (%s %s)\n' "$REMOTE" "$BRANCH"
+  else
+    printf 'remote    %s ahead by %s commit(s) — run: saga-tools update\n' "${remote_head:0:10}" "$behind"
+  fi
+
+  served=$(served_build)
+  printf 'serving   %s\n' "${served:-<the API did not answer>}"
+  # A served build whose commit is not the deployed one means the tree moved and
+  # nothing rebuilt — the exact state a half-finished deploy leaves behind.
+  case "$served" in
+    '' | *"g${head:0:10}"*) ;;
+    *) printf '          \033[33mwarning:\033[0m that build is not %s — rerun: saga-tools update --force\n' "${head:0:10}" ;;
+  esac
+
+  printf 'units     '
+  sudo systemctl is-active saga-api saga-worker | paste -sd' ' -
+}
+
+cmd_update() {
+  local force=${1:-}
+  preflight
+  ensure_remote
+
+  say "Fetching $BRANCH from $REMOTE"
+  target_git fetch origin "$BRANCH" || die "cannot reach $REMOTE"
+  local old new
+  old=$(target_git rev-parse HEAD)
+  new=$(target_git rev-parse FETCH_HEAD)
+  printf '  deployed: %s\n  available: %s\n' "$old" "$new"
+
+  if [ "$old" = "$new" ] && [ "$force" != "--force" ]; then
+    say "Already at $new — nothing to do (pass --force to rebuild anyway)"
+    exit 0
+  fi
+
+  if [ -n "$(target_git status --porcelain --untracked-files=no)" ]; then
+    target_git status --short --untracked-files=no
+    die "$TARGET has uncommitted tracked changes — resolve them before updating"
+  fi
+
+  if [ "$old" != "$new" ]; then
+    # Refuse a rewritten remote rather than resolving it: discarding the deployed
+    # commit is a decision for whoever rewrote the history, not for this script.
+    target_git merge-base --is-ancestor "$old" "$new" ||
+      die "$BRANCH is not a fast-forward from $old — the remote history was rewritten. Deliberately discard the deployed commit with:
+  sudo -u $SERVICE_USER git -C $TARGET reset --hard $new
+then rerun: saga-tools update --force"
+    say "Fast-forwarding $TARGET to $new"
+    target_git merge --ff-only FETCH_HEAD
+  fi
+
+  # The build, publish, restart and verify half, from the tree just fetched — so an
+  # update also picks up changes to the deploy procedure itself.
+  say "Building and restarting"
+  exec "$TARGET/deploy/update.sh" --rebuild
+}
+
+case "${1:-}" in
+  update) shift; cmd_update "${1:-}" ;;
+  status) cmd_status ;;
+  -h | --help | help | '') usage ;;
+  *) usage >&2; die "unknown command: $1" ;;
+esac

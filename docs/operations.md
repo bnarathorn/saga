@@ -42,16 +42,18 @@ to be a built checkout — source, `node_modules` and `dist` together.
 
 ```bash
 sudo install -d -o "$USER" -g "$USER" /opt/saga
-git clone https://github.com/bnarathorn/saga.git /opt/saga    # private: gh auth login first
+git clone https://github.com/bnarathorn/saga.git /opt/saga
 cd /opt/saga
 PNPM_STORE_DIR=/opt/saga/.pnpm-store pnpm install --frozen-lockfile
 pnpm build                          # server, worker, Guild Hall's static build, and the CLI
 sudo chown -R saga:saga /opt/saga
+sudo install -m 755 deploy/saga-tools /usr/local/bin/saga-tools
 ```
 
-Build as an administrator and hand the tree over afterwards, as above: the `saga` account is
-`nologin` with no git credentials of its own, and the units never write to `/opt/saga`, so it
-only ever needs to read it.
+Build as an administrator and hand the tree over afterwards, as above: the units never write to
+`/opt/saga`, so the `saga` account only ever needs to read it. Every upgrade after this one goes
+through `saga-tools`, which builds as that account with a home elsewhere and needs neither
+`chown` pass — see the [upgrade procedure](#upgrade-procedure).
 
 `PNPM_STORE_DIR` keeps that `chown` inside this tree. pnpm hardlinks packages into
 `node_modules` from a content-addressable store in the deploying user's home, and ownership
@@ -139,8 +141,9 @@ sudo ln -s /etc/nginx/sites-available/guild-hall.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-Repeat the `rsync` on every upgrade — Guild Hall is independent of the API, which also means
-nothing redeploys it for you. `server_name`, the two `ssl_certificate` paths and `root` are
+Guild Hall is independent of the API, so it has to be republished on every upgrade — that
+`rsync` is one of the steps `saga-tools update` performs for you. `server_name`, the two
+`ssl_certificate` paths and `root` are
 placeholders; `nginx -t` fails until the certificate exists, which is deliberate, because
 `SAGA_COOKIE_SECURE=true` makes a plaintext origin a console nobody can sign in to.
 
@@ -233,43 +236,51 @@ pnpm db:migrate    # apply pending
 
 1. **Back up first.** `pg_dump` before every upgrade; forward-only migrations have no `down`.
 2. Read the release notes for migrations that rewrite data.
-3. `systemctl stop saga-worker` — let in-flight jobs finish or expire.
-4. Deploy the new build to `/opt/saga`, then `rsync` `apps/web/dist` to nginx's root again:
+3. Deploy:
 
    ```bash
-   sudo chown -R "$USER":"$USER" /opt/saga     # the tree belongs to saga between deploys
-   git -C /opt/saga pull --ff-only
-   cd /opt/saga && PNPM_STORE_DIR=/opt/saga/.pnpm-store pnpm install --frozen-lockfile && pnpm build
-   sudo chown -R saga:saga /opt/saga
-   sudo rsync -a --delete /opt/saga/apps/web/dist/ /var/www/saga-app/
-   sudo chown -R www-data:www-data /var/www/saga-app
+   saga-tools status     # deployed commit, whether the remote is ahead, what is being served
+   saga-tools update
    ```
 
-   The two `chown` passes are the whole trick. `/opt/saga` is owned by `saga` so the units can
-   read it and nothing can write it at runtime, which also means `git pull` as yourself stops on
-   `detected dubious ownership in repository at '/opt/saga'` — git refuses to act on a tree it
-   does not trust. Take it, build, hand it back. Do not add it to `safe.directory` and build as
-   `saga` instead: that account is `nologin` with no git credentials and no reason to gain write
-   access to its own code.
+   `deploy/saga-tools`, installed as `/usr/local/bin/saga-tools`, is the supported path. It
+   fetches the published branch into `/opt/saga` as the service account — the repository is
+   public, so no credential is involved — fast-forwards, and then hands off to
+   `deploy/update.sh --rebuild` for the rest: `pnpm install --frozen-lockfile`, `pnpm build`,
+   `rsync` of `apps/web/dist` into nginx's root, `systemctl restart saga-migrate` and then
+   `saga-api saga-worker`. Because the build half comes from the tree it just fetched, an
+   upgrade also picks up changes to the upgrade procedure itself.
 
-   `PNPM_STORE_DIR` is what keeps the second `chown` from reaching outside this tree, and it is
-   not optional. pnpm does not copy packages into `node_modules`; it hardlinks them from its
-   content-addressable store, which by default lives in the deploying user's home. Ownership is a
-   property of the inode, not of the path, so `chown -R saga:saga /opt/saga` follows every one of
-   those links and rewrites the store as well — thousands of files in a directory this deployment
-   does not own, shared with every other checkout on the machine. The symptom arrives later and
-   nowhere near here: any `pnpm install` by that user then dies on
-   `EPERM: operation not permitted, chmod`, because pnpm cannot chmod a file it no longer owns,
-   and the only repair is deleting the store and re-downloading it. Pointing the store inside
-   `/opt/saga` makes the deploy self-contained, at the cost of one store per deployment.
+   It refuses rather than guesses. A tree with uncommitted tracked changes, or a remote whose
+   history was rewritten so the deployed commit is no longer an ancestor, both stop it before
+   anything moves, and the rewritten-history message names the `reset --hard` that would
+   deliberately discard the deployed commit.
 
-   Sizing note: that store is a few hundred megabytes and is not shared with anything else on the
-   host. `pnpm store prune` inside `/opt/saga` reclaims what old deploys left behind.
+   To deploy a commit that is not on the remote yet — a hotfix, or a branch you have not
+   pushed — use `deploy/update.sh` from a developer checkout instead. It carries the commit
+   across as a git bundle, which needs no credentials on the server either.
 
-5. `systemctl restart saga-migrate` — one-shot, advisory-locked, safe to run twice.
-6. `systemctl restart saga-api saga-worker`.
-7. Check `/api/shrine/schema`: `current_version` must equal `expected_version`. It needs
-   authentication; `/health/ready` reports the same two numbers without a token.
+4. Verify. `saga-tools update` already polls `/api/cli/saga` until the served CLI is stamped
+   with the commit it deployed, and fails if it is not. Then check `/api/shrine/schema`:
+   `current_version` must equal `expected_version`. It needs authentication; `/health/ready`
+   reports the same two numbers without a token.
+
+**Why the build runs as the service account.** `/opt/saga` is owned by `saga` so the units can
+read it and nothing else can write it at runtime — but a build has to write `dist/` into that
+tree, so something must own it. The alternative is to take the tree (`chown -R "$USER"`), build,
+and hand it back, and that route has a trap worth knowing about even though the scripts avoid
+it: pnpm hardlinks packages from a content-addressable store in the deploying user's home rather
+than copying them, and ownership is a property of the inode, so `chown -R saga:saga /opt/saga`
+follows every one of those links and rewrites the shared store as well. The symptom arrives
+later and nowhere near the cause — any `pnpm install` by that user then dies on
+`EPERM: operation not permitted, chmod`, and the only repair is deleting the store and
+re-downloading it. Taking that route means pinning `PNPM_STORE_DIR` inside `/opt/saga` first.
+
+Building as `saga` sidesteps both the chown passes and the store, at the cost of one constraint:
+that account's home _is_ `/opt/saga`, so the build must be given a home elsewhere or it leaves
+`.cache/` and `.npm/` inside the checkout. Both scripts set `HOME=/var/tmp/saga-build-home`,
+which also keeps the pnpm store out of the tree. `pnpm store prune` there reclaims what old
+deploys left behind.
 
 **Failure behaviour.** If a migration fails, earlier migrations stay applied and the failing
 one is not recorded, so the ledger is accurate and the run is repeatable after a fix. One
@@ -277,12 +288,13 @@ exception needs a human: a failed `CREATE INDEX CONCURRENTLY` leaves an _invalid
 which the migration's `IF NOT EXISTS` will then skip on the retry. Check for one before
 retrying, and drop it if present:
 
-````sql
+```sql
 SELECT c.relname FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
  WHERE NOT i.indisvalid;
-``` The API
-refuses to report ready while the schema version disagrees with the build, so an orchestrator
-will not route traffic to it.
+```
+
+The API refuses to report ready while the schema version disagrees with the build, so an
+orchestrator will not route traffic to it.
 
 **Rollback.** There is none for the schema. Rolling _the application_ back is safe only while
 the older build still understands the newer schema; otherwise restore the backup. This is the
@@ -292,7 +304,7 @@ intended friction — it is why step 1 exists.
 
 ```bash
 pg_dump --format=custom --file=saga-$(date +%F).dump "$DATABASE_URL"
-````
+```
 
 That single database holds everything durable: projects, Lore and its full version history,
 Quests, checkpoints and handoffs, security records and audit logs. It does **not** hold your

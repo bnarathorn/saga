@@ -204,8 +204,18 @@ Measured 2026-08-06, not copied forward — re-measure rather than trust this ta
 ## 8. Deployment
 
 `deploy/` carries three shapes: Docker Compose, and an nginx + systemd reference deployment for a
-single host. `deploy/update.sh` performs an update against a systemd install and is the supported
-path — it moves the commit as a git bundle rather than a `git pull`, so the service account needs
+single host. There are two ways to update the latter, and they differ only in where the commit
+comes from.
+
+`deploy/saga-tools`, installed as `/usr/local/bin/saga-tools`, is what an operator runs:
+`saga-tools status` reports the deployed commit, whether the remote is ahead and which CLI build
+is being served; `saga-tools update` fetches the published branch straight into `/opt/saga` — the
+repository is public, so no credential is involved — fast-forwards, and hands off to the script
+below for the build. It refuses a non-fast-forward rather than resolving it, naming the
+`reset --hard` that would deliberately discard the deployed commit.
+
+`deploy/update.sh` is for a commit the remote does not have yet, and it moves the commit as a git
+bundle rather than a `git pull`, so the service account needs
 no repository credentials, builds with `HOME` outside the checkout (the service account's home may
 _be_ the deploy directory), republishes the web bundle, restarts migrations before the API and
 worker, and then polls until the served CLI reports the commit just deployed. `--rebuild` rebuilds
