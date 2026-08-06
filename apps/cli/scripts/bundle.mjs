@@ -46,9 +46,16 @@ function buildId() {
   const sha = git(['rev-parse', '--short=10', 'HEAD']);
   if (sha === null) return `local.${stamp(new Date())}`;
 
-  // A failed `git status` is treated as dirty: unknown provenance must not produce the version
-  // string a clean checkout of this commit would.
-  if (git(['status', '--porcelain']) !== '') return `g${sha}.dirty.${stamp(new Date())}`;
+  // Tracked changes only, which is what `git describe --dirty` means by it. Untracked files
+  // cannot reach the bundle unless tracked code imports them, and counting them would mark every
+  // build in `/opt/saga` dirty forever: the service account's home *is* the deploy directory, so
+  // npm and corepack leave `.cache/` and `.npm/` inside the checkout on first build.
+  //
+  // A failed `git status` is still treated as dirty: unknown provenance must not produce the
+  // version string a clean checkout of this commit would.
+  if (git(['status', '--porcelain', '--untracked-files=no']) !== '') {
+    return `g${sha}.dirty.${stamp(new Date())}`;
+  }
 
   const committed = git(['log', '-1', '--format=%cI']);
   return `g${sha}.${stamp(committed === null ? new Date() : new Date(committed))}`;
