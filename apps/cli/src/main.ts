@@ -7,6 +7,7 @@ import { statusCommand } from './commands/status.js';
 import { updateCommand } from './commands/update.js';
 import { CredentialStore } from './credentials.js';
 import { describeLocalChanges } from './local-changes.js';
+import { renderMcpConfig } from './mcp-config.js';
 import { detectWorkspace, findBinding, loadConfig } from './workspace.js';
 
 registerCommand('connect', connectCommand);
@@ -14,7 +15,26 @@ registerCommand('status', statusCommand);
 registerCommand('doctor', doctorCommand);
 registerCommand('update', updateCommand);
 
-registerCommand('mcp', async () => {
+registerCommand('mcp', async (argv) => {
+  // `saga connect` points here when it refuses to rewrite a malformed config file, so the
+  // block it would have written has to be obtainable without starting the server.
+  if (argv.includes('--print')) {
+    const workspace = detectWorkspace();
+    const config = loadConfig();
+    const binding = findBinding(config, workspace.root);
+    const serverUrl = binding?.serverUrl ?? config.serverUrl;
+    if (serverUrl === null || serverUrl === undefined || binding === null) {
+      process.stderr.write(
+        'This folder is not connected to a project. Run `saga connect` first.\n',
+      );
+      return 1;
+    }
+    process.stdout.write(
+      `${renderMcpConfig({ root: workspace.root, serverUrl, projectRef: binding.projectId })}\n`,
+    );
+    return 0;
+  }
+
   // Imported lazily so `saga status` does not pay for the MCP SDK.
   const { runMcpServer } = await import('./mcp/main.js');
   await runMcpServer(process.env.SAGA_MCP_CLIENT ?? 'saga-mcp');

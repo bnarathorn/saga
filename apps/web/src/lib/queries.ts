@@ -52,6 +52,7 @@ export const queryKeys = {
   metrics: ['shrine', 'metrics'] as const,
   audit: (params?: string) => ['shrine', 'audit', params ?? ''] as const,
   devicePending: ['device', 'pending'] as const,
+  projectTokens: (ref: string) => ['tokens', ref] as const,
 };
 
 export function useMe(): UseQueryResult<MeResponse> {
@@ -109,6 +110,51 @@ export function useApproveDevice(): UseMutationResult<
     mutationFn: (input) => api.post<{ token: AgentTokenDto }>('/api/auth/device/approve', input),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['device'] });
+    },
+  });
+}
+
+/**
+ * A project's agent tokens. `security:manage` only, so `enabled` lets the page skip the request
+ * for a caller who would only get a 403 — the same shape as `useDevicePending`.
+ *
+ * Not a `ListResponse`: the route returns `{ items }` with no cursor and no limit, and `api.get`
+ * casts without validating, so claiming pagination fields here would be a type that is false at
+ * runtime.
+ *
+ * `POLL.slow` because the list only changes when an administrator acts or a device flow
+ * completes; `last_used_at` is the one field that moves on its own.
+ */
+export function useProjectTokens(
+  ref: string,
+  enabled = true,
+): UseQueryResult<{ items: AgentTokenDto[] }> {
+  return useQuery({
+    queryKey: queryKeys.projectTokens(ref),
+    queryFn: ({ signal }) =>
+      api.get<{ items: AgentTokenDto[] }>(
+        `/api/projects/${encodeURIComponent(ref)}/tokens`,
+        signal,
+      ),
+    refetchInterval: POLL.slow,
+    enabled: enabled && ref.length > 0,
+  });
+}
+
+/** Revocation is immediate and irreversible; the reason is required and lands in the audit log. */
+export function useRevokeAgentToken(): UseMutationResult<
+  { token: AgentTokenDto },
+  Error,
+  { id: string; reason: string }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }) =>
+      api.post<{ token: AgentTokenDto }>(`/api/tokens/${encodeURIComponent(id)}/revoke`, {
+        reason,
+      }),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['tokens'] });
     },
   });
 }

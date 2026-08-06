@@ -13,6 +13,7 @@ import { LoreEntryPage } from './pages/LoreEntry.jsx';
 import { ProjectActivity } from './pages/ProjectActivity.jsx';
 import { ProjectDetailPage, ProjectOverview } from './pages/ProjectDetail.jsx';
 import { ProjectRelations } from './pages/ProjectRelations.jsx';
+import { ProjectTokensPage } from './pages/ProjectTokens.jsx';
 import { PartyPage } from './pages/Party.jsx';
 import { ProjectsPage } from './pages/Projects.jsx';
 import { QuestBoardPage } from './pages/QuestBoard.jsx';
@@ -74,6 +75,7 @@ export function App() {
               <Route path="relations" element={<ProjectRelations />} />
               <Route path="activity" element={<ProjectActivity />} />
               <Route path="shrine" element={<ShrinePage />} />
+              <Route path="tokens" element={<ProjectTokensPage />} />
               {/* Keeps an unknown project sub-path inside the project shell rather than
                   falling through to the top-level catch-all. */}
               <Route path="*" element={<UnknownProjectSection />} />
