@@ -96,6 +96,14 @@ POST   /api/projects/:projectRef/archive     reason required
 POST   /api/projects/:projectRef/restore     reason required
 ```
 
+Two per-project policies decide what an agent may do unattended, both settable on create and on
+`PATCH`, both defaulting to `auto` for a new project:
+
+| Field                   | `auto`                                        | `manual`                                       |
+| ----------------------- | --------------------------------------------- | ---------------------------------------------- |
+| `lore_approval_mode`    | a proposed Lore update publishes itself       | it waits for approval in Guild Hall            |
+| `quest_completion_mode` | a Quest closes when its agent says it is done | the declaration is recorded, a person confirms |
+
 ### Lore
 
 ```
@@ -139,9 +147,27 @@ GET    /api/sessions/:sessionId
 POST   /api/sessions/:sessionId/activate     phase two: classify the first task
 POST   /api/sessions/:sessionId/promote      inquiry → real work
 POST   /api/sessions/:sessionId/checkpoints  compare-and-swap on the revision
-POST   /api/sessions/:sessionId/end          final handoff + clean end
+POST   /api/sessions/:sessionId/end          final handoff + clean end + Quest outcome
 POST   /api/sessions/:sessionId/heartbeat    durable session liveness
 ```
+
+#### Closing a Quest
+
+`/end` accepts `quest_status`, the agent's statement of what became of the Quest. Nothing is
+inferred from the work state: a handoff with no next steps still leaves the Quest open, because
+stopping is not the same as finishing.
+
+The terminal statuses — `completed` and `cancelled` — are gated twice. The project must be on
+`quest_completion_mode: auto`, and no other session may still be attached to the Quest. Either
+refusal comes back as `quest_status_held`, naming the reason, with the Quest untouched and the
+handoff written as normal; `quest_status` in the response is always the status the Quest
+actually holds. A non-terminal status such as `blocked` applies under either mode, since it
+closes nothing.
+
+The asymmetry is deliberate. `completed` and `cancelled` are outside the resumable set, a Quest
+named by id after it closes classifies as `new_work` rather than resuming, and no MCP tool
+reaches `POST /api/quests/:questId/reopen` — so an unwanted close silently forks the work,
+while an unwanted _non_-close costs one click in Guild Hall.
 
 ### Party
 

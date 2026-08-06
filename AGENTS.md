@@ -309,4 +309,4 @@ first, which is the real prerequisite.
 | [`docs/operations.md`](docs/operations.md)               | Deployment, upgrades, backups, troubleshooting   |
 | [`docs/security.md`](docs/security.md)                   | Authentication, scopes, secrets, audit           |
 | [`docs/testing.md`](docs/testing.md)                     | Suites, what they are for, how to run them       |
-| [`docs/adr/`](docs/adr/)                                 | The eight architecture decision records          |
+| [`docs/adr/`](docs/adr/)                                 | The ten architecture decision records            |

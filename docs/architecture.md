@@ -227,6 +227,20 @@ Continuation prefers the most recent `final_handoff`; when a session was interru
 writing one, the latest checkpoint is used instead and clearly labelled _recovered from an
 interrupted session_.
 
+### Closing a Quest
+
+A Quest closes because someone said so. The agent declares the outcome with `quest_status` on
+its final handoff, and `core.projects.quest_completion_mode` decides whether that lands or waits
+for a person — the same shape as `lore_approval_mode`, answering the same question for a
+different domain.
+
+Inferring completion from the work state was rejected. The failure is asymmetric: `completed`
+and `cancelled` sit outside `RESUMABLE`, a Quest named by id after it closes classifies as
+`new_work` rather than resuming, and no MCP tool reaches the reopen endpoint — so a close nobody
+asked for silently forks the work, while a Quest left open costs one click. Terminal statuses
+are refused for the same reason while another session is still attached: Quest-to-session is
+one-to-many, and one agent stopping is not the work being finished.
+
 ---
 
 ## 7. Party: everything is leased
