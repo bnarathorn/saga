@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import type { Stats } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,7 +53,8 @@ export function registerCliRoutes(app: FastifyInstance, ctx: AppContext): void {
       .header('content-disposition', 'attachment; filename="saga"')
       .header('content-length', stats.size)
       .header('etag', etag)
-      .header('x-saga-cli-version', await readArtifactVersion(artifactDir))
+      .header('x-saga-cli-version', await readArtifactVersion(artifactDir, stats))
+      .header('x-saga-cli-build', await readArtifactBuild(artifactPath, stats))
       .send(createReadStream(artifactPath));
   });
 }
@@ -69,12 +72,30 @@ export function resolveCliArtifactDir(configured: string | null): string {
 /**
  * The version of the artifact, which is not `config.version`: that is the server's, and the two
  * are only equal when both came from the same build. Read from the manifest `bundle.mjs` writes
- * beside `dist/`, and cached, because a client that fetches the CLI fetches it once.
+ * beside `dist/`.
+ *
+ * Cached on the artifact's own size and mtime rather than on the directory alone. `bundle.mjs`
+ * writes the manifest and the executable in the same run, so the executable's stat stands for
+ * both — and a rebuild in place under a running server, which is what deploying from a working
+ * tree does, would otherwise leave this reporting the previous build's version for the life of
+ * the process while serving the new bytes.
  */
-let cachedVersion: { dir: string; version: string } | null = null;
+let cachedVersion: {
+  dir: string;
+  size: number;
+  mtimeMs: number;
+  version: string;
+} | null = null;
 
-async function readArtifactVersion(artifactDir: string): Promise<string> {
-  if (cachedVersion?.dir === artifactDir) return cachedVersion.version;
+async function readArtifactVersion(artifactDir: string, stats: Stats): Promise<string> {
+  const cached = cachedVersion;
+  if (
+    cached?.dir === artifactDir &&
+    cached.size === stats.size &&
+    cached.mtimeMs === stats.mtimeMs
+  ) {
+    return cached.version;
+  }
 
   const manifestPath = join(dirname(artifactDir), 'package.json');
   const version = await readFile(manifestPath, 'utf8').then(
@@ -89,6 +110,37 @@ async function readArtifactVersion(artifactDir: string): Promise<string> {
     () => 'unknown',
   );
 
-  cachedVersion = { dir: artifactDir, version };
+  cachedVersion = { dir: artifactDir, size: stats.size, mtimeMs: stats.mtimeMs, version };
   return version;
+}
+
+/**
+ * A digest of the artifact's bytes — the only reliable answer to "am I running this build?".
+ *
+ * The version cannot answer it. Every build of a pre-1.0 tree carries the same `0.1.0`, so a CLI
+ * that compared version strings called itself current against a bundle that shared nothing with
+ * it but the number, and `saga update` did nothing for as long as that stayed true. The bytes are
+ * the identity, and the client can compute the same digest over the file it is running from.
+ *
+ * Cached on the artifact's size and mtime, so hashing 760 KB happens once per build rather than
+ * once per agent host that asks.
+ */
+let cachedBuild: { path: string; size: number; mtimeMs: number; digest: string } | null = null;
+
+async function readArtifactBuild(artifactPath: string, stats: Stats): Promise<string> {
+  const cached = cachedBuild;
+  if (
+    cached?.path === artifactPath &&
+    cached.size === stats.size &&
+    cached.mtimeMs === stats.mtimeMs
+  ) {
+    return cached.digest;
+  }
+
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(artifactPath)) hash.update(chunk as Buffer);
+  const digest = `sha256:${hash.digest('hex')}`;
+
+  cachedBuild = { path: artifactPath, size: stats.size, mtimeMs: stats.mtimeMs, digest };
+  return digest;
 }

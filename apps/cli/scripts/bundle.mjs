@@ -22,6 +22,55 @@ const cliRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packDir = join(cliRoot, 'pack');
 const manifest = JSON.parse(readFileSync(join(cliRoot, 'package.json'), 'utf8'));
 
+/**
+ * The version this build reports, which is `package.json`'s plus an identifier for the build
+ * itself: `0.1.0+gab12cd34ef.20260806103012`.
+ *
+ * A pre-1.0 tree keeps the same three numbers across every build, so `0.1.0` alone said nothing
+ * about which code was in the bundle — `saga update` compared it against the server's and
+ * declared an installed build months out of date to be current. The suffix is semver build
+ * metadata: it is ignored by precedence rules, so `checkApiCompatibility` still reads major 0
+ * minor 1 and nothing about compatibility changes.
+ *
+ * The commit is the identity where there is one, stamped with the commit's own time rather than
+ * the wall clock so that rebuilding a commit reproduces its version. A dirty tree has no such
+ * identity and falls back to the time of the build, which at least never collides.
+ * `SAGA_CLI_BUILD_ID` overrides all of it, for a release process that names its own builds.
+ */
+const version = `${manifest.version}+${buildId()}`;
+
+function buildId() {
+  const named = process.env.SAGA_CLI_BUILD_ID?.trim();
+  if (named !== undefined && named.length > 0) return named;
+
+  const sha = git(['rev-parse', '--short=10', 'HEAD']);
+  if (sha === null) return `local.${stamp(new Date())}`;
+
+  // A failed `git status` is treated as dirty: unknown provenance must not produce the version
+  // string a clean checkout of this commit would.
+  if (git(['status', '--porcelain']) !== '') return `g${sha}.dirty.${stamp(new Date())}`;
+
+  const committed = git(['log', '-1', '--format=%cI']);
+  return `g${sha}.${stamp(committed === null ? new Date() : new Date(committed))}`;
+}
+
+function git(args) {
+  try {
+    return execFileSync('git', args, {
+      cwd: cliRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/** UTC, digits only: build metadata allows alphanumerics and dots, not colons or `+`. */
+function stamp(date) {
+  return date.toISOString().replace(/\D/g, '').slice(0, 14);
+}
+
 // A stale pack directory is worse than none: npm pack would happily ship last release's files
 // alongside this one's.
 rmSync(packDir, { recursive: true, force: true });
@@ -43,6 +92,9 @@ execFileSync(
     '--target=node22',
     '--format=cjs',
     `--outfile=${bundlePath}`,
+    // `version.ts` reads this from the environment with `package.json`'s number as its fallback;
+    // substituting it here is what makes `saga --version` name the build rather than the release.
+    `--define:process.env.SAGA_CLI_VERSION=${JSON.stringify(version)}`,
     '--legal-comments=none',
     '--log-level=warning',
   ],
@@ -59,7 +111,9 @@ writeFileSync(
   `${JSON.stringify(
     {
       name: 'saga-cli',
-      version: manifest.version,
+      // The build's version, not the release's: the API reads this file to answer
+      // `x-saga-cli-version`, and a number shared by every build tells a client nothing.
+      version,
       description: manifest.description,
       bin: { saga: 'dist/saga' },
       files: ['dist', 'README.md'],
@@ -76,12 +130,12 @@ cpSync(join(cliRoot, 'scripts', 'pack-readme.md'), join(packDir, 'README.md'));
 execFileSync('npm', ['pack', '--silent'], { cwd: packDir, stdio: 'inherit' });
 
 process.stdout.write(
-  `\n${bundlePath}\n${join(packDir, `saga-cli-${manifest.version}.tgz`)}\n\n` +
+  `\n${bundlePath}\n${join(packDir, `saga-cli-${version}.tgz`)}\n\n` +
     `The API serves the first of those at /api/cli/saga once this build is in place, so a\n` +
     `client needs no repository and no package manager:\n\n` +
     `  mkdir -p ~/.local/bin\n` +
     `  curl -fsSL https://<your-server>/api/cli/saga -o ~/.local/bin/saga\n` +
     `  chmod +x ~/.local/bin/saga\n\n` +
     `The tarball is for anyone who would rather npm owned the install. It is the same file:\n` +
-    `  npm install -g ./saga-cli-${manifest.version}.tgz\n`,
+    `  npm install -g ./saga-cli-${version}.tgz\n`,
 );

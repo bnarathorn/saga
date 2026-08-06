@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
@@ -476,7 +477,17 @@ describe('saga update', () => {
     return program + `// ${'x'.repeat(120_000)}\n`;
   }
 
-  function stubDownload(body: string, version: string | null = '0.2.0') {
+  /** What the server sends: a digest of the exact bytes it is handing out. */
+  function digestOf(body: string): string {
+    return `sha256:${createHash('sha256').update(body).digest('hex')}`;
+  }
+
+  /** `buildDigest` explicitly `null` stands for a server too old to send a digest at all. */
+  function stubDownload(
+    body: string,
+    version: string | null = '0.2.0',
+    buildDigest: string | null = digestOf(body),
+  ) {
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -486,6 +497,7 @@ describe('saga update', () => {
           headers: {
             'content-type': 'application/octet-stream',
             ...(version === null ? {} : { 'x-saga-cli-version': version }),
+            ...(buildDigest === null ? {} : { 'x-saga-cli-build': buildDigest }),
           },
         });
       }),
@@ -539,6 +551,57 @@ describe('saga update', () => {
     expect(code).toBe(0);
     expect(stdout).toContain('already');
     expect(readFileSync(installed, 'utf8')).toContain('0.1.0');
+  });
+
+  it('installs a different build that carries the same version', async () => {
+    // The whole reason digests exist. A pre-1.0 tree stamps every build `0.1.0`, so comparing
+    // versions here reported "already the build this server is serving" and installed nothing —
+    // for as long as the number stayed put, `saga update` could not deliver a single fix.
+    stubDownload(`${build('0.1.0')}// rebuilt\n`, '0.1.0');
+
+    const code = await updateCommand(['--server', SECURE_SERVER]);
+
+    expect(code).toBe(0);
+    expect(readFileSync(installed, 'utf8')).toContain('// rebuilt');
+  });
+
+  it('says the served build differs rather than just naming the same version', async () => {
+    stubDownload(`${build('0.1.0')}// rebuilt\n`, '0.1.0');
+
+    await updateCommand(['--server', SECURE_SERVER, '--check']);
+
+    // "serving 0.1.0" against an installed 0.1.0 reads as a no-op, and the user walks away with
+    // the stale build they came to replace.
+    expect(stdout).toContain('a different build of 0.1.0');
+    expect(readFileSync(installed, 'utf8')).not.toContain('// rebuilt');
+  });
+
+  it('reports both digests under --check so a mismatch can be seen', async () => {
+    const body = `${build('0.1.0')}// rebuilt\n`;
+    stubDownload(body, '0.1.0');
+
+    await updateCommand(['--server', SECURE_SERVER, '--check', '--json']);
+
+    const report = JSON.parse(stdout) as {
+      installed_build: string;
+      available_build: string;
+      up_to_date: boolean;
+    };
+    expect(report.available_build).toBe(digestOf(body));
+    expect(report.installed_build).toBe(digestOf(build('0.1.0')));
+    expect(report.up_to_date).toBe(false);
+  });
+
+  it('falls back to the version against a server that sends no digest', async () => {
+    // An older API has no `x-saga-cli-build` to offer. The version is then the only evidence
+    // there is, and it is still better than downloading 760 KB on every invocation.
+    stubDownload(`${build('0.1.0')}// rebuilt\n`, '0.1.0', null);
+
+    const code = await updateCommand(['--server', SECURE_SERVER]);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain('already');
+    expect(readFileSync(installed, 'utf8')).not.toContain('// rebuilt');
   });
 
   it('refuses a response that is not a CLI build rather than installing it', async () => {

@@ -1,5 +1,14 @@
 import { execFile } from 'node:child_process';
-import { chmodSync, copyFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  chmodSync,
+  copyFileSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { SagaError } from '@saga/shared';
@@ -61,19 +70,34 @@ export async function updateCommand(argv: string[]): Promise<number> {
 
   const available = response.headers.get('x-saga-cli-version') ?? 'unknown';
   const current = CLI_VERSION;
-  // `unknown` means the server could not read its own artifact manifest, which is not evidence
-  // that the build is the same one — so it downloads rather than claiming to be up to date.
-  const upToDate = available !== 'unknown' && available === current;
+  const availableBuild = response.headers.get('x-saga-cli-build');
+  const currentBuild = installedBuildDigest(target);
+  // What identifies a build is its bytes, not its version. Comparing versions is what made this
+  // command a no-op for a whole release: a pre-1.0 tree stamps every build `0.1.0`, so an
+  // installed bundle from before a fix reported itself as already current. The version
+  // comparison survives only for a server too old to send a digest, where it is the best
+  // evidence available; `unknown` on either side is not evidence of sameness, so it downloads.
+  const upToDate =
+    availableBuild !== null && currentBuild !== null
+      ? availableBuild === currentBuild
+      : available !== 'unknown' && available === current;
 
   if (check || (upToDate && !force)) {
     // Nothing here reads the body, and an undrained one holds the connection open.
     await response.body?.cancel().catch(() => undefined);
     if (json) {
       process.stdout.write(
-        `${JSON.stringify({ installed_version: current, available_version: available, up_to_date: upToDate, installed_path: target, server: serverUrl }, null, 2)}\n`,
+        `${JSON.stringify({ installed_version: current, available_version: available, installed_build: currentBuild, available_build: availableBuild, up_to_date: upToDate, installed_path: target, server: serverUrl }, null, 2)}\n`,
       );
     } else if (upToDate) {
       process.stdout.write(`saga ${current} is already the build ${serverUrl} is serving.\n`);
+    } else if (available === current) {
+      // Same number, different bytes. Saying only "serving 0.1.0" here would read as a no-op
+      // and send the user away with the stale build they came to replace.
+      process.stdout.write(
+        `saga ${current} is installed; ${serverUrl} is serving a different build of ${available}.\n` +
+          'Run `saga update` to install it.\n',
+      );
     } else {
       process.stdout.write(
         `saga ${current} is installed; ${serverUrl} is serving ${available}.\n` +
@@ -118,14 +142,36 @@ export async function updateCommand(argv: string[]): Promise<number> {
 
   if (json) {
     process.stdout.write(
-      `${JSON.stringify({ installed_path: installed, previous_version: current, installed_version: available, updated: true, server: serverUrl }, null, 2)}\n`,
+      `${JSON.stringify({ installed_path: installed, previous_version: current, previous_build: currentBuild, installed_version: available, installed_build: availableBuild, updated: true, server: serverUrl }, null, 2)}\n`,
     );
   } else {
-    process.stdout.write(
-      `Updated ${installed}\n  ${current} → ${available === 'unknown' ? 'the build this server serves' : available}\n`,
-    );
+    // Naming the same version on both sides of the arrow reads as though nothing happened, which
+    // is the case a digest exists to catch — so that one names the build it just installed.
+    const installedName =
+      available === 'unknown'
+        ? 'the build this server serves'
+        : available === current && availableBuild !== null
+          ? `${available} (build ${availableBuild.slice('sha256:'.length, 'sha256:'.length + 12)})`
+          : available;
+    process.stdout.write(`Updated ${installed}\n  ${current} → ${installedName}\n`);
   }
   return 0;
+}
+
+/**
+ * The digest of the build this process is running from, in the form the server sends.
+ *
+ * Never fatal. `--check` from a development checkout has no installable path at all, and a
+ * digest that cannot be read only costs the byte comparison — the caller falls back to versions,
+ * which is what this command did before digests existed.
+ */
+function installedBuildDigest(target: string | null): string | null {
+  try {
+    const bytes = readFileSync(target ?? installPath());
+    return `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  } catch {
+    return null;
+  }
 }
 
 /**

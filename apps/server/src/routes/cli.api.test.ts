@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApiHarness, type ApiHarness } from '../testing/api-harness.js';
 
@@ -29,10 +30,12 @@ describe('GET /api/cli/saga', () => {
   const ARTIFACT = '#!/usr/bin/env node\nconsole.log("saga");\n';
   let built: ApiHarness;
   let unbuilt: ApiHarness;
+  let builtPack: string;
 
   beforeAll(async () => {
+    builtPack = fakePack({ artifact: ARTIFACT, version: '9.9.9' });
     built = await createApiHarness({
-      config: { SAGA_CLI_ARTIFACT_DIR: fakePack({ artifact: ARTIFACT, version: '9.9.9' }) },
+      config: { SAGA_CLI_ARTIFACT_DIR: builtPack },
     });
     unbuilt = await createApiHarness({
       config: { SAGA_CLI_ARTIFACT_DIR: fakePack({ version: null }) },
@@ -62,6 +65,16 @@ describe('GET /api/cli/saga', () => {
     expect(built.config.version).not.toBe('9.9.9');
   });
 
+  it('reports a digest of the artifact, which the version cannot substitute for', async () => {
+    const response = await built.anonymous().get('/api/cli/saga');
+
+    // `saga update` compares this against a digest of the file it is running from. A version
+    // would not do: two builds of a pre-1.0 tree share one, and the client would install nothing.
+    expect(response.headers['x-saga-cli-build']).toBe(
+      `sha256:${createHash('sha256').update(ARTIFACT).digest('hex')}`,
+    );
+  });
+
   it('answers 304 to a client that already has this build', async () => {
     const first = await built.anonymous().get('/api/cli/saga');
     const etag = first.headers.etag as string;
@@ -78,5 +91,25 @@ describe('GET /api/cli/saga', () => {
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
     expect(response.body.error.message).toMatch(/pnpm --filter @saga\/cli bundle/);
+  });
+
+  // Last, because it replaces the artifact the tests above read.
+  it('reports the new build after the artifact is replaced under a running server', async () => {
+    // Deploying from a working tree rebuilds in place. A version cached for the life of the
+    // process would then name the previous build while the route served the new bytes, and
+    // every client would be told it was already current.
+    const REBUILT = `${ARTIFACT}// rebuilt\n`;
+    writeFileSync(join(builtPack, 'saga'), REBUILT);
+    writeFileSync(
+      join(dirname(builtPack), 'package.json'),
+      JSON.stringify({ name: 'saga-cli', version: '9.9.10' }),
+    );
+
+    const response = await built.anonymous().get('/api/cli/saga');
+
+    expect(response.headers['x-saga-cli-version']).toBe('9.9.10');
+    expect(response.headers['x-saga-cli-build']).toBe(
+      `sha256:${createHash('sha256').update(REBUILT).digest('hex')}`,
+    );
   });
 });

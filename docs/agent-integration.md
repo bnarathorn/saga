@@ -86,6 +86,15 @@ from, and runs the result before keeping it. A download that is not a CLI build 
 a build that does not run is rolled back — so the command cannot leave a machine without the
 command that would fix it.
 
+"Am I already running this build?" is answered by a SHA-256 digest of the bytes, which the
+route sends as `x-saga-cli-build` and the CLI computes over the file it is running from. The
+version cannot answer it: Saga is pre-1.0 and every build stamps the same `0.1.0`, so a client
+comparing versions reported itself current against a bundle that shared nothing with it but
+the number. Builds carry that number plus an identifier for the build itself —
+`0.1.0+gab12cd34ef.20260806103012`, the commit and its timestamp — which is semver build
+metadata and so changes nothing about compatibility. Against a server too old to send a
+digest, the version comparison is still the fallback.
+
 It needs no token; the endpoint is public. If the CLI lives somewhere the user cannot write —
 `/usr/local/bin`, say — the command says so and changes nothing, and elevated privileges or a
 per-user install (`~/.local/bin/saga`) are the two ways forward.
