@@ -34,7 +34,7 @@ The web console is **Guild Hall**. Agents reach Saga over MCP or the typed `@sag
 apps/       server (Fastify) · worker · web (Guild Hall) · cli (`saga` + MCP server)
 packages/   shared · contracts · database · core · shrine · quest · lore · party · agent-sdk
 db/         forward-only migrations 0001–0006, seeds
-deploy/     Docker, nginx, systemd, update.sh
+deploy/     Docker, nginx, systemd, saga-tools
 docs/       architecture · api · agent-integration · operations · security · testing · adr/
 scripts/    dev, stack, verify, demo, openapi generation, package scaffolding
 ```
@@ -196,6 +196,23 @@ Measured 2026-08-06, not copied forward — re-measure rather than trust this ta
   pnpm puts in front of it, and killing that wrapper skips the handler entirely — which makes a
   working shutdown look broken.
 
+- **`.dockerignore` is load-bearing, and it tracks `.gitignore`.** Both Dockerfiles `COPY . .`,
+  and the runtime stage copies `/app/apps` and `/app/packages` wholesale. Without the ignore file
+  the developer's own `dist/` rode along — and since Docker preserves mtimes, `tsc -b` then found
+  every project up to date and compiled nothing, so the image shipped whatever the host had built
+  from whatever branch it was on. `node_modules` was the other 240 MB of a 256 MB context, and it
+  overwrote the `deps` stage's lockfile install. Every path excluded is also in `.gitignore`,
+  which is what keeps `git status` inside the build stage clean — and that is what keeps the CLI
+  from stamping itself `.dirty`. If you exclude a _tracked_ path, every image build is dirty.
+
+- **The build stage installs git on purpose.** `node:22-bookworm-slim` has none, so
+  `bundle.mjs`'s `git rev-parse` failed silently and every Compose image served
+  `0.1.0+local.<wall clock>`: a version naming no commit, differing on every rebuild of an
+  unchanged tree — so every agent host was told an update was available for a build that changed
+  nothing — and not the `0.1.0+g<sha>` that README step 6 tells the user to look for. `.git`
+  therefore stays _in_ the context. `SAGA_CLI_BUILD_ID` is plumbed through as a Compose build arg
+  for a release process that names its own builds.
+
 - **Verify before acting.** Roughly a fifth of reported findings do not survive checking. The
   fastest discriminators are running the function, `EXPLAIN`, and measuring.
 
@@ -203,23 +220,24 @@ Measured 2026-08-06, not copied forward — re-measure rather than trust this ta
 
 ## 8. Deployment
 
-`deploy/` carries three shapes: Docker Compose, and an nginx + systemd reference deployment for a
-single host. There are two ways to update the latter, and they differ only in where the commit
-comes from.
+`deploy/` carries two shapes: Docker Compose, and an nginx + systemd reference deployment for a
+single host. There is exactly one way to update the latter, and `deploy/saga-tools` is it.
 
-`deploy/saga-tools`, installed as `/usr/local/bin/saga-tools`, is what an operator runs:
-`saga-tools status` reports the deployed commit, whether the remote is ahead and which CLI build
-is being served; `saga-tools update` fetches the published branch straight into `/opt/saga` — the
-repository is public, so no credential is involved — fast-forwards, and hands off to the script
-below for the build. It refuses a non-fast-forward rather than resolving it, naming the
-`reset --hard` that would deliberately discard the deployed commit.
+Installed as `/usr/local/bin/saga-tools`: `status` reports the deployed commit, whether the remote
+is ahead and which CLI build is being served; `update` fetches the published branch straight into
+`/opt/saga` — the repository is public, so no credential is involved — fast-forwards, then builds
+with `HOME` outside the checkout (the service account's home may _be_ the deploy directory),
+republishes the web bundle, restarts migrations before the API and worker, and polls until the
+served CLI reports the commit just deployed. `rebuild` is that second half alone, for a rollback
+or an interrupted build; it reaches the network only to verify. `update` refuses a
+non-fast-forward rather than resolving it, naming the `reset --hard` that would deliberately
+discard the deployed commit.
 
-`deploy/update.sh` is for a commit the remote does not have yet, and it moves the commit as a git
-bundle rather than a `git pull`, so the service account needs
-no repository credentials, builds with `HOME` outside the checkout (the service account's home may
-_be_ the deploy directory), republishes the web bundle, restarts migrations before the API and
-worker, and then polls until the served CLI reports the commit just deployed. `--rebuild` rebuilds
-whatever the target has checked out, which is also the second half of a rollback.
+There used to be a second script, `deploy/update.sh`, which moved a commit from a developer
+checkout as a git bundle. It was written when the repository was private and the service account
+could not fetch; that has not been true since `b62a16c`, and `saga-tools` had been calling it for
+the build half anyway. Removed — a commit reaches production by being on the published branch.
+Its history is at `298cffa` if the bundle mechanism is ever wanted back.
 
 A CLI build is identified by a SHA-256 of its bytes (`x-saga-cli-build`), not by its version:
 every pre-1.0 build would otherwise stamp `0.1.0` and `saga update` could never tell two apart.
@@ -245,9 +263,13 @@ Known rather than discovered, and none of them defects.
    cluster-wide and survives.
 6. **Single-node reference deployment.** Horizontal scaling is not designed for beyond what leasing
    already permits.
-7. **The Docker path has never been booted end to end here.** Both recipes were verified by
-   simulating `${VAR:-default}` interpolation and feeding the result to `loadConfig()`. Worth one
-   real `docker compose up -d --build` on a machine that has the Compose plugin.
+7. **The Docker path is built by CI but still not booted end to end.** The `image` job in
+   `.github/workflows/ci.yml` builds both images on every push and asserts two things about what
+   comes out: that the CLI it serves names the commit it was built from, and that `.env` never
+   reaches the build stage. What no job does is _run_ the stack — no `docker compose up`, no
+   request against it. Environment interpolation is still verified only by simulating
+   `${VAR:-default}` and feeding the result to `loadConfig()`. Worth one real
+   `docker compose up -d --build` on a machine that has the Compose plugin.
 8. Smaller open items: `Layout.test.tsx` builds its own route tree, overlapping `App.test.tsx`; the
    advisory locks and the atomic config write have no concurrency test; `saga doctor` has no
    keychain-backend test; the `/device` project picker requests `limit=200` with no paging.

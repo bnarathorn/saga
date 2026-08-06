@@ -243,22 +243,34 @@ pnpm db:migrate    # apply pending
    saga-tools update
    ```
 
-   `deploy/saga-tools`, installed as `/usr/local/bin/saga-tools`, is the supported path. It
-   fetches the published branch into `/opt/saga` as the service account — the repository is
-   public, so no credential is involved — fast-forwards, and then hands off to
-   `deploy/update.sh --rebuild` for the rest: `pnpm install --frozen-lockfile`, `pnpm build`,
-   `rsync` of `apps/web/dist` into nginx's root, `systemctl restart saga-migrate` and then
-   `saga-api saga-worker`. Because the build half comes from the tree it just fetched, an
-   upgrade also picks up changes to the upgrade procedure itself.
+   `deploy/saga-tools`, installed as `/usr/local/bin/saga-tools`, is the only path. It fetches
+   the published branch into `/opt/saga` as the service account — the repository is public, so
+   no credential is involved — fast-forwards, and then does the rest itself:
+   `pnpm install --frozen-lockfile`, `pnpm build`, `rsync` of `apps/web/dist` into nginx's root,
+   `systemctl restart saga-migrate` and then `saga-api saga-worker`. After the fast-forward it
+   re-execs the copy of itself in the tree it just fetched whenever that differs from the one
+   running, so an upgrade picks up changes to the upgrade procedure itself — and says so, since
+   `/usr/local/bin/saga-tools` is still the old copy until you reinstall it:
+
+   ```bash
+   sudo install -m 755 /opt/saga/deploy/saga-tools /usr/local/bin/saga-tools
+   ```
+
+   **One time only**, on a server still running the version that predates this: that copy ends
+   by exec'ing `deploy/update.sh`, which no longer exists. It will fetch and fast-forward
+   correctly and then fail with `No such file or directory`, leaving the tree moved but not
+   built — the state `saga-tools status` warns about. Run the `install` above, then
+   `saga-tools rebuild`.
 
    It refuses rather than guesses. A tree with uncommitted tracked changes, or a remote whose
    history was rewritten so the deployed commit is no longer an ancestor, both stop it before
    anything moves, and the rewritten-history message names the `reset --hard` that would
    deliberately discard the deployed commit.
 
-   To deploy a commit that is not on the remote yet — a hotfix, or a branch you have not
-   pushed — use `deploy/update.sh` from a developer checkout instead. It carries the commit
-   across as a git bundle, which needs no credentials on the server either.
+   A commit reaches production by being on the published branch — there is no second route.
+   Push the hotfix, then upgrade. (There used to be a `deploy/update.sh` that carried an
+   unpushed commit across as a git bundle, from when the repository was private. It was removed
+   once fetching needed no credential.)
 
 4. Verify. `saga-tools update` already polls `/api/cli/saga` until the served CLI is stamped
    with the commit it deployed, and fails if it is not. Then check `/api/shrine/schema`:

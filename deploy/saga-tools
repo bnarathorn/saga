@@ -3,14 +3,21 @@
 # saga-tools — server-side maintenance for a systemd Saga install.
 #
 #   saga-tools update [--force]   fetch the published branch and deploy it
+#   saga-tools rebuild            rebuild and restart whatever is checked out
 #   saga-tools status             what is deployed, what is available, what is running
 #
 # `update` tracks the public repository directly: the service account needs no
-# credentials to fetch it, so the deploy host can pull its own updates instead of
-# waiting for someone to push a build across from a developer checkout. That other
-# path still exists — `deploy/update.sh` moves a commit that is not on the remote
-# yet — and this command reuses its build half rather than reimplementing it, so
-# the two cannot drift.
+# credentials to fetch it, so the deploy host pulls its own updates instead of
+# waiting for someone to push a build across from a developer checkout. There is no
+# second script and no second way — a commit reaches production by being on the
+# published branch.
+#
+# `rebuild` is the same build without the fetch: the second half of a rollback, and
+# the way to recover a tree whose build did not finish. It touches the network only
+# to verify the result, so it still works when the remote does not. `update` runs it
+# out of the target after fast-forwarding whenever the fetched copy of this script
+# differs from the running one, so an upgrade can change the upgrade procedure — and
+# then tells you to reinstall, because /usr/local/bin still holds the old copy.
 #
 # Install it as root:
 #
@@ -25,8 +32,11 @@ SERVICE_USER=${SAGA_SERVICE_USER:-saga}
 REMOTE=${SAGA_REMOTE:-https://github.com/bnarathorn/saga.git}
 BRANCH=${SAGA_BRANCH:-main}
 ORIGIN=${SAGA_ORIGIN:-http://127.0.0.1:4319}
+WEB_ROOT=${SAGA_WEB_ROOT:-/var/www/saga-app}
+WEB_OWNER=${SAGA_WEB_OWNER:-www-data:www-data}
 # The service account's home is the deploy directory, so anything it runs needs a
-# writable home elsewhere or it litters the checkout. See deploy/update.sh.
+# writable home elsewhere or it litters the checkout with `.cache/` and `.npm/`.
+# Kept across runs so corepack does not re-download pnpm every deploy.
 BUILD_HOME=${SAGA_BUILD_HOME:-/var/tmp/saga-build-home}
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
@@ -48,16 +58,19 @@ saga-tools — server-side maintenance for a systemd Saga install.
 
   saga-tools update [--force]   Fetch the published branch and deploy it.
                                 --force rebuilds even when already up to date.
+  saga-tools rebuild            Rebuild and restart what is already checked out,
+                                moving no commits. The second half of a rollback.
   saga-tools status             Show the deployed commit, whether the remote is
                                 ahead, the CLI build being served, and unit state.
 
 Environment: SAGA_TARGET, SAGA_SERVICE_USER, SAGA_REMOTE, SAGA_BRANCH,
-             SAGA_ORIGIN, SAGA_BUILD_HOME.
+             SAGA_ORIGIN, SAGA_WEB_ROOT, SAGA_WEB_OWNER, SAGA_BUILD_HOME.
 USAGE
 }
 
 preflight() {
   [ -d "$TARGET/.git" ] || die "$TARGET is not a git checkout"
+  command -v rsync >/dev/null || die "rsync is required"
   sudo -n true 2>/dev/null || sudo true || die "saga-tools needs sudo"
   sudo install -d -o "$SERVICE_USER" -m 755 "$BUILD_HOME"
 }
@@ -73,6 +86,57 @@ ensure_remote() {
     say "Pointing origin at $REMOTE (was $current)"
     target_git remote set-url origin "$REMOTE"
   fi
+}
+
+# A dirty production tree means someone edited the server in place. Refuse rather
+# than silently discarding it: a fast-forward would fail halfway through anyway, and
+# a build from a tree nobody can name is worse than no build.
+assert_clean() {
+  if [ -n "$(target_git status --porcelain --untracked-files=no)" ]; then
+    target_git status --short --untracked-files=no
+    die "$TARGET has uncommitted tracked changes — resolve them before deploying"
+  fi
+}
+
+# Build, publish, restart and verify whatever is checked out. Shared by `update` and
+# `rebuild` so the two cannot drift, and read from the tree just fetched so an update
+# also picks up changes to the deploy procedure itself.
+deploy_checkout() {
+  say "Installing dependencies"
+  as_service pnpm -C "$TARGET" install --frozen-lockfile
+
+  # `build` is tsc -b + the web bundle + the CLI bundle. The CLI bundle stamps itself
+  # with the commit it was built from, which is what the verification below reads.
+  say "Building"
+  as_service pnpm -C "$TARGET" build
+
+  say "Publishing $WEB_ROOT"
+  sudo rsync -a --delete "$TARGET/apps/web/dist/" "$WEB_ROOT/"
+  sudo chown -R "$WEB_OWNER" "$WEB_ROOT"
+
+  # Migrations first: the new server code may depend on the new schema, and
+  # saga-migrate is a one-shot that runs them under the production environment file.
+  say "Restarting services"
+  sudo systemctl restart saga-migrate
+  sudo systemctl restart saga-api saga-worker
+
+  say "Verifying"
+  sudo systemctl is-active saga-api saga-worker
+  local short served
+  short=$(target_git rev-parse --short=10 HEAD)
+  # `systemctl restart` returns once the process exists, not once it is listening, so
+  # the first request after it can still be nginx's 502. Poll rather than conclude.
+  served=
+  for _ in $(seq 30); do
+    served=$(served_build)
+    [ -n "$served" ] && break
+    sleep 1
+  done
+  printf '  served CLI build: %s\n' "${served:-<unreadable>}"
+  case "$served" in
+    *"g$short"*) ;;
+    *) die "the API is not serving a CLI built from $short — check: journalctl -u saga-api -n 50" ;;
+  esac
 }
 
 cmd_status() {
@@ -98,11 +162,36 @@ cmd_status() {
   # nothing rebuilt — the exact state a half-finished deploy leaves behind.
   case "$served" in
     '' | *"g${head:0:10}"*) ;;
-    *) printf '          \033[33mwarning:\033[0m that build is not %s — rerun: saga-tools update --force\n' "${head:0:10}" ;;
+    *) printf '          \033[33mwarning:\033[0m that build is not %s — rerun: saga-tools rebuild\n' "${head:0:10}" ;;
   esac
 
   printf 'units     '
   sudo systemctl is-active saga-api saga-worker | paste -sd' ' -
+}
+
+cmd_rebuild() {
+  preflight
+  assert_clean
+  local head
+  head=$(target_git rev-parse HEAD)
+  say "Building $TARGET at $head"
+  deploy_checkout
+  say "Deployed $head"
+
+  # Set by `update` when it hands off after a fast-forward, so the rollback hint names the
+  # commit that was actually replaced rather than the one just built.
+  if [ -n "${SAGA_PREVIOUS_COMMIT:-}" ]; then
+    # Going backwards is not a fast-forward, so a rollback resets the branch and then rebuilds
+    # it in place; the old objects are still in the target's object store.
+    printf 'Roll back with:\n  sudo -u %s git -C %s reset --hard %s\n  saga-tools rebuild\n' \
+      "$SERVICE_USER" "$TARGET" "$SAGA_PREVIOUS_COMMIT"
+  fi
+
+  # `update` re-execs the fetched copy, so this can be the newer script running while
+  # /usr/local/bin still holds the old one. Say so once rather than let the next run surprise.
+  if [ -n "${SAGA_HANDED_OFF:-}" ]; then
+    printf '\nThis deploy changed saga-tools itself. Install the new one:\n  sudo install -m 755 %s/deploy/saga-tools /usr/local/bin/saga-tools\n' "$TARGET"
+  fi
 }
 
 cmd_update() {
@@ -122,10 +211,7 @@ cmd_update() {
     exit 0
   fi
 
-  if [ -n "$(target_git status --porcelain --untracked-files=no)" ]; then
-    target_git status --short --untracked-files=no
-    die "$TARGET has uncommitted tracked changes — resolve them before updating"
-  fi
+  assert_clean
 
   if [ "$old" != "$new" ]; then
     # Refuse a rewritten remote rather than resolving it: discarding the deployed
@@ -138,14 +224,33 @@ then rerun: saga-tools update --force"
     target_git merge --ff-only FETCH_HEAD
   fi
 
-  # The build, publish, restart and verify half, from the tree just fetched — so an
-  # update also picks up changes to the deploy procedure itself.
+  # The tree just fetched may carry a newer version of this script, and the build half must
+  # come from there rather than from whatever `/usr/local/bin` happens to hold — that is what
+  # makes an upgrade able to change the upgrade procedure itself. Hand over when the two
+  # differ. A `cmp` that cannot read either file also hands over, which is the safe direction.
+  # A rollback hint is only meaningful when a commit actually moved. `--force` on an unchanged
+  # tree rebuilds the commit it is already on, and naming it as the thing to go back to is noise.
+  if [ "$old" != "$new" ]; then
+    export SAGA_PREVIOUS_COMMIT="$old"
+  fi
+
+  # The tree just fetched may carry a newer version of this script, and the build half must come
+  # from there rather than from whatever `/usr/local/bin` happens to hold — that is what makes an
+  # upgrade able to change the upgrade procedure itself. Hand over when the two differ; a `cmp`
+  # that cannot read either file also hands over, which is the safe direction.
   say "Building and restarting"
-  exec "$TARGET/deploy/update.sh" --rebuild
+  if ! cmp -s "$0" "$TARGET/deploy/saga-tools"; then
+    say "Handing off to the saga-tools in $TARGET"
+    export SAGA_HANDED_OFF=1
+    exec bash "$TARGET/deploy/saga-tools" rebuild
+  fi
+
+  cmd_rebuild
 }
 
 case "${1:-}" in
   update) shift; cmd_update "${1:-}" ;;
+  rebuild) cmd_rebuild ;;
   status) cmd_status ;;
   -h | --help | help | '') usage ;;
   *) usage >&2; die "unknown command: $1" ;;
