@@ -2,10 +2,9 @@
 
 > **No agent starts at level one.**
 
-Saga is a shared project-memory, work-continuity and coordination system for Codex, Claude and
-other coding agents. A new agent session should never have to rediscover a project from zero:
-Saga remembers what the project _is_, what was already done, what is in progress, what is
-blocked, and who else is working right now.
+Saga is shared project memory, work continuity and coordination for coding agents. A new session
+should never have to rediscover a project from zero: Saga remembers what the project _is_, what was
+already done, what is in progress, what is blocked, and who else is working right now.
 
 ```text
 Saga
@@ -15,157 +14,175 @@ Saga
 └── Shrine   Server health, workers, jobs, alerts and operations
 ```
 
-The web console is called **Guild Hall**.
+The web console is called **Guild Hall**. Agents connect over MCP — Codex, Claude and anything else
+that speaks it — or through the typed `@saga/agent-sdk`.
 
 ---
 
 ## Quick start
 
-Requirements: **Node.js 22+**, **pnpm 9+**, and **PostgreSQL 15+ with `pgvector`, `pg_trgm`
-and `pgcrypto`** (or Docker, which brings its own). Compose v2 is a separate CLI plugin, and
-Docker packaged by an older distribution often arrives without it — check with
-`docker compose version`, not `docker --version`.
+Nine steps from nothing to a coding agent using Saga. Paste each command, check the result under it,
+move on. Everything runs on one machine; to split them, replace `localhost` with the server's
+address everywhere.
 
-### With Docker
+**You need** `git`, Docker with the Compose v2 plugin, and ports 8080 and 5432 free. No pnpm and no
+Node — step 6 downloads a pre-built CLI.
 
 ```bash
-git clone https://github.com/bnarathorn/saga.git saga && cd saga
-cp .env.example .env
-# .env.example already ships a working (development-only) session secret and an empty
-# bootstrap password, so replace those two lines in place rather than appending — the
-# loader Saga's own processes use resolves duplicate keys first-wins, opposite of Docker
-# Compose, so an appended line would only take effect for one of the two:
-sed -i "s|^SAGA_SESSION_SECRET=.*|SAGA_SESSION_SECRET=$(openssl rand -hex 32)|" .env
-sed -i "s|^SAGA_BOOTSTRAP_ADMIN_PASSWORD=.*|SAGA_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)|" .env
-# .env.example points SAGA_PUBLIC_URL at the Vite dev-server port; under Compose, Guild
-# Hall is served by nginx on 8080, so that line needs to move too:
-sed -i "s|^SAGA_PUBLIC_URL=.*|SAGA_PUBLIC_URL=http://localhost:8080|" .env
+docker compose version            # v2.x — not `docker --version`
+ss -ltn | grep -E ':8080|:5432'   # prints nothing
+```
 
+### 1 · Get the code
+
+```bash
+git clone https://github.com/bnarathorn/saga.git saga
+cd saga
+```
+
+_Check:_ `ls docker-compose.yml` prints the filename.
+
+### 2 · Create the configuration
+
+Edit the lines in place — do not append. Saga's own loader is first-wins and Compose's is last-wins,
+so a duplicated key would resolve differently for each.
+
+```bash
+cp .env.example .env
+sed -i \
+  -e "s|^SAGA_SESSION_SECRET=.*|SAGA_SESSION_SECRET=$(openssl rand -hex 32)|" \
+  -e "s|^SAGA_BOOTSTRAP_ADMIN_PASSWORD=.*|SAGA_BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 12)|" \
+  -e "s|^SAGA_WEB_PORT=.*|SAGA_WEB_PORT=8080|" \
+  -e "s|^SAGA_PUBLIC_URL=.*|SAGA_PUBLIC_URL=http://localhost:8080|" \
+  .env
+```
+
+_Check:_ `grep SAGA_BOOTSTRAP .env` prints an email and a 24-character password. Keep both — step 4
+needs them.
+
+`SAGA_WEB_PORT` and `SAGA_PUBLIC_URL` both ship pointing at 4320, the dev-server port. They have to
+move together: the first is the port nginx publishes, the second is the address the device-flow link
+in step 7 is built from.
+
+### 3 · Start it
+
+```bash
 docker compose up -d --build
 ```
 
-Guild Hall is then on <http://localhost:8080>. Sign in with the bootstrap administrator you
-just generated (`grep SAGA_BOOTSTRAP .env`).
+The first build takes a few minutes.
 
-### Without Docker
+_Check:_ `docker compose ps` shows `saga-postgres-1`, `saga-api-1`, `saga-worker-1` and
+`saga-web-1` running. `saga-migrate-1` is `exited (0)` — that one is meant to finish.
 
-```bash
-git clone https://github.com/bnarathorn/saga.git saga && cd saga
-pnpm install
-cp .env.example .env      # then set SAGA_BOOTSTRAP_ADMIN_PASSWORD
+### 4 · Sign in
 
-# One-time database setup (adjust the role/password to taste):
-sudo -u postgres psql -c "CREATE ROLE saga LOGIN PASSWORD 'saga' SUPERUSER"
-sudo -u postgres createdb -O saga saga_dev
-sudo -u postgres createdb -O saga saga_test
-for db in saga_dev saga_test; do
-  sudo -u postgres psql -d $db -c \
-    "CREATE EXTENSION IF NOT EXISTS pgcrypto; CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
-done
+Open <http://localhost:8080> and sign in with the email and password from step 2.
 
-pnpm db:migrate
-pnpm dev            # API + worker + Guild Hall dev server
-```
+_Check:_ you land on the Dashboard, showing System health.
 
-| Service    | URL                     |
-| ---------- | ----------------------- |
-| Guild Hall | <http://localhost:4320> |
-| Saga API   | <http://localhost:4319> |
+### 5 · Create a project
 
-`SUPERUSER` is only needed to `CREATE EXTENSION` on first run; you can drop the attribute
-afterwards.
+**Projects → Create**, named after the codebase your agent will work on. Write the name down: step 8
+selects the project by it.
 
----
+_Check:_ the project appears, with a banner saying **Lore bootstrap is required**.
 
-## Verifying the installation
+### 6 · Install the `saga` command
 
-With the stack running:
+The server hands out the CLI itself — no repository, no package manager:
 
 ```bash
-scripts/stack.sh up      # background API + worker (skip if `pnpm dev` is already running)
-pnpm exec tsx scripts/verify.ts
+mkdir -p ~/.local/bin
+curl -fsSL http://localhost:8080/api/cli/saga -o ~/.local/bin/saga
+chmod +x ~/.local/bin/saga
 ```
 
-`scripts/verify.ts` drives the real HTTP API against real PostgreSQL with the real worker,
-and asserts the behaviour the specification calls for — project renaming and alias
-resolution, idempotency replay, the job queue draining, operator retry with an audit record,
-sanitized configuration, and project-scoped agent tokens being unable to reach another
-project.
+_Check:_ `saga --version` prints a version — `0.1.0+g<commit>.<timestamp>`, which names the build
+the server is serving rather than the release.
 
----
+`~/.local/bin` has to be on `PATH` for good, not just in this terminal: step 7 writes an
+`.mcp.json` whose command is the bare word `saga`.
 
-## Connecting an agent
+### 7 · Connect your codebase
 
-The `saga` command is not published to any registry — it is the workspace package
-`apps/cli`, whose `bin` entry points at a compiled `dist/main.js`, not at the TypeScript
-source. Build it once and link it onto your `PATH`:
+In the folder your agent will work on — **not** the Saga folder:
 
 ```bash
-pnpm --filter @saga/cli build
-pnpm -C apps/cli link --global
+cd ~/work/your-project
+saga connect --server http://localhost:8080
 ```
 
-If pnpm reports `ERR_PNPM_NO_GLOBAL_BIN_DIR`, it has no global bin directory configured yet;
-run `pnpm setup` once, open a new shell so the change takes effect, and repeat the `link`
-command above.
-
-`saga --version` should now work from any directory. From inside the project you want Saga to
-manage — not from the Saga repository itself — run `saga connect`; see
-[`docs/agent-integration.md`](docs/agent-integration.md) for the rest of the flow.
-
----
-
-## Repository layout
+_Check:_ it prints a link with a code, then waits:
 
 ```text
-saga/
-├── apps/
-│   ├── server/     Fastify API
-│   ├── worker/     background worker (jobs, outbox delivery, retention)
-│   ├── web/        Guild Hall (React + Vite)
-│   └── cli/        the `saga` command line interface and MCP server
-├── packages/
-│   ├── shared/     errors, config, logging, time, redaction, token budgeting
-│   ├── contracts/  Zod request/response contracts shared by API, web and CLI
-│   ├── database/   pg pool, explicit transactions, advisory locks, migration runner
-│   ├── core/       project identity, aliases, outbox, security
-│   ├── shrine/     jobs, service instances, events, health
-│   ├── quest/      work items, sessions, checkpoints
-│   ├── lore/       durable project knowledge
-│   ├── party/      live agent coordination
-│   └── agent-sdk/  typed client for non-MCP integrations
-├── db/migrations/  forward-only Saga schema migrations
-├── deploy/         Docker, nginx and systemd reference deployment
-└── docs/           architecture, API, operations, security, testing, ADRs
+Authorize this machine:
+  1. Open http://localhost:8080/device?code=ABCD-1234
+  2. Sign in and approve the code ABCD-1234
+
+Waiting for approval…
 ```
 
-Dependency direction is enforced by TypeScript project references generated from a single
-spec (`scripts/scaffold-packages.mjs`), so a cycle is a build error rather than a review
-comment.
+Nothing here picks the project — the token is minted bound to whatever step 8 selects.
+`--project "Your Project"` only _asserts_ the answer, failing the folder rather than binding it to
+the wrong project when several approvals are in flight.
+
+### 8 · Approve the machine
+
+1. Open that link in the browser where you are already signed in.
+2. Confirm the code matches the terminal.
+3. Pick the project from step 5. This is where the project is chosen, and it cannot be changed
+   without approving again.
+4. Click **Approve**.
+
+_Check:_ the terminal finishes on its own and prints `Project: Your Project`, followed by the
+`.mcp.json` it wrote. That name came from the server — if it is not the one you meant, approve a
+fresh request and run `saga connect --reauth`.
+
+### 9 · Confirm it works
+
+```bash
+saga doctor
+```
+
+_Check:_ the last line ends in `0 failure(s)`.
+
+```text
+  12 ok, 1 warning(s), 0 failure(s)
+```
+
+Warnings about plain HTTP, and about the token living in a credential file rather than a keychain,
+are both expected on a local install. Only `failure(s)` matters.
+
+### Done
+
+Start your coding agent in that folder. It picks up `.mcp.json` by itself and opens a Saga session
+on its first message. Give it a task and watch the project fill in at <http://localhost:8080>.
+
+**Lore bootstrap is required** is not a task for you. A new project has no knowledge in it yet, so
+the first session hands the agent a plan for what to read; the agent writes the Lore itself as it
+works.
+
+> **Before anyone else depends on this.** The quick start runs over plain HTTP with
+> `NODE_ENV=development` and the bootstrap password still in `.env`. That is fine for one person on
+> one machine and not for a team. A real deployment is a different shape, not an extra step on top
+> of this one — see [`docs/operations.md`](docs/operations.md).
 
 ---
 
-## Commands
+## If something went wrong
 
-| Command                 | What it does                                                 |
-| ----------------------- | ------------------------------------------------------------ |
-| `pnpm dev`              | API, worker and Guild Hall dev server together               |
-| `pnpm build`            | Compile every package and build Guild Hall                   |
-| `pnpm lint`             | ESLint across the workspace                                  |
-| `pnpm typecheck`        | `tsc -b` plus the web project                                |
-| `pnpm test`             | Unit tests (no external services required)                   |
-| `pnpm test:integration` | PostgreSQL integration tests, including real concurrency     |
-| `pnpm test:api`         | Full Fastify app against PostgreSQL                          |
-| `pnpm test:web`         | Guild Hall component tests                                   |
-| `pnpm test:all`         | Every Vitest project                                         |
-| `pnpm test:e2e`         | Playwright browser tests                                     |
-| `pnpm db:migrate`       | Apply pending migrations                                     |
-| `pnpm db:status`        | Show current and expected schema versions                    |
-| `pnpm db:seed`          | Load development seed data                                   |
-| `pnpm db:reset`         | Drop and re-apply the schema (**development and test only**) |
-
-Integration, API and end-to-end tests need `SAGA_TEST_DATABASE_URL` to point at a database
-you are willing to have truncated.
+| Symptom                                            | Do this                                                                                                                                                                      |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docker: 'compose' is not a docker command`        | Compose v2 is a separate plugin. Install `docker-compose-plugin`, or take the systemd route in [`docs/operations.md`](docs/operations.md), which needs no Docker.            |
+| `docker compose up` fails on `SAGA_SESSION_SECRET` | Step 2 did not run. Re-run it, then `docker compose up -d --build`.                                                                                                          |
+| Port 8080 or 5432 already in use                   | Set `SAGA_WEB_PORT` and `SAGA_PUBLIC_URL` in `.env` to the new port (or `SAGA_POSTGRES_PORT`), then use it in every URL above.                                               |
+| The console loads but says Saga is unreachable     | `docker compose logs api`                                                                                                                                                    |
+| `saga: command not found`                          | `~/.local/bin` is not on `PATH` — Debian and Ubuntu add it only if the directory existed at login. `export PATH="$HOME/.local/bin:$PATH"`, and put it in your shell profile. |
+| Step 6's `curl` 404s or writes an empty file       | That server has no CLI build. Compose builds one into the image, so the usual cause is an API started from a working tree — run `pnpm --filter @saga/cli bundle` there once. |
+| The folder is bound to the wrong project           | `saga status` names the current binding. Approve a fresh request for the project you want, then `saga connect --reauth`.                                                     |
+| The approval link 404s                             | The code expired after ten minutes. Ctrl-C and re-run step 7.                                                                                                                |
+| Start over completely                              | `docker compose down -v`, then step 2.                                                                                                                                       |
 
 ---
 
@@ -173,33 +190,20 @@ you are willing to have truncated.
 
 | Document                                                 | Covers                                                       |
 | -------------------------------------------------------- | ------------------------------------------------------------ |
-| [`AGENTS.md`](AGENTS.md)                                 | Working on Saga itself: invariants, settled questions, traps |
+| [`docs/agent-integration.md`](docs/agent-integration.md) | MCP setup, session policy, tools, checkpoints                |
+| [`docs/operations.md`](docs/operations.md)               | Real deployments, upgrades, backups, troubleshooting         |
 | [`docs/architecture.md`](docs/architecture.md)           | Domains, state ownership, boundaries                         |
 | [`docs/api.md`](docs/api.md)                             | Endpoints, error codes, pagination, idempotency              |
-| [`docs/agent-integration.md`](docs/agent-integration.md) | MCP setup for Codex and Claude, session policy               |
-| [`docs/operations.md`](docs/operations.md)               | Deployment, upgrades, backups, troubleshooting               |
-| [`docs/security.md`](docs/security.md)                   | Authentication, token scopes, threat notes                   |
+| [`docs/security.md`](docs/security.md)                   | Authentication, token scopes, secrets, audit                 |
 | [`docs/testing.md`](docs/testing.md)                     | Test strategy and how to run each suite                      |
 | [`docs/adr/`](docs/adr/)                                 | Architecture decision records                                |
+| [`AGENTS.md`](AGENTS.md)                                 | Working on Saga itself: invariants, settled questions, traps |
+
+Developing Saga rather than using it needs Node.js 22+, pnpm 9+ and PostgreSQL 15+ with `pgvector`,
+`pg_trgm` and `pgcrypto`; `pnpm install && pnpm db:migrate && pnpm dev` brings up the API, the worker
+and Guild Hall together. [`AGENTS.md`](AGENTS.md) covers the rest.
 
 ---
-
-## Design commitments
-
-These are not implementation details; they are the shape of the product.
-
-- **A project is identified by its name**, never by a repository URL, branch or commit.
-  Renaming preserves identity and keeps the old name resolvable as an alias.
-- **The server never depends on version control.** A plain folder, a Git working copy with no
-  remote, and an SVN working copy all work identically.
-- **A Lore Entry is a unit of knowledge, not a document chunk.** Saga is not a document store.
-- **Durable state and live coordination are separate.** Lore and Quest survive crashes; Party
-  is leased and expires safely.
-- **A new session never inherits an unrelated handoff.** Session startup is two-phase: core
-  context first, then the first task decides `new_work`, `resume_work` or `inquiry`.
-- **Coordination is optional.** `PARTY_MODE=off` leaves Lore and Quest fully usable.
-- **Saga is not source control or a deployment platform.** It records knowledge, intent and
-  progress; external systems remain authoritative for code, databases and deployments.
 
 ## Licence
 
