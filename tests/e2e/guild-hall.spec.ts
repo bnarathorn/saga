@@ -7,7 +7,7 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD, API_URL } from './stack-env.js';
  *   1. an administrator logs in                7. Quest Board shows the Quest and handoff
  *   2. they create a project                   8. Party shows an active Agent Run
  *   3. Guild Hall shows the Lore bootstrap     9. a failed job fixture is created
- *   4. a Lore Entry is proposed and published 10. the administrator retries it from Shrine
+ *   4. a Lore Entry is proposed and published 10. the administrator retries it from the Dashboard
  *   5. an agent starts a session              11. the audit log records the retry
  *   6. it records a checkpoint
  *
@@ -235,6 +235,7 @@ test('every project tab resolves to its own page, not the not-found fallback', a
     ['Relations', 'Relations'],
     ['Activity', 'Activity'],
     ['Party', 'Party'],
+    ['Shrine', 'Shrine'],
   ] as const) {
     await page.goto(projectPath(''));
     await page
@@ -248,7 +249,7 @@ test('every project tab resolves to its own page, not the not-found fallback', a
   }
 });
 
-test('9-11: a failed job is retried from Shrine and recorded in the audit log', async ({
+test('9-11: a failed job is retried from the Dashboard and recorded in the audit log', async ({
   page,
 }) => {
   const { api, csrf } = await adminApi();
@@ -273,7 +274,9 @@ test('9-11: a failed job is retried from Shrine and recorded in the audit log', 
   await api.dispose();
 
   await signIn(page);
-  await page.goto('/shrine');
+  // The server-wide queue lives on the Dashboard; the project's own Shrine tab shows the same
+  // job filtered to this project, and either page can retry it.
+  await page.goto('/');
 
   // The probe endpoint enqueues a `noop` job — "probe" names the operator action, not the type.
   const row = page.getByRole('row').filter({ hasText: 'noop' }).filter({ hasText: 'failed' });

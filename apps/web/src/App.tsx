@@ -73,16 +73,18 @@ export function App() {
               <Route path="party" element={<PartyPage />} />
               <Route path="relations" element={<ProjectRelations />} />
               <Route path="activity" element={<ProjectActivity />} />
+              <Route path="shrine" element={<ShrinePage />} />
               {/* Keeps an unknown project sub-path inside the project shell rather than
                   falling through to the top-level catch-all. */}
               <Route path="*" element={<UnknownProjectSection />} />
             </Route>
-            {/* Spec 1 puts these at the top level of the console, but each is a per-project
-                view. They resolve to the project last opened, or to the picker. */}
+            {/* Every one of these is a per-project view. The primary navigation reaches them
+                through the project picker now, but bookmarks and older links still arrive
+                here, so they resolve to the project last opened — or to the picker. */}
             <Route path="lore" element={<ProjectSection section="lore" />} />
             <Route path="quests" element={<ProjectSection section="quests" />} />
             <Route path="party" element={<ProjectSection section="party" />} />
-            <Route path="shrine" element={<ShrinePage />} />
+            <Route path="shrine" element={<ProjectSection section="shrine" />} />
             {/* Reached by following the URL `saga connect` prints or opens
                 (`verification_uri_complete`), never by browsing, so it has no nav entry. */}
             <Route path="device" element={<DevicePage />} />
@@ -105,17 +107,18 @@ function NotFound() {
 }
 
 /** Sends a top-level section to the last project opened, or to the picker if there is none. */
-function ProjectSection({ section }: { section: 'lore' | 'quests' | 'party' }) {
+function ProjectSection({ section }: { section: 'lore' | 'quests' | 'party' | 'shrine' }) {
   const ref = lastProject();
   if (ref === null) {
     return (
       <Panel title="Choose a project first">
         <div className="px-4 py-8 text-sm text-ink-600 dark:text-parchment-300/80">
-          Lore, the Quest Board and Party all belong to a project.{' '}
+          Lore, the Quest Board, the Party and the Shrine all belong to a project. Pick one from the
+          project picker above, or{' '}
           <Link className="link" to="/projects">
-            Open a project
+            open a project
           </Link>{' '}
-          and this entry will take you straight there next time.
+          — and this link will take you straight there next time.
         </div>
       </Panel>
     );

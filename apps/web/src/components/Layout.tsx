@@ -2,16 +2,18 @@ import type { MeResponse } from '@saga/contracts';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useHealth, useLogout } from '../lib/queries.js';
 import { classNames, StatusPill } from './primitives.jsx';
+import { ProjectPicker } from './ProjectPicker.jsx';
 import { ThemeToggle } from './ThemeToggle.jsx';
 import { LiveIndicator } from './LiveIndicator.jsx';
 
+/**
+ * Two destinations, because there are only two kinds of page: the Dashboard is the server, and
+ * everything else belongs to a project. Lore, the Quest Board, the Party and the Shrine are
+ * reached as tabs of the project the picker beside these entries selects.
+ */
 const NAV = [
   { to: '/', label: 'Dashboard', end: true },
-  { to: '/projects', label: 'Projects', end: false },
-  { to: '/lore', label: 'Lore', end: false },
-  { to: '/quests', label: 'Quest Board', end: false },
-  { to: '/party', label: 'Party', end: false },
-  { to: '/shrine', label: 'Shrine', end: false },
+  { to: '/projects', label: 'Projects', end: true },
 ];
 
 export function Layout({ me }: { me: MeResponse }) {
@@ -39,7 +41,10 @@ export function Layout({ me }: { me: MeResponse }) {
             </span>
           </div>
 
-          <nav aria-label="Primary" className="order-3 w-full sm:order-none sm:w-auto">
+          <nav
+            aria-label="Primary"
+            className="order-3 flex w-full flex-wrap items-center gap-3 sm:order-none sm:w-auto"
+          >
             <ul className="flex flex-wrap gap-1">
               {NAV.map((item) => (
                 <li key={item.to}>
@@ -60,6 +65,7 @@ export function Layout({ me }: { me: MeResponse }) {
                 </li>
               ))}
             </ul>
+            <ProjectPicker />
           </nav>
 
           <div className="ml-auto flex items-center gap-3">

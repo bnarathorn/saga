@@ -113,15 +113,22 @@ export function useApproveDevice(): UseMutationResult<
   });
 }
 
+/**
+ * `refetchInterval` is a parameter because not every caller is a live view. The project picker
+ * in the primary navigation is mounted on every page, and a project list is not something that
+ * changes under a reader's feet — it passes `false` and relies on the live stream's
+ * invalidation instead of asking for every project's stats every ten seconds, everywhere.
+ */
 export function useProjects(
   params = '',
   enabled = true,
+  refetchInterval: number | false = POLL.normal,
 ): UseQueryResult<ListResponse<ProjectSummaryDto>> {
   return useQuery({
     queryKey: queryKeys.projects(params),
     queryFn: ({ signal }) =>
       api.get<ListResponse<ProjectSummaryDto>>(`/api/projects${params}`, signal),
-    refetchInterval: POLL.normal,
+    refetchInterval,
     enabled,
   });
 }
@@ -237,7 +244,11 @@ export function useJobAction(
   });
 }
 
-export function useProbeJob(): UseMutationResult<{ job: JobDto }, Error, { echo?: string }> {
+export function useProbeJob(): UseMutationResult<
+  { job: JobDto },
+  Error,
+  { echo?: string; project_id?: string }
+> {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input) => api.post<{ job: JobDto }>('/api/shrine/jobs/probe', input),

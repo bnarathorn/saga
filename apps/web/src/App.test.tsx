@@ -93,6 +93,8 @@ const stubs = {
     },
   },
   '/api/projects': { body: { ...empty, items: [projectSummary()] } },
+  // The project picker in the primary navigation.
+  '/api/projects?limit=200': { body: { ...empty, items: [projectSummary()] } },
 };
 
 function renderApp(route = '/') {
@@ -109,7 +111,7 @@ describe('the Guild Hall route table', () => {
     const labels = within(nav)
       .getAllByRole('link')
       .map((link) => link.textContent ?? '');
-    expect(labels).toEqual(['Dashboard', 'Projects', 'Lore', 'Quest Board', 'Party', 'Shrine']);
+    expect(labels).toEqual(['Dashboard', 'Projects']);
 
     for (const label of labels) {
       await userEvent.click(within(nav).getByRole('link', { name: label }));
@@ -118,13 +120,40 @@ describe('the Guild Hall route table', () => {
     }
   });
 
+  it('opens the project chosen in the picker', async () => {
+    stubFetch({
+      ...stubs,
+      '/api/projects/ERP%20Backoffice': { body: { project: projectSummary() } },
+    });
+    renderApp();
+
+    await screen.findByRole('option', { name: 'ERP Backoffice' });
+    await userEvent.selectOptions(screen.getByLabelText('Project'), 'ERP Backoffice');
+
+    expect(await screen.findByRole('navigation', { name: 'Project sections' })).toBeInTheDocument();
+    expect(screen.queryByText(NOT_FOUND)).not.toBeInTheDocument();
+  });
+
   it('sends a per-project section to the picker when no project has been opened', async () => {
     stubFetch(stubs);
     renderApp('/lore');
 
-    // Not the not-found fallback: Lore, Quests and Party all belong to a project.
+    // Not the not-found fallback: Lore, Quests, Party and the Shrine all belong to a project.
     expect(await screen.findByText(/belong to a project/)).toBeInTheDocument();
     expect(screen.queryByText(NOT_FOUND)).not.toBeInTheDocument();
+  });
+
+  it('sends the old top-level Shrine link to the project’s own Shrine', async () => {
+    stubFetch({
+      ...stubs,
+      '/api/projects/ERP%20Backoffice': { body: { project: projectSummary() } },
+    });
+    // A bookmark from when the Shrine was server-wide. It now belongs to a project, so it
+    // resolves to the last one opened rather than 404ing or showing the server's state.
+    window.localStorage.setItem('saga.last-project', 'ERP Backoffice');
+    renderApp('/shrine');
+
+    expect(await screen.findByRole('region', { name: 'Context' })).toBeInTheDocument();
   });
 
   it('keeps an unknown project sub-path inside the project shell', async () => {

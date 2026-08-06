@@ -2,51 +2,27 @@ import type { Permission } from '@saga/contracts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
-import { renderWithProviders, stubFetch, VIEWER_PERMISSIONS } from '../test-utils.jsx';
+import {
+  projectSummary,
+  renderWithProviders,
+  stubFetch,
+  VIEWER_PERMISSIONS,
+} from '../test-utils.jsx';
 import { ShrinePage } from './Shrine.jsx';
 
+const REF = 'ERP%20Backoffice';
+const PROJECT = `/api/projects/${REF}`;
+const PROJECT_ID = '00000000-0000-4000-8000-000000000010';
+const JOBS = `/api/shrine/jobs?limit=25&project_id=${PROJECT_ID}`;
+const AUDIT = `/api/shrine/audit?limit=25&project_id=${PROJECT_ID}`;
 const JOB_ID = '00000000-0000-4000-8000-000000000700';
-const empty = { items: [], next_cursor: null, has_more: false };
-const latency = { count: 0, mean_ms: 0, p95_ms: 0, max_ms: 0 };
 
-function metrics(overrides: Record<string, unknown> = {}) {
-  return {
-    collected_at: new Date().toISOString(),
-    projects: { total: 1, active: 1 },
-    jobs: {
-      queued: 0,
-      claimed: 0,
-      retrying: 0,
-      failed: 0,
-      succeeded_last_hour: 12,
-      oldest_queued_age_seconds: null,
-    },
-    outbox: { pending: 0, failed: 0 },
-    services: { api_live: 1, worker_live: 1 },
-    party: { active_agent_runs: 0, active_claims: 0 },
-    lore: { entries: 12, stale: 0 },
-    quest: { open: 2, blocked: 0 },
-    sse: { clients: 1 },
-    http: { since: new Date().toISOString(), requests: 40, duration: latency, errors_by_code: {} },
-    latency: {
-      lore_publish: latency,
-      lore_search: latency,
-      context_build: latency,
-      memory_validation: latency,
-      context_snapshot: latency,
-      embedding: latency,
-    },
-    search: { total: 0, vector_fallback: 0 },
-    context: { builds: 0, tokens_total: 0 },
-    heartbeat_age_seconds: { api: 2, worker: 3, scheduler: null },
-    ...overrides,
-  };
-}
+const empty = { items: [], next_cursor: null, has_more: false };
 
 function job(overrides: Record<string, unknown> = {}) {
   return {
     id: JOB_ID,
-    project_id: null,
+    project_id: PROJECT_ID,
     job_type: 'memory_validation',
     entity_type: null,
     entity_id: null,
@@ -70,153 +46,90 @@ function job(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function config(overrides: Record<string, unknown> = {}) {
-  return {
-    config: {
-      version: '0.1.0',
-      node_env: 'production',
-      started_at: new Date().toISOString(),
-      database: { host: 'db.internal:5432', database: 'saga_prod', pool_max: 10 },
-      tls_enabled: true,
-      embedding: { provider: 'openai', model: 'text-embedding-3-small', dimensions: 1536 },
-      worker: { concurrency: 4, job_lease_seconds: 60, job_max_attempts: 5 },
-      retention: { job_days: 7, system_event_days: 30, idempotency_hours: 24 },
-      context_budgets: { core: 1200, task: 1500, continuation: 1500, party: 600 },
-      party_mode: 'strict',
-      dev_auth_bypass: false,
-      ...overrides,
-    },
-  };
-}
-
 const stubs = {
-  '/api/shrine/health': {
-    body: {
-      status: 'healthy',
-      version: '0.1.0',
-      checked_at: new Date().toISOString(),
-      checks: [{ name: 'database', status: 'healthy', message: 'ok', detail: {}, duration_ms: 2 }],
-    },
-  },
-  '/api/shrine/services': { body: { items: [] } },
-  '/api/shrine/schema': {
-    body: {
-      schema: {
-        current_version: 6,
-        expected_version: 6,
-        up_to_date: true,
-        pending: [],
-        applied: [],
-      },
-    },
-  },
-  '/api/shrine/config': { body: config() },
-  '/api/shrine/jobs?limit=25': { body: empty },
-  '/api/shrine/events?limit=25': { body: empty },
-  '/api/shrine/audit?limit=25': { body: empty },
-  '/api/shrine/metrics-summary': { body: { metrics: metrics() } },
+  [PROJECT]: { body: { project: projectSummary() } },
+  [JOBS]: { body: empty },
+  [AUDIT]: { body: empty },
 };
 
-function renderShrine(permissions?: readonly Permission[], route?: string) {
+function renderShrine(permissions?: readonly Permission[]) {
   return renderWithProviders(<ShrinePage />, {
+    route: `/projects/${REF}/shrine`,
+    path: '/projects/:projectRef/shrine',
     ...(permissions === undefined ? {} : { permissions }),
-    ...(route === undefined ? {} : { route }),
   });
 }
 
-describe('Shrine', () => {
-  it('reports each health check individually, not just the overall status', async () => {
+describe('a project’s Shrine', () => {
+  it('reports this project’s state, not the server’s', async () => {
     stubFetch(stubs);
     renderShrine();
 
-    const panel = await screen.findByRole('region', { name: 'System health' });
-    expect(await within(panel).findByText('database')).toBeInTheDocument();
+    const context = await screen.findByRole('region', { name: 'Context' });
+    expect(within(context).getByText('compiled')).toBeInTheDocument();
+    expect(within(context).getByText('auto')).toBeInTheDocument();
+
+    const workload = screen.getByRole('region', { name: 'Workload' });
+    expect(within(workload).getByText('12')).toBeInTheDocument();
+    // Nothing on this page describes the installation: no schema, config or service instances.
+    expect(screen.queryByRole('region', { name: 'Configuration' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Service instances' })).not.toBeInTheDocument();
   });
 
-  it('shows the database it is connected to without any credential', async () => {
-    stubFetch(stubs);
-    renderShrine();
-
-    const panel = await screen.findByRole('region', { name: 'Configuration' });
-    expect(await within(panel).findByText('saga_prod @ db.internal:5432')).toBeInTheDocument();
-    expect(panel.textContent).not.toMatch(/password|:\/\/.*:.*@/);
-  });
-
-  it('warns loudly when the development auth bypass is enabled', async () => {
-    stubFetch({ ...stubs, '/api/shrine/config': { body: config({ dev_auth_bypass: true }) } });
-    renderShrine();
-
-    expect(
-      await screen.findByText(/Development authentication bypass is enabled/),
-    ).toBeInTheDocument();
-  });
-
-  it('shows a pending migration as pending rather than up to date', async () => {
+  it('names the bootstrap that is missing rather than reporting the project as ready', async () => {
     stubFetch({
       ...stubs,
-      '/api/shrine/schema': {
+      [PROJECT]: {
         body: {
-          schema: {
-            current_version: 5,
-            expected_version: 6,
-            up_to_date: false,
-            pending: [{ version: 6, name: 'add claims index' }],
-            applied: [],
-          },
+          project: projectSummary({
+            bootstrap_required: true,
+            active_context_snapshot_id: null,
+            memory_revision: 0,
+          }),
         },
       },
     });
     renderShrine();
 
-    expect(await screen.findByText('migration pending')).toBeInTheDocument();
-    expect(screen.getByText(/current 5 \/ expected 6/)).toBeInTheDocument();
+    expect(await screen.findByText('No active context snapshot')).toBeInTheDocument();
+    expect(screen.getByText(/saga connect/)).toBeInTheDocument();
   });
 
-  it('narrows the queue to one job type, since the reapers otherwise fill the page', async () => {
+  it('scopes the job queue to the project uuid, never the display name', async () => {
+    const { calls } = stubFetch({ ...stubs, [JOBS]: { body: { ...empty, items: [job()] } } });
+    renderShrine();
+
+    expect(await screen.findByText('memory_validation')).toBeInTheDocument();
+    // A rename must not change which jobs are listed, so the name never reaches the query.
+    expect(calls.some((call) => call.url === JOBS)).toBe(true);
+    expect(calls.some((call) => call.url === '/api/shrine/jobs?limit=25')).toBe(false);
+  });
+
+  it('never asks for the server-wide queue while the project id is loading', async () => {
+    // The query string depends on the project UUID, which resolves a render late. An ungated
+    // query would spend that render fetching every project's jobs.
     const { calls } = stubFetch({
       ...stubs,
-      '/api/shrine/jobs?limit=25&job_type=memory_validation': {
-        body: { ...empty, items: [job()] },
-      },
+      '/api/shrine/jobs?limit=25': { body: empty },
+      [JOBS]: { body: { ...empty, items: [job()] } },
     });
     renderShrine();
 
-    await userEvent.selectOptions(
-      await screen.findByLabelText('Filter by job type'),
-      'memory_validation',
-    );
-
-    await waitFor(() => {
-      expect(
-        calls.some((call) => call.url === '/api/shrine/jobs?limit=25&job_type=memory_validation'),
-      ).toBe(true);
-    });
+    await screen.findByText('memory_validation');
+    expect(calls.map((call) => call.url)).not.toContain('/api/shrine/jobs?limit=25');
   });
 
-  it('ignores a filter value the API would reject rather than showing an error', async () => {
-    // The filters live in the URL, so a hand-edited or stale link reaches the page directly.
-    // `job_type` is dropped as unknown; `state` is kept, so the request stays valid.
-    stubFetch({ ...stubs, '/api/shrine/jobs?limit=25&state=queued': { body: empty } });
-    renderShrine(undefined, '/?job_type=not_a_job_type&state=queued');
-
-    const panel = await screen.findByRole('region', { name: 'Job queue' });
-    expect(await within(panel).findByText('No jobs match this filter')).toBeInTheDocument();
-  });
-
-  it('requires a reason before retrying a failed job', async () => {
+  it('retries one of this project’s failed jobs, with the reason the audit log records', async () => {
     const { calls } = stubFetch({
       ...stubs,
-      '/api/shrine/jobs?limit=25': { body: { ...empty, items: [job()] } },
+      [JOBS]: { body: { ...empty, items: [job()] } },
       [`POST /api/shrine/jobs/${JOB_ID}/retry`]: { body: { job: job({ state: 'queued' }) } },
     });
     renderShrine();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Retry' }));
-    const confirm = screen.getByRole('button', { name: 'Confirm retry' });
-    expect(confirm).toBeDisabled();
-
     await userEvent.type(screen.getByLabelText(/Reason for retry/), 'provider is back');
-    await userEvent.click(confirm);
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm retry' }));
 
     await waitFor(() => {
       const post = calls.find((call) => call.url.endsWith('/retry'));
@@ -224,68 +137,40 @@ describe('Shrine', () => {
     });
   });
 
-  it('offers requeue only for a claimed job whose lease has lapsed', async () => {
-    stubFetch({
+  it('enqueues a probe against this project, not the server at large', async () => {
+    const { calls } = stubFetch({
       ...stubs,
-      '/api/shrine/jobs?limit=25': {
-        body: {
-          ...empty,
-          items: [
-            job({
-              id: 'lapsed',
-              state: 'claimed',
-              lease_expires_at: new Date(Date.now() - 60_000).toISOString(),
-            }),
-            job({
-              id: 'live',
-              state: 'claimed',
-              lease_expires_at: new Date(Date.now() + 60_000).toISOString(),
-            }),
-          ],
-        },
-      },
+      'POST /api/shrine/jobs/probe': { status: 201, body: { job: job({ state: 'queued' }) } },
     });
     renderShrine();
 
-    // A worker still holding a live lease must not have its job taken away underneath it.
-    expect(await screen.findAllByRole('button', { name: 'Requeue' })).toHaveLength(1);
+    await userEvent.click(await screen.findByRole('button', { name: 'Queue a probe job' }));
+
+    await waitFor(() => {
+      const post = calls.find((call) => call.url.endsWith('/probe'));
+      expect(post?.body).toEqual({ echo: 'Guild Hall probe', project_id: PROJECT_ID });
+    });
   });
 
-  it('offers a viewer no operational action at all', async () => {
-    stubFetch({ ...stubs, '/api/shrine/jobs?limit=25': { body: { ...empty, items: [job()] } } });
+  it('scopes the audit log to this project, and withholds it from a viewer', async () => {
+    const { calls } = stubFetch(stubs);
     renderShrine(VIEWER_PERMISSIONS);
 
-    expect(await screen.findByText('memory_validation')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Queue a probe job' })).not.toBeInTheDocument();
+    await screen.findByRole('region', { name: 'Context' });
+    expect(screen.queryByRole('region', { name: 'Audit log' })).not.toBeInTheDocument();
+    expect(calls.some((call) => call.url.startsWith('/api/shrine/audit'))).toBe(false);
   });
 
-  it('reports a failed panel fetch instead of rendering it as empty', async () => {
+  it('surfaces a failed project lookup instead of spinning forever', async () => {
     stubFetch({
-      ...stubs,
-      '/api/shrine/jobs?limit=25': {
-        status: 500,
-        body: {
-          error: {
-            code: 'INTERNAL_ERROR',
-            message: 'The job query failed.',
-            details: {},
-            request_id: 'req_9',
-          },
-        },
+      [PROJECT]: {
+        status: 404,
+        body: { error: { code: 'PROJECT_NOT_FOUND', message: 'No such project.', details: {} } },
       },
     });
     renderShrine();
 
-    const panel = await screen.findByRole('region', { name: 'Job queue' });
-    expect(await within(panel).findByRole('alert')).toHaveTextContent('The job query failed.');
-    expect(within(panel).queryByText('The queue is empty')).not.toBeInTheDocument();
-  });
-
-  it('explains an empty service list rather than leaving a blank panel', async () => {
-    stubFetch(stubs);
-    renderShrine();
-
-    expect(await screen.findByText('No service instances registered')).toBeInTheDocument();
+    expect(await screen.findByText('No such project.')).toBeInTheDocument();
+    expect(screen.queryByText('Loading project state…')).not.toBeInTheDocument();
   });
 });

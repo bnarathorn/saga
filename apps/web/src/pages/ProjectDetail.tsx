@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useParams } from 'react-router-dom';
 import {
   Badge,
   ErrorState,
@@ -20,6 +20,7 @@ const TABS = [
   { to: 'party', label: 'Party', end: false },
   { to: 'relations', label: 'Relations', end: false },
   { to: 'activity', label: 'Activity', end: false },
+  { to: 'shrine', label: 'Shrine', end: false },
 ];
 
 export function ProjectDetailPage() {
@@ -240,7 +241,13 @@ function ProjectHeader({ projectRef }: { projectRef: string }) {
   );
 }
 
-/** Overview tab. Later phases add Lore, Quest and Party detail alongside it. */
+/**
+ * Overview tab: what the project *is*.
+ *
+ * What it is *doing* — context readiness, Lore and Quest counts, its jobs, its audit trail —
+ * belongs to the Shrine tab, which is where a reader goes for state. Duplicating it here left
+ * two tabs reporting the same numbers in two layouts, so this one links there instead.
+ */
 export function ProjectOverview() {
   const { projectRef = '' } = useParams();
   const project = useProject(projectRef);
@@ -253,12 +260,10 @@ export function ProjectOverview() {
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-3 text-sm">
           <dt className="text-ink-500 dark:text-parchment-300/70">Identifier</dt>
           <dd className="font-mono text-xs">{data.id}</dd>
-          <dt className="text-ink-500 dark:text-parchment-300/70">Lore revision</dt>
-          <dd className="tabular-nums">{data.memory_revision}</dd>
-          <dt className="text-ink-500 dark:text-parchment-300/70">Active snapshot</dt>
-          <dd className="font-mono text-xs">
-            {data.active_context_snapshot_id ?? 'none — bootstrap required'}
-          </dd>
+          <dt className="text-ink-500 dark:text-parchment-300/70">Name key</dt>
+          <dd className="font-mono text-xs">{data.name_key}</dd>
+          <dt className="text-ink-500 dark:text-parchment-300/70">Also known as</dt>
+          <dd>{data.aliases.length === 0 ? '—' : data.aliases.join(', ')}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Approval mode</dt>
           <dd>{data.lore_approval_mode}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Created</dt>
@@ -272,50 +277,45 @@ export function ProjectOverview() {
         </dl>
       </Panel>
 
-      <Panel title="State">
-        <div className="space-y-3 px-4 py-3 text-sm">
-          {data.bootstrap_required ? (
+      <Panel title="Where to go next">
+        <div className="space-y-3 px-4 py-3 text-sm text-ink-600 dark:text-parchment-300/80">
+          {data.bootstrap_required && (
             <div className="rounded border border-gold-500/40 bg-gold-500/10 px-3 py-2">
               <p className="font-medium text-gold-700 dark:text-gold-400">
                 Lore bootstrap required
               </p>
-              <p className="mt-1 text-ink-600 dark:text-parchment-300/80">
+              <p className="mt-1">
                 This project has no active context snapshot yet. Run{' '}
                 <code className="font-mono text-xs">saga connect</code> in the project folder and
                 let the agent propose initial Lore from local evidence.
               </p>
             </div>
-          ) : (
-            <p className="text-ink-600 dark:text-parchment-300/80">
-              Core context is compiled and ready for new agent sessions.
-            </p>
           )}
-
-          <ul className="space-y-1">
+          <ul className="space-y-1.5">
             <li>
-              {data.stats.lore_entry_count} Lore{' '}
-              {data.stats.lore_entry_count === 1 ? 'entry' : 'entries'}
-              {data.stats.stale_lore_count > 0 && (
-                <span className="ml-2">
-                  <Badge tone="warn">{data.stats.stale_lore_count} stale</Badge>
-                </span>
-              )}
+              <Link className="link" to="shrine">
+                Shrine
+              </Link>{' '}
+              — this project&rsquo;s state: context, workload, its jobs and its audit trail.
             </li>
             <li>
-              {data.stats.open_quest_count} open{' '}
-              {data.stats.open_quest_count === 1 ? 'Quest' : 'Quests'}
-              {data.stats.blocked_quest_count > 0 && (
-                <span className="ml-2">
-                  <Badge tone="bad">{data.stats.blocked_quest_count} blocked</Badge>
-                </span>
-              )}
+              <Link className="link" to="lore">
+                Lore
+              </Link>{' '}
+              — what agents have learned, and what has gone stale.
             </li>
-            <li>{data.stats.active_agent_count} active Party members</li>
-            {data.stats.failed_job_count > 0 && (
-              <li>
-                <Badge tone="bad">{data.stats.failed_job_count} failed jobs</Badge>
-              </li>
-            )}
+            <li>
+              <Link className="link" to="quests">
+                Quest Board
+              </Link>{' '}
+              — the work in flight and its handoffs.
+            </li>
+            <li>
+              <Link className="link" to="activity">
+                Activity
+              </Link>{' '}
+              — everything that has happened here, newest first.
+            </li>
           </ul>
         </div>
       </Panel>

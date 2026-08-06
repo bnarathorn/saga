@@ -45,5 +45,10 @@ export default defineConfig({
     globals: true,
     setupFiles: [resolve('./src/test-setup.ts')],
     css: false,
+    // Vitest's 5s default is a fine budget on a workstation and a coin flip on a four-core ARM
+    // box running fifteen jsdom files at once: the suite passed file by file and failed in
+    // parallel, always on a `findBy*` that had simply not been given a slice of CPU yet. A
+    // query that never resolves still fails here — it just takes longer to say so.
+    testTimeout: 15_000,
   },
 });
