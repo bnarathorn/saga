@@ -220,21 +220,27 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   // --- agent tokens --------------------------------------------------------
 
-  app.get('/api/projects/:projectRef/tokens', async (request) => {
-    request.requirePermission('security:manage');
-    const { projectRef } = request.params as { projectRef: string };
-    const project = await ctx.services.projects.resolve(projectRef);
-    const tokens = await auth.listAgentTokens(project.id);
-    return { items: tokens.map(presentAgentToken) };
-  });
-
   // Spec 17 names the token endpoints alongside login and the device flow. Rate limiting is
-  // registered with `global: false`, so a route that does not opt in has none at all.
+  // registered with `global: false` (app.ts), so a route that does not opt in has none at all —
+  // which is what happened to the listing below while this comment sat underneath it. All three
+  // token routes opt in. 300/minute leaves ample room for Guild Hall, whose token view polls on
+  // `POLL.slow`: 30 seconds, so two requests a minute per open tab.
   const tokenRateLimit = {
     config: {
       rateLimit: { max: ctx.config.security.apiRateLimitPerMinute, timeWindow: '1 minute' },
     },
   };
+
+  app.get('/api/projects/:projectRef/tokens', {
+    ...tokenRateLimit,
+    handler: async (request) => {
+      request.requirePermission('security:manage');
+      const { projectRef } = request.params as { projectRef: string };
+      const project = await ctx.services.projects.resolve(projectRef);
+      const tokens = await auth.listAgentTokens(project.id);
+      return { items: tokens.map(presentAgentToken) };
+    },
+  });
 
   app.post('/api/projects/:projectRef/tokens', {
     ...tokenRateLimit,
