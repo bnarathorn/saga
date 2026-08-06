@@ -103,3 +103,55 @@ jobs:
             test-results
           retention-days: 7
           if-no-files-found: ignore
+
+  # The Compose stack is what README leads with, and until this job existed nothing built it —
+  # not CI, not any local run. Every defect in it reached users unchallenged. No database and no
+  # suites here: this asks only whether the images build and whether what they contain is right.
+  image:
+    name: docker images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # Fetch depth 1 is enough: the build reads HEAD's sha and commit time, nothing older.
+      - uses: actions/checkout@v7
+
+      - name: Build the API and worker image
+        run: docker build -f deploy/docker/Dockerfile -t saga-api:ci .
+
+      - name: Build the Guild Hall image
+        run: docker build -f deploy/docker/Dockerfile.web -t saga-web:ci .
+
+      # The executable served at /api/cli/saga must name the commit it was built from. It
+      # stamped `0.1.0+local.<wall clock>` for as long as the build stage had no git installed:
+      # a version naming no commit, differing on every rebuild of an unchanged tree, and not
+      # the `0.1.0+g<sha>` README step 6 tells the user to check for.
+      - name: The image serves a CLI built from this commit
+        run: |
+          expected="g$(git rev-parse --short=10 HEAD)"
+          actual=$(docker run --rm saga-api:ci node apps/cli/pack/dist/saga --version)
+          printf 'expected: 0.1.0+%s.<timestamp>\ngot:      %s\n' "$expected" "$actual"
+          case "$actual" in
+            # `.dirty` means git saw modified tracked files inside the build stage, which on a
+            # clean CI checkout can only mean the context is missing a tracked path — the exact
+            # failure a careless .dockerignore entry causes.
+            *.dirty.*)
+              echo "::error::the image's CLI is stamped dirty ('$actual') — a tracked path is missing from the build context; check .dockerignore against .gitignore"
+              exit 1 ;;
+            "0.1.0+$expected".*) ;;
+            *)
+              echo "::error::the image serves a CLI stamped '$actual', not one built from $expected"
+              exit 1 ;;
+          esac
+
+      # `.env` holds a real session secret and a real bootstrap password by the time anyone runs
+      # `docker compose up --build` (README step 2). A canary proves `.dockerignore` keeps it
+      # out. When it does, the build context is unchanged and this step is a pure cache hit.
+      - name: No .env reaches the build stage
+        run: |
+          printf 'SAGA_SESSION_SECRET=canary-must-not-be-in-the-image\n' > .env
+          docker build -f deploy/docker/Dockerfile --target build -t saga-build:ci .
+          if docker run --rm saga-build:ci test -f /app/.env; then
+            echo "::error::.env reached the build stage — check .dockerignore"
+            exit 1
+          fi

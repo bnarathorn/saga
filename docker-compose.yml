@@ -24,6 +24,11 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
+      # Empty by default: the build reads the commit from `.git` instead. Set it only for a
+      # release process that names its own builds. Passed identically to all three services so
+      # they resolve to the same image layers rather than building it three times.
+      args:
+        SAGA_CLI_BUILD_ID: ${SAGA_CLI_BUILD_ID:-}
     command: ['node', 'apps/server/dist/migrate-main.js']
     environment:
       NODE_ENV: production
@@ -37,6 +42,8 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
+      args:
+        SAGA_CLI_BUILD_ID: ${SAGA_CLI_BUILD_ID:-}
     command: ['node', 'apps/server/dist/main.js']
     environment:
       # Defaults to production so an incomplete or missing .env fails closed rather than
@@ -68,6 +75,8 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile
+      args:
+        SAGA_CLI_BUILD_ID: ${SAGA_CLI_BUILD_ID:-}
     command: ['node', 'apps/worker/dist/main.js']
     environment:
       # Defaults to production so an incomplete or missing .env fails closed rather than

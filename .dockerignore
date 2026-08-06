@@ -1,0 +1,36 @@
+# What must never enter a build context.
+#
+# `deploy/docker/Dockerfile` and `Dockerfile.web` both `COPY . .`, and the runtime stage of the
+# first copies `/app/apps` and `/app/packages` wholesale. Without this file the developer's own
+# `dist/` rides along into the image — and because Docker preserves mtimes, `tsc -b` then finds
+# every project up to date and compiles nothing, so what ships is whatever the host happened to
+# have built, from whatever branch it was on.
+#
+# `node_modules` is the other half: it is 240 MB of the 256 MB context, it overwrites the
+# `deps` stage's lockfile install (defeating the layer caching that stage exists for), and it
+# carries the host's platform, which is wrong the moment anyone builds for another architecture.
+
+node_modules/
+**/node_modules/
+**/dist/
+**/*.tsbuildinfo
+
+# Built by `pnpm --filter @saga/cli bundle` inside the image. A host copy would be served at
+# /api/cli/saga in its place, which is the one artifact that must match the server exactly.
+apps/cli/pack/
+
+# The quickstart writes a real session secret and a real bootstrap admin password in here
+# (README step 2) before running `docker compose up -d --build`. Compose reads `.env` from the
+# host for interpolation; nothing in the image ever needs the file itself.
+.env
+.env.*
+
+# Test and run artifacts. Large, local, and meaningless inside an image.
+test-results/
+playwright-report/
+.saga-run/
+.saga/
+
+# `.git` is deliberately NOT excluded: `apps/cli/scripts/bundle.mjs` reads the commit from it to
+# stamp the CLI build, and without it every image would serve `0.1.0+local.<wall clock>` instead
+# of `0.1.0+g<sha>`. It is 2.7 MB and reaches no runtime stage.

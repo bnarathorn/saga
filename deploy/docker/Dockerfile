@@ -31,6 +31,14 @@ RUN pnpm install --frozen-lockfile
 # build — compile every workspace package
 # ---------------------------------------------------------------------------
 FROM deps AS build
+# `bundle.mjs` stamps the CLI with the commit it was built from, and `node:22-bookworm-slim`
+# ships no git — `git rev-parse` failed silently and every image served `0.1.0+local.<wall
+# clock>`, which names no commit, differs on every rebuild of the same tree, and does not match
+# the `0.1.0+g<sha>` that README step 6 tells the user to look for. Installed in this stage
+# only; the runtime stage below is `FROM base` and never sees it.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git \
+  && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN pnpm exec tsc -b tsconfig.build.json
 RUN pnpm --filter @saga/web build
@@ -38,7 +46,11 @@ RUN pnpm --filter @saga/web build
 # can install a CLI without a clone, and so the one it serves is the one this image was built
 # from. `apps/cli/pack` is not matched by the `apps/*` workspace glob, so the runtime install
 # below leaves it alone.
-RUN pnpm --filter @saga/cli bundle
+#
+# The build id is normally read from the commit above. `SAGA_CLI_BUILD_ID` overrides it for a
+# release process that names its own builds, or for a context with no `.git` in it at all.
+ARG SAGA_CLI_BUILD_ID=
+RUN SAGA_CLI_BUILD_ID="$SAGA_CLI_BUILD_ID" pnpm --filter @saga/cli bundle
 
 # ---------------------------------------------------------------------------
 # runtime — production dependencies plus compiled output
