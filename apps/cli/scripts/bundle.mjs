@@ -122,6 +122,7 @@ writeFileSync(
       // `x-saga-cli-version`, and a number shared by every build tells a client nothing.
       version,
       description: manifest.description,
+      license: 'MIT',
       bin: { saga: 'dist/saga' },
       files: ['dist', 'README.md'],
       engines: { node: '>=22' },

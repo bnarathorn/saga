@@ -13,3 +13,13 @@ test-results/
 .saga/
 *.log
 .saga-run/
+
+# Editor and agent-tool configuration that names a particular server or project.
+.mcp.json
+.claude/
+
+# Compiled output that lands beside its source rather than in dist/.
+testing/*.js
+testing/*.js.map
+testing/*.d.ts
+testing/*.d.ts.map

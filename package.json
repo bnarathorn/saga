@@ -2,6 +2,7 @@
   "name": "saga",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Saga — shared project memory, work continuity, and coordination for coding agents.",
   "engines": {

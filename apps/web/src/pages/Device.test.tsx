@@ -168,7 +168,7 @@ describe('Device page', () => {
     });
 
     // The approve POST is intercepted separately so its resolution can be held open — Guild
-    // Hall sends no `Idempotency-Key` (see HANDOFF.md), so the button's disabled state while
+    // Hall sends no `Idempotency-Key` (see AGENTS.md §7), so the button's disabled state while
     // in flight is the only thing standing between one click and two audit records.
     let approveCalls = 0;
     let resolveApprove!: (value: Response) => void;

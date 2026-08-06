@@ -25,7 +25,9 @@ TARGET=${SAGA_TARGET:-/opt/saga}
 SERVICE_USER=${SAGA_SERVICE_USER:-saga}
 WEB_ROOT=${SAGA_WEB_ROOT:-/var/www/saga-app}
 WEB_OWNER=${SAGA_WEB_OWNER:-www-data:www-data}
-ORIGIN=${SAGA_ORIGIN:-https://home-203.duckdns.org:8443}
+# The origin the deployed API answers on, used only by the verification step. Set
+# SAGA_ORIGIN for anything other than the Compose/quickstart default.
+ORIGIN=${SAGA_ORIGIN:-http://127.0.0.1:4319}
 # The service account's home *is* the deploy directory, so a build that inherits it
 # writes `.cache/` and `.npm/` into the checkout. Keep the build's home outside, and
 # keep it across runs so corepack does not re-download pnpm every deploy.

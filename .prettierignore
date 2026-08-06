@@ -5,4 +5,3 @@
 **/test-results/**
 pnpm-lock.yaml
 docs/openapi.json
-SAGA_CODEX_IMPLEMENTATION_PROMPT.md

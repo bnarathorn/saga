@@ -26,9 +26,6 @@ and `pgcrypto`** (or Docker, which brings its own). Compose v2 is a separate CLI
 Docker packaged by an older distribution often arrives without it — check with
 `docker compose version`, not `docker --version`.
 
-The repository is private: run `gh auth login`, or use a token with the `repo` scope, or the
-clone fails on `could not read Username for 'https://github.com'`.
-
 ### With Docker
 
 ```bash
@@ -174,16 +171,16 @@ you are willing to have truncated.
 
 ## Documentation
 
-| Document                                                 | Covers                                          |
-| -------------------------------------------------------- | ----------------------------------------------- |
-| [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)       | Phase-by-phase status                           |
-| [`docs/architecture.md`](docs/architecture.md)           | Domains, state ownership, boundaries            |
-| [`docs/api.md`](docs/api.md)                             | Endpoints, error codes, pagination, idempotency |
-| [`docs/agent-integration.md`](docs/agent-integration.md) | MCP setup for Codex and Claude, session policy  |
-| [`docs/operations.md`](docs/operations.md)               | Deployment, upgrades, backups, troubleshooting  |
-| [`docs/security.md`](docs/security.md)                   | Authentication, token scopes, threat notes      |
-| [`docs/testing.md`](docs/testing.md)                     | Test strategy and how to run each suite         |
-| [`docs/adr/`](docs/adr/)                                 | Architecture decision records                   |
+| Document                                                 | Covers                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------ |
+| [`AGENTS.md`](AGENTS.md)                                 | Working on Saga itself: invariants, settled questions, traps |
+| [`docs/architecture.md`](docs/architecture.md)           | Domains, state ownership, boundaries                         |
+| [`docs/api.md`](docs/api.md)                             | Endpoints, error codes, pagination, idempotency              |
+| [`docs/agent-integration.md`](docs/agent-integration.md) | MCP setup for Codex and Claude, session policy               |
+| [`docs/operations.md`](docs/operations.md)               | Deployment, upgrades, backups, troubleshooting               |
+| [`docs/security.md`](docs/security.md)                   | Authentication, token scopes, threat notes                   |
+| [`docs/testing.md`](docs/testing.md)                     | Test strategy and how to run each suite                      |
+| [`docs/adr/`](docs/adr/)                                 | Architecture decision records                                |
 
 ---
 
@@ -204,7 +201,6 @@ These are not implementation details; they are the shape of the product.
 - **Saga is not source control or a deployment platform.** It records knowledge, intent and
   progress; external systems remain authoritative for code, databases and deployments.
 
-## Licence and attribution
+## Licence
 
-Saga's visual language is original. It uses no third-party game names, logos, characters,
-monsters, fonts, artwork or sound effects, and no other third-party game assets.
+Released under the [MIT Licence](LICENSE).
