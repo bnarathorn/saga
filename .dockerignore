@@ -25,6 +25,12 @@ apps/cli/pack/
 .env
 .env.*
 
+# `.env.example` holds no secret and — unlike every other path in this file — is tracked. Losing
+# it from the context makes `git status` inside the build stage report a deleted file, which is
+# what `bundle.mjs` calls a dirty tree, so every image would serve `0.1.0+g<sha>.dirty.<stamp>`.
+# The CI canary that proves no secret leaks tests for `/app/.env` exactly, not for `.env*`.
+!.env.example
+
 # Test and run artifacts. Large, local, and meaningless inside an image.
 test-results/
 playwright-report/
