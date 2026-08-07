@@ -41,6 +41,28 @@ const liveStatus = {
   body: { mode: 'strict', project_id: 'p1', active_agents: [], claims: [], overlaps: [] },
 };
 
+function activeAgent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: RUN_ID,
+    project_id: '00000000-0000-4000-8000-000000000010',
+    session_id: '00000000-0000-4000-8000-000000000110',
+    work_item_id: null,
+    agent_instance_id: 'claude-code:11111111',
+    client: 'saga-mcp',
+    workspace_label: 'machine-a:saga',
+    state: 'active',
+    live: true,
+    heartbeat_at: new Date().toISOString(),
+    lease_expires_at: new Date(Date.now() + 600_000).toISOString(),
+    started_at: new Date().toISOString(),
+    ended_at: null,
+    quest_title: null,
+    scope: {},
+    claims: [],
+    ...overrides,
+  };
+}
+
 function renderParty(permissions?: readonly Permission[]) {
   return renderWithProviders(<PartyPage />, {
     route: `/projects/${REF}/party`,
@@ -61,6 +83,29 @@ describe('Party page', () => {
 
     expect(await screen.findByText(/Live coordination is disabled/)).toBeInTheDocument();
     expect(screen.getByText('PARTY_MODE=off')).toBeInTheDocument();
+  });
+
+  it('tells apart two agents in the same folder', async () => {
+    // They share `client` and `workspace_label`, so the roster used to show one row twice.
+    stubFetch({
+      [STATUS]: {
+        body: {
+          ...liveStatus.body,
+          active_agents: [
+            activeAgent(),
+            activeAgent({
+              id: '00000000-0000-4000-8000-000000000301',
+              agent_instance_id: 'codex:22222222',
+            }),
+          ],
+        },
+      },
+      [CLAIMS]: { body: { items: [] } },
+    });
+    renderParty();
+
+    expect(await screen.findByText('claude-code:11111111')).toBeInTheDocument();
+    expect(screen.getByText('codex:22222222')).toBeInTheDocument();
   });
 
   it('releases a claim whose lease has lapsed, on behalf of its own agent run', async () => {

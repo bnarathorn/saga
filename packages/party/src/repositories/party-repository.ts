@@ -634,6 +634,7 @@ export class PartyRepository {
       workItemId: string;
       workItemTitle: string;
       agentRunId: string | null;
+      agentInstanceId: string | null;
       client: string | null;
     }[]
   > {
@@ -646,9 +647,11 @@ export class PartyRepository {
       work_item_id: string;
       title: string;
       agent_run_id: string | null;
+      agent_instance_id: string | null;
       client: string | null;
     }>(
-      `SELECT f.path, f.current_hash, f.work_item_id, w.title, f.agent_run_id, r.client
+      `SELECT f.path, f.current_hash, f.work_item_id, w.title, f.agent_run_id,
+              r.agent_instance_id, r.client
          FROM party.file_fingerprints f
          JOIN quest.work_items w ON w.id = f.work_item_id
          LEFT JOIN party.agent_runs r ON r.id = f.agent_run_id
@@ -665,6 +668,7 @@ export class PartyRepository {
       workItemId: row.work_item_id,
       workItemTitle: row.title,
       agentRunId: row.agent_run_id,
+      agentInstanceId: row.agent_instance_id,
       client: row.client,
     }));
   }

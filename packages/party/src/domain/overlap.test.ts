@@ -9,6 +9,7 @@ import {
 function agent(overrides: Partial<AgentSnapshot> & { agentRunId: string }): AgentSnapshot {
   return {
     sessionId: `session-${overrides.agentRunId}`,
+    agentInstanceId: `${overrides.client ?? 'codex'}:${overrides.agentRunId}`,
     client: 'codex',
     workspaceKey: null,
     workItemId: `quest-${overrides.agentRunId}`,
@@ -130,6 +131,25 @@ describe('overlap detection', () => {
     ]);
     expect(overlaps[0]?.values.length).toBeLessThanOrEqual(10);
   });
+
+  it('names peers that share a client distinguishably', () => {
+    // Every MCP agent connects as the same `client`, so naming a peer by it made two agents in
+    // one folder read as one — the very case a workspace overlap exists to report.
+    const subject = agent({ agentRunId: 'a', workspaceKey: 'w', client: 'saga-mcp' });
+    const peers = [
+      agent({ agentRunId: 'b', workspaceKey: 'w', client: 'saga-mcp' }),
+      agent({ agentRunId: 'c', workspaceKey: 'w', client: 'saga-mcp' }),
+    ];
+
+    const messages = detectOverlaps(subject, peers)
+      .filter((overlap) => overlap.kind === 'workspace')
+      .map((overlap) => overlap.message);
+
+    expect(messages).toHaveLength(2);
+    expect(new Set(messages).size).toBe(2);
+    expect(messages[0]).toContain('saga-mcp:b');
+    expect(messages[1]).toContain('saga-mcp:c');
+  });
 });
 
 describe('party context rendering', () => {
@@ -164,7 +184,7 @@ describe('party context rendering', () => {
     );
 
     expect(rendered).toContain('## Parallel work');
-    expect(rendered).toContain('Codex: Implement report API endpoint');
+    expect(rendered).toContain('Codex:b: Implement report API endpoint');
     expect(rendered).toContain('services/api/src/reports');
     expect(rendered).toContain('## Overlap warnings');
     expect(rendered).toContain('## Claims');

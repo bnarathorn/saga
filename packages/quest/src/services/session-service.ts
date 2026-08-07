@@ -31,6 +31,8 @@ export interface PartyHooks {
     projectId: string;
     sessionId: string;
     client: string;
+    /** Name the host reported at `initialize`, e.g. `claude-code`. Null when it reported none. */
+    agent: string | null;
     workspaceKey: string | null;
     workspaceLabel: string | null;
   }): Promise<{ agentRunId: string } | null>;
@@ -111,6 +113,7 @@ export class SessionService {
       projectId: input.project.id,
       sessionId: session.id,
       client: input.client,
+      agent: input.agent ?? null,
       workspaceKey: input.workspaceKey ?? null,
       workspaceLabel: input.workspaceLabel ?? null,
     });

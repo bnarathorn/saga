@@ -635,7 +635,7 @@ function PartyPanel({ projectRef, questId }: { projectRef: string; questId: stri
               {members.map((member) => (
                 <li key={member.id} className="px-4 py-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{member.client}</span>
+                    <span className="font-medium">{member.agent_instance_id}</span>
                     <Badge tone={member.live ? 'good' : 'warn'}>
                       {member.live ? 'live' : 'lease expired'}
                     </Badge>

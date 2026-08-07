@@ -9,6 +9,12 @@ import type { OverlapDto, QuestScope } from '@saga/contracts';
 export interface AgentSnapshot {
   agentRunId: string;
   sessionId: string;
+  /**
+   * How a peer is named to other agents and in Guild Hall: `<agent>:<session prefix>`. `client`
+   * is the transport and is the same string for every MCP session, so naming a peer by it makes
+   * two agents in one folder read as one.
+   */
+  agentInstanceId: string;
   client: string;
   workspaceKey: string | null;
   workItemId: string | null;
@@ -61,7 +67,7 @@ export function detectOverlaps(
         ...base,
         kind: 'workspace',
         severity: 'critical',
-        message: `${peer.client} is working in the same folder. Uncommitted changes are visible to both agents immediately.`,
+        message: `${peer.agentInstanceId} is working in the same folder. Uncommitted changes are visible to both agents immediately.`,
         values: [],
       });
     }
@@ -73,7 +79,7 @@ export function detectOverlaps(
         ...base,
         kind,
         severity: sameWorkspace ? 'critical' : 'warning',
-        message: `${peer.client} declared the same ${label}${shared.length === 1 ? '' : 's'} on "${peer.questTitle ?? 'another Quest'}".`,
+        message: `${peer.agentInstanceId} declared the same ${label}${shared.length === 1 ? '' : 's'} on "${peer.questTitle ?? 'another Quest'}".`,
         values: shared.slice(0, 10),
       });
     }
@@ -84,7 +90,7 @@ export function detectOverlaps(
         ...base,
         kind: 'file',
         severity: 'critical',
-        message: `${peer.client} has already changed ${sharedFiles.length} of the same file${sharedFiles.length === 1 ? '' : 's'}.`,
+        message: `${peer.agentInstanceId} has already changed ${sharedFiles.length} of the same file${sharedFiles.length === 1 ? '' : 's'}.`,
         values: sharedFiles.slice(0, 10),
       });
     }
@@ -100,7 +106,7 @@ export function detectOverlaps(
         ...base,
         kind: 'claim',
         severity: 'warning',
-        message: `${peer.client} holds a claim on the same resource${sharedClaims.length === 1 ? '' : 's'}.`,
+        message: `${peer.agentInstanceId} holds a claim on the same resource${sharedClaims.length === 1 ? '' : 's'}.`,
         values: sharedClaims
           .map((claim) => `${claim.resourceType}:${claim.resourceKey}`)
           .slice(0, 10),
@@ -177,7 +183,7 @@ export function renderPartyContext(
     for (const peer of peers) {
       const title =
         peer.questTitle === null ? 'no Quest attached' : inlineContextValue(peer.questTitle);
-      lines.push(`- ${inlineContextValue(peer.client, 60)}: ${title}`);
+      lines.push(`- ${inlineContextValue(peer.agentInstanceId, 60)}: ${title}`);
       const scopeParts: string[] = [];
       for (const { field, label } of SCOPE_FIELDS) {
         const values = peer.scope[field];
