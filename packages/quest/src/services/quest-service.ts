@@ -2,9 +2,11 @@ import type {
   CheckpointKind,
   ContinuationDto,
   DependencyType,
+  QuestPlanDto,
   QuestPriority,
   QuestScope,
   QuestStatus,
+  StepUpdate,
   WorkState,
 } from '@saga/contracts';
 import type { OutboxRepository, Project, ProjectRepository } from '@saga/core';
@@ -19,6 +21,7 @@ import {
   type Page,
 } from '@saga/shared';
 import type { JobService } from '@saga/shrine';
+import { planCompletesQuest, reconcilePlan, summarisePlan } from '../domain/plan.js';
 import {
   canTransitionStatus,
   projectParentStatus,
@@ -29,6 +32,7 @@ import {
   type Checkpoint,
   type Quest,
   type QuestDependency,
+  type QuestStep,
 } from '../repositories/quest-repository.js';
 
 /**
@@ -266,6 +270,61 @@ export class QuestService {
     });
   }
 
+  // --- plan ----------------------------------------------------------------
+
+  async getPlan(workItemId: string): Promise<QuestPlanDto> {
+    const steps = await this.deps.quests.listSteps(this.deps.pool, workItemId);
+    return toPlanDto(steps);
+  }
+
+  /**
+   * Declare or re-declare a Quest's numbered plan.
+   *
+   * Held under the Quest row lock, because the plan and the status derived from it must move
+   * together: without it a checkpoint could settle the last step of a plan that is halfway
+   * through being replaced, and close the Quest against a plan that no longer exists.
+   *
+   * Replacing a plan never closes a Quest by itself, even when every carried-over step is
+   * already done. Closing is something a session does through a checkpoint, or the sweeper does
+   * once nobody is attached — both of which see the new plan on their next pass.
+   */
+  async setPlan(
+    workItemId: string,
+    titles: readonly string[],
+    correlationId?: string | null,
+  ): Promise<QuestPlanDto> {
+    return withTransaction(this.deps.pool, async (tx) => {
+      const quest = await this.deps.quests.lockById(tx, workItemId);
+      if (quest === null) throw new SagaError('QUEST_NOT_FOUND', 'No Quest matches that id.');
+      if (quest.status === 'completed' || quest.status === 'cancelled') {
+        throw new SagaError(
+          'QUEST_STATE_INVALID',
+          `A ${quest.status} Quest cannot take a new plan. Reopen it first.`,
+          { details: { status: quest.status } },
+        );
+      }
+
+      const existing = await this.deps.quests.listSteps(tx, workItemId);
+      const reconciled = reconcilePlan(existing, titles);
+      const steps = await this.deps.quests.replaceSteps(tx, workItemId, reconciled);
+
+      await this.deps.outbox.emit(tx, {
+        aggregateType: 'work_item',
+        aggregateId: workItemId,
+        topic: 'quest.plan_declared',
+        payload: {
+          title: quest.title,
+          steps: steps.length,
+          carried_over: reconciled.filter((step) => step.carriedFromId !== null).length,
+        },
+        correlationId: correlationId ?? null,
+        projectId: quest.projectId,
+      });
+
+      return toPlanDto(steps);
+    });
+  }
+
   // --- dependencies --------------------------------------------------------
 
   async addDependency(
@@ -335,8 +394,13 @@ export class QuestService {
    * Append a checkpoint under compare-and-swap on the Quest revision (spec 7.13).
    *
    * Within one transaction: lock the Quest, reject a stale expected revision, insert the
-   * append-only checkpoint, set `latest_checkpoint_id`, increment the revision exactly once,
-   * touch `last_activity_at`, and emit the outbox event.
+   * append-only checkpoint, settle any plan steps the checkpoint reports, set
+   * `latest_checkpoint_id`, increment the revision exactly once, touch `last_activity_at`,
+   * close the Quest if that settled the last step, and emit the outbox events.
+   *
+   * The step updates share the checkpoint's transaction on purpose: a step recorded as done
+   * without the checkpoint that says why is a completion nobody can audit, and a Quest closed
+   * against steps that then roll back is worse still.
    */
   async createCheckpoint(input: {
     sessionId: string;
@@ -344,8 +408,15 @@ export class QuestService {
     kind: CheckpointKind;
     summary: string;
     workState: WorkState;
+    stepUpdates?: readonly StepUpdate[];
     correlationId?: string | null;
-  }): Promise<{ checkpoint: Checkpoint; questRevision: number }> {
+  }): Promise<{
+    checkpoint: Checkpoint;
+    questRevision: number;
+    plan: QuestPlanDto | null;
+    questStatus: QuestStatus;
+    questStatusHeld: string | null;
+  }> {
     return withTransaction(this.deps.pool, async (tx) => {
       const session = await this.deps.quests.lockSessionById(tx, input.sessionId);
       if (session === null) {
@@ -408,6 +479,13 @@ export class QuestService {
         );
       }
 
+      const steps = await this.applyStepUpdates(tx, {
+        quest,
+        sessionId: input.sessionId,
+        checkpointId: checkpoint.id,
+        updates: input.stepUpdates ?? [],
+      });
+
       await this.deps.quests.touchSession(tx, input.sessionId);
 
       await this.deps.outbox.emit(tx, {
@@ -420,13 +498,182 @@ export class QuestService {
           checkpoint_id: checkpoint.id,
           quest_revision: advanced.revision,
           session_id: input.sessionId,
+          steps_settled: (input.stepUpdates ?? []).length,
         },
         correlationId: input.correlationId ?? null,
         projectId: quest.projectId,
       });
 
-      return { checkpoint, questRevision: advanced.revision };
+      const completion = await this.completeIfPlanFinished(tx, {
+        // `advanced` carries the revision this checkpoint just wrote; `quest` is one behind.
+        quest: advanced,
+        steps,
+        excludeSessionId: input.sessionId,
+        reason: 'plan_complete',
+        correlationId: input.correlationId ?? null,
+      });
+
+      return {
+        checkpoint,
+        questRevision: advanced.revision,
+        plan: steps.length === 0 ? null : toPlanDto(steps),
+        questStatus: completion.status,
+        questStatusHeld: completion.held,
+      };
     });
+  }
+
+  /**
+   * Settle the steps a checkpoint reports, and return the plan as it stands afterwards.
+   *
+   * An ordinal that is not in the plan is an error rather than a no-op: an agent ticking off a
+   * step the Quest does not have has lost track of which plan it is working to, and silently
+   * dropping the update would let it believe it had finished.
+   */
+  private async applyStepUpdates(
+    tx: Queryable,
+    input: {
+      quest: Quest;
+      sessionId: string | null;
+      checkpointId: string | null;
+      updates: readonly StepUpdate[];
+    },
+  ): Promise<QuestStep[]> {
+    for (const update of input.updates) {
+      const settled = await this.deps.quests.setStepStatus(tx, {
+        workItemId: input.quest.id,
+        ordinal: update.ordinal,
+        status: update.status ?? 'done',
+        sessionId: input.sessionId,
+        checkpointId: input.checkpointId,
+      });
+      if (settled === null) {
+        throw new SagaError(
+          'QUEST_STEP_NOT_FOUND',
+          `This Quest has no step ${update.ordinal}. Re-read the plan before settling steps.`,
+          { details: { work_item_id: input.quest.id, ordinal: update.ordinal } },
+        );
+      }
+    }
+    return this.deps.quests.listSteps(tx, input.quest.id);
+  }
+
+  /**
+   * Close a Quest whose plan has finished, or say why it was left open.
+   *
+   * The same two gates that guard a declared `quest_status` on `saga_end_session`, for the same
+   * reason: closing is one-way from the agent surface, so a wrong close silently forks the work
+   * (ADR-0010, ADR-0011).
+   *
+   *   1. The project must be on `quest_completion_mode = 'auto'`.
+   *   2. No other session may still be attached — Quest-to-session is one-to-many, so one agent
+   *      finishing its own steps is not the work being finished.
+   *
+   * The caller must hold the Quest row lock. That is what makes gate 2 sound for the sweeper,
+   * which reads its candidates outside any transaction: a session that attached in between is
+   * seen here, under the lock, before anything is written.
+   */
+  private async completeIfPlanFinished(
+    tx: Queryable,
+    input: {
+      quest: Quest;
+      steps: readonly QuestStep[];
+      excludeSessionId?: string;
+      reason: string;
+      correlationId: string | null;
+    },
+  ): Promise<{ status: QuestStatus; held: string | null; completed: boolean }> {
+    const unchanged = { status: input.quest.status, held: null, completed: false };
+
+    if (!planCompletesQuest(input.steps)) return unchanged;
+    if (input.quest.status === 'completed' || input.quest.status === 'cancelled') return unchanged;
+    if (!canTransitionStatus(input.quest.status, 'completed')) return unchanged;
+
+    const project = await this.deps.projects.findById(tx, input.quest.projectId);
+    if (project?.questCompletionMode !== 'auto') {
+      return {
+        status: input.quest.status,
+        held: `Every step of the plan is settled, but the project is on quest_completion_mode "manual", so the Quest was left open for Guild Hall.`,
+        completed: false,
+      };
+    }
+
+    const live = await this.deps.quests.hasLiveSession(tx, input.quest.id, input.excludeSessionId);
+    if (live) {
+      return {
+        status: input.quest.status,
+        held: 'Every step of the plan is settled, but another session is still attached to this Quest, so it was left open.',
+        completed: false,
+      };
+    }
+
+    const updated = await this.deps.quests.update(tx, input.quest.id, {
+      status: 'completed',
+      // The plan was declared by hand and settled item by item; projection from children must
+      // not quietly reopen what that decided.
+      statusSetManually: true,
+    });
+
+    await this.deps.outbox.emit(tx, {
+      aggregateType: 'work_item',
+      aggregateId: input.quest.id,
+      topic: 'quest.completed',
+      payload: {
+        title: updated.title,
+        from: input.quest.status,
+        to: 'completed',
+        reason: input.reason,
+        steps: input.steps.length,
+        steps_done: input.steps.filter((step) => step.status === 'done').length,
+      },
+      correlationId: input.correlationId,
+      projectId: input.quest.projectId,
+    });
+
+    if (updated.parentWorkItemId !== null) {
+      await this.reprojectParent(tx, updated.parentWorkItemId, input.correlationId);
+    }
+
+    return { status: 'completed', held: null, completed: true };
+  }
+
+  /**
+   * Close every Quest whose plan has finished and whose sessions have all gone. Called by the
+   * worker.
+   *
+   * This is the half of plan-driven completion that survives a crash. A session that settles its
+   * last step and then dies — no final handoff, no `saga_end_session` — leaves a Quest that is
+   * demonstrably finished and permanently `in_progress`, which is exactly what keeps stale
+   * Quests eligible as resume candidates.
+   */
+  async sweepCompletedPlans(limit = 50): Promise<{ completed: string[]; held: number }> {
+    const candidates = await this.deps.quests.findSweepableQuests(this.deps.pool, limit);
+    if (candidates.length === 0) return { completed: [], held: 0 };
+
+    const completed: string[] = [];
+    let held = 0;
+
+    for (const candidate of candidates) {
+      // One transaction per Quest: a Quest that has since been picked up must not roll back the
+      // ones already swept.
+      const result = await withTransaction(this.deps.pool, async (tx) => {
+        const quest = await this.deps.quests.lockById(tx, candidate.id);
+        if (quest === null) return null;
+        const steps = await this.deps.quests.listSteps(tx, quest.id);
+        return this.completeIfPlanFinished(tx, {
+          quest,
+          steps,
+          reason: 'plan_complete_swept',
+          correlationId: null,
+        });
+      });
+
+      if (result === null) continue;
+      if (result.completed) completed.push(candidate.id);
+      else held += 1;
+    }
+
+    return { completed, held };
   }
 
   async listCheckpoints(workItemId: string, limit = 50): Promise<Checkpoint[]> {
@@ -443,13 +690,22 @@ export class QuestService {
   async continuation(workItemId: string, tokenBudget: number): Promise<ContinuationDto | null> {
     const found = await this.deps.quests.findContinuation(this.deps.pool, workItemId);
     if (found === null) return null;
-    const quest = await this.deps.quests.findById(this.deps.pool, workItemId);
+    const [quest, steps] = await Promise.all([
+      this.deps.quests.findById(this.deps.pool, workItemId),
+      this.deps.quests.listSteps(this.deps.pool, workItemId),
+    ]);
+
+    // The plan is read live rather than from the checkpoint's work state: steps settle under
+    // their own transaction, and a resuming session needs where the Quest *is*, not where the
+    // last author thought it was.
+    const plan = steps.length === 0 ? null : toPlanDto(steps);
 
     const rendered = renderContinuation(
       found.checkpoint,
       quest?.title ?? 'this Quest',
       found.recovered,
       tokenBudget,
+      plan,
     );
 
     return {
@@ -458,6 +714,7 @@ export class QuestService {
       quest_revision: found.checkpoint.baseWorkItemRevision + 1,
       recorded_at: found.checkpoint.createdAt.toISOString(),
       recovered_from_interrupted_session: found.recovered,
+      plan,
       next_steps: found.checkpoint.workState.next_steps,
       blockers: found.checkpoint.workState.blockers as unknown as Record<string, unknown>[],
       rendered,
@@ -543,6 +800,24 @@ export class QuestService {
 
 // ---------------------------------------------------------------------------
 
+export function toPlanDto(steps: readonly QuestStep[]): QuestPlanDto {
+  return {
+    steps: steps.map((step) => ({
+      id: step.id,
+      work_item_id: step.workItemId,
+      ordinal: step.ordinal,
+      title: step.title,
+      status: step.status,
+      completed_at: step.completedAt?.toISOString() ?? null,
+      completed_by_session_id: step.completedBySessionId,
+      completed_by_checkpoint_id: step.completedByCheckpointId,
+      created_at: step.createdAt.toISOString(),
+      updated_at: step.updatedAt.toISOString(),
+    })),
+    progress: summarisePlan(steps),
+  };
+}
+
 export function questSearchText(
   title: string,
   objective: string | null,
@@ -564,6 +839,7 @@ export function renderContinuation(
   questTitle: string,
   recovered: boolean,
   tokenBudget: number,
+  plan: QuestPlanDto | null = null,
 ): string {
   const state = checkpoint.workState;
   const lines: string[] = [`## Continuing: ${questTitle}`, ''];
@@ -583,6 +859,29 @@ export function renderContinuation(
     for (const item of items) lines.push(`- ${item}`);
     lines.push('');
   };
+
+  // The plan comes first and is never trimmed away: it is the only part of a continuation that
+  // says what finishing this Quest actually requires, and it is what the resuming session will
+  // settle to close it.
+  if (plan !== null) {
+    const marks: Record<string, string> = {
+      done: '[x]',
+      skipped: '[-]',
+      in_progress: '[~]',
+      pending: '[ ]',
+    };
+    lines.push(`### Plan — ${plan.progress.done}/${plan.progress.total} done`);
+    for (const step of plan.steps) {
+      lines.push(`- ${marks[step.status]} ${step.ordinal}. ${step.title}`);
+    }
+    lines.push(
+      '',
+      plan.progress.next_ordinal === null
+        ? 'Every step is settled. This Quest closes on the next checkpoint or the next sweep.'
+        : `Resume at step ${plan.progress.next_ordinal}. Settle each step with \`step_updates\` on saga_checkpoint; the Quest completes when the last one is settled, whatever next steps remain.`,
+      '',
+    );
+  }
 
   // Ordered by what a resuming agent needs first.
   section('Next steps', state.next_steps);

@@ -36,6 +36,7 @@ export const OUTBOX_TOPICS = [
   'quest.checkpoint_created',
   'quest.status_changed',
   'quest.completed',
+  'quest.plan_declared',
   'quest.session_started',
   'quest.session_abandoned',
   'quest.session_ended',

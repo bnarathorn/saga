@@ -1,9 +1,11 @@
 import type {
   ActivationMode,
   ModeHint,
+  QuestPlanDto,
   QuestScope,
   QuestStatus,
   RelatedQuestDto,
+  StepUpdate,
   WorkState,
 } from '@saga/contracts';
 import type { OutboxRepository, Project, ProjectRepository } from '@saga/core';
@@ -144,6 +146,8 @@ export class SessionService {
     modeHint?: ModeHint;
     requestedQuestId?: string | null;
     scope?: QuestScope;
+    /** Sub-tasks declared up front. Applied only to a Quest this activation creates. */
+    plan?: readonly string[];
     similarity?: Map<string, number>;
     correlationId?: string | null;
   }): Promise<ActivationResult> {
@@ -155,15 +159,31 @@ export class SessionService {
         { details: { state: session.state } },
       );
     }
-    // Activation is once per session (spec 9.1: open -> await task -> activate). A repeated
-    // call would re-run Quest matching and could rebind the session to a different Quest, or
-    // create a second one. `promote` guards the same shape.
+    // Activation is once per *open* Quest (spec 9.1: open -> await task -> activate). Rebinding
+    // a session whose Quest is still live would abandon work in flight, or silently move its
+    // later checkpoints onto a different Quest. `promote` guards the same shape.
+    //
+    // A closed Quest is the exception, and it is the common case now that a finished plan
+    // completes a Quest mid-session: the user's next request arrives in the same session, with
+    // the Quest it would have attached to already `completed`. Refusing there would strand the
+    // agent — nothing in the MCP surface can open a second session — so the work would land as
+    // checkpoints on a Quest that is finished, or nowhere at all. Re-activating classifies the
+    // new task from scratch, which for a genuinely new request means a new Quest.
     if (session.workItemId !== null) {
-      throw new SagaError(
-        'SESSION_STATE_INVALID',
-        'This session is already attached to a Quest. Use a new session, or promote an inquiry.',
-        { details: { work_item_id: session.workItemId, state: session.state } },
-      );
+      const attached = await this.deps.quests.findById(this.deps.pool, session.workItemId);
+      if (attached !== null && !TERMINAL_QUEST_STATUSES.includes(attached.status)) {
+        throw new SagaError(
+          'SESSION_STATE_INVALID',
+          `This session is already attached to a Quest that is still ${attached.status}. Finish or close it before starting different work, or promote an inquiry.`,
+          {
+            details: {
+              work_item_id: session.workItemId,
+              quest_status: attached.status,
+              state: session.state,
+            },
+          },
+        );
+      }
     }
     if (session.projectId !== input.project.id) {
       throw new SagaError('SESSION_NOT_FOUND', 'That session belongs to another project.');
@@ -227,6 +247,12 @@ export class SessionService {
         sessionId: input.sessionId,
         correlationId: input.correlationId,
       });
+      // Only for a Quest this activation created. A resumed Quest already has whatever plan its
+      // earlier sessions declared, and silently replacing it from a `mode_hint: auto` guess
+      // would discard steps another session recorded as done.
+      if (input.plan !== undefined && input.plan.length > 0) {
+        await this.deps.questService.setPlan(quest.id, input.plan, input.correlationId);
+      }
     }
 
     const activated = await withTransaction(this.deps.pool, async (tx) => {
@@ -303,7 +329,12 @@ export class SessionService {
    */
   async end(input: {
     sessionId: string;
-    handoff?: { expectedQuestRevision: number; summary: string; workState: WorkState };
+    handoff?: {
+      expectedQuestRevision: number;
+      summary: string;
+      workState: WorkState;
+      stepUpdates?: readonly StepUpdate[];
+    };
     /** What the agent declares has become of the Quest. Never inferred from the work state. */
     questStatus?: QuestStatus;
     correlationId?: string | null;
@@ -314,6 +345,7 @@ export class SessionService {
     releasedClaims: number;
     questStatus: QuestStatus | null;
     questStatusHeld: string | null;
+    plan: QuestPlanDto | null;
   }> {
     const session = await this.get(input.sessionId);
     if (session.state === 'completed') {
@@ -324,11 +356,16 @@ export class SessionService {
         releasedClaims: 0,
         questStatus: null,
         questStatusHeld: null,
+        plan: null,
       };
     }
 
     let handoff: Checkpoint | null = null;
     let questRevision: number | null = null;
+    let plan: QuestPlanDto | null = null;
+    // Why a finished plan did not close the Quest, when that is what happened. Kept separate
+    // from the declared-status outcome so a declaration that changed nothing does not erase it.
+    let planHeld: string | null = null;
 
     if (session.workItemId !== null) {
       if (input.handoff === undefined) {
@@ -344,10 +381,13 @@ export class SessionService {
         kind: 'final_handoff',
         summary: input.handoff.summary,
         workState: input.handoff.workState,
+        stepUpdates: input.handoff.stepUpdates,
         correlationId: input.correlationId,
       });
       handoff = created.checkpoint;
       questRevision = created.questRevision;
+      plan = created.plan;
+      planHeld = created.questStatusHeld;
     }
 
     const outcome = await this.applyDeclaredQuestStatus({
@@ -390,7 +430,10 @@ export class SessionService {
       questRevision,
       releasedClaims,
       questStatus: outcome.status,
-      questStatusHeld: outcome.held,
+      // A finished plan that was held back is the more useful answer of the two: the agent asked
+      // for nothing and still needs telling why the Quest it finished is still open.
+      questStatusHeld: outcome.held ?? planHeld,
+      plan,
     };
   }
 

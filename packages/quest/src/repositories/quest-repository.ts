@@ -5,6 +5,7 @@ import type {
   QuestPriority,
   QuestScope,
   QuestStatus,
+  QuestStepStatus,
   SessionState,
   WorkState,
 } from '@saga/contracts';
@@ -75,6 +76,19 @@ export interface QuestDependency {
   createdAt: Date;
 }
 
+export interface QuestStep {
+  id: string;
+  workItemId: string;
+  ordinal: number;
+  title: string;
+  status: QuestStepStatus;
+  completedAt: Date | null;
+  completedBySessionId: string | null;
+  completedByCheckpointId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ---------------------------------------------------------------------------
 // row mapping
 // ---------------------------------------------------------------------------
@@ -103,6 +117,14 @@ const QUEST_COLUMNS = `id, project_id, parent_work_item_id, title, objective, st
                        scope, revision, latest_checkpoint_id, created_by_session_id,
                        status_set_manually, embedding_state, created_at, last_activity_at,
                        completed_at, archived_at`;
+
+/** Prefix a column list with a table alias, for the one read that joins. */
+function qualified(columns: string, alias: string): string {
+  return columns
+    .split(',')
+    .map((column) => `${alias}.${column.trim()}`)
+    .join(', ');
+}
 
 function toQuest(row: QuestRow): Quest {
   return {
@@ -194,6 +216,37 @@ function toCheckpoint(row: CheckpointRow): Checkpoint {
     summary: row.summary,
     workState: row.work_state,
     createdAt: row.created_at,
+  };
+}
+
+interface StepRow {
+  id: string;
+  work_item_id: string;
+  ordinal: number;
+  title: string;
+  status: string;
+  completed_at: Date | null;
+  completed_by_session_id: string | null;
+  completed_by_checkpoint_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const STEP_COLUMNS = `id, work_item_id, ordinal, title, status, completed_at,
+                      completed_by_session_id, completed_by_checkpoint_id, created_at, updated_at`;
+
+function toStep(row: StepRow): QuestStep {
+  return {
+    id: row.id,
+    workItemId: row.work_item_id,
+    ordinal: row.ordinal,
+    title: row.title,
+    status: row.status as QuestStepStatus,
+    completedAt: row.completed_at,
+    completedBySessionId: row.completed_by_session_id,
+    completedByCheckpointId: row.completed_by_checkpoint_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -758,6 +811,173 @@ export class QuestRepository {
       [id],
     );
     return result.rows[0] === undefined ? null : toCheckpoint(result.rows[0]);
+  }
+
+  // --- plan steps ----------------------------------------------------------
+
+  async listSteps(q: Queryable, workItemId: string): Promise<QuestStep[]> {
+    const result = await q.query<StepRow>(
+      `SELECT ${STEP_COLUMNS} FROM quest.work_item_steps
+        WHERE work_item_id = $1 ORDER BY ordinal`,
+      [workItemId],
+    );
+    return result.rows.map(toStep);
+  }
+
+  /**
+   * Steps for several Quests at once, keyed by Quest id.
+   *
+   * The sweeper settles a batch of Quests in one pass, and Guild Hall lists a board of them;
+   * both would otherwise issue one query per Quest.
+   */
+  async listStepsForQuests(
+    q: Queryable,
+    workItemIds: readonly string[],
+  ): Promise<Map<string, QuestStep[]>> {
+    const byQuest = new Map<string, QuestStep[]>();
+    if (workItemIds.length === 0) return byQuest;
+
+    const result = await q.query<StepRow>(
+      `SELECT ${STEP_COLUMNS} FROM quest.work_item_steps
+        WHERE work_item_id = ANY($1::uuid[]) ORDER BY work_item_id, ordinal`,
+      [[...workItemIds]],
+    );
+    for (const row of result.rows) {
+      const step = toStep(row);
+      const existing = byQuest.get(step.workItemId);
+      if (existing === undefined) byQuest.set(step.workItemId, [step]);
+      else existing.push(step);
+    }
+    return byQuest;
+  }
+
+  /**
+   * Replace a Quest's plan wholesale.
+   *
+   * Deletes every step not carried over, then upserts the new set by ordinal. The caller must
+   * hold the Quest row lock: the plan and the status derived from it have to move together, or
+   * a concurrent checkpoint settles a step that is about to be deleted.
+   */
+  async replaceSteps(
+    tx: Queryable,
+    workItemId: string,
+    steps: readonly { ordinal: number; title: string; carriedFromId: string | null }[],
+  ): Promise<QuestStep[]> {
+    const carried = steps
+      .map((step) => step.carriedFromId)
+      .filter((id): id is string => id !== null);
+
+    await tx.query(
+      `DELETE FROM quest.work_item_steps
+        WHERE work_item_id = $1 AND NOT (id = ANY($2::uuid[]))`,
+      [workItemId, carried],
+    );
+
+    for (const step of steps) {
+      if (step.carriedFromId !== null) {
+        // Carried over unchanged: its ordinal and title already match, and its status is the
+        // point of carrying it. Nothing to write.
+        continue;
+      }
+      await tx.query(
+        `INSERT INTO quest.work_item_steps (work_item_id, ordinal, title)
+         VALUES ($1, $2, $3)`,
+        [workItemId, step.ordinal, step.title],
+      );
+    }
+
+    return this.listSteps(tx, workItemId);
+  }
+
+  /**
+   * Settle one step by its number, recording which checkpoint settled it.
+   *
+   * Returns null when the Quest has no step with that ordinal, which the service reports rather
+   * than ignoring: an agent ticking off a step that is not in the plan has lost track of it.
+   */
+  async setStepStatus(
+    tx: Queryable,
+    input: {
+      workItemId: string;
+      ordinal: number;
+      status: QuestStepStatus;
+      sessionId: string | null;
+      checkpointId: string | null;
+    },
+  ): Promise<QuestStep | null> {
+    const settled = input.status === 'done' || input.status === 'skipped';
+    const result = await tx.query<StepRow>(
+      `UPDATE quest.work_item_steps
+          SET status = $3,
+              -- Re-settling an already settled step keeps the moment it was first settled.
+              completed_at = CASE WHEN $4 THEN COALESCE(completed_at, now()) ELSE NULL END,
+              -- Both branches must be cast: with a bare NULL on one side Postgres has nothing
+              -- to infer the parameter type from and treats it as text.
+              completed_by_session_id = CASE WHEN $4 THEN $5::uuid ELSE NULL::uuid END,
+              completed_by_checkpoint_id = CASE WHEN $4 THEN $6::uuid ELSE NULL::uuid END,
+              updated_at = now()
+        WHERE work_item_id = $1 AND ordinal = $2
+       RETURNING ${STEP_COLUMNS}`,
+      [input.workItemId, input.ordinal, input.status, settled, input.sessionId, input.checkpointId],
+    );
+    return result.rows[0] === undefined ? null : toStep(result.rows[0]);
+  }
+
+  /**
+   * Quests the server may close on its own: a finished plan, an open status, and nobody
+   * attached.
+   *
+   * Every condition is re-checked under the row lock before the Quest is closed — this is only
+   * the candidate scan, and it reads outside any transaction.
+   */
+  async findSweepableQuests(q: Queryable, limit: number): Promise<Quest[]> {
+    const result = await q.query<QuestRow>(
+      // Qualified: this is the only Quest read that joins another table, and `id` and `status`
+      // are ambiguous across `work_items` and `projects`.
+      `SELECT ${qualified(QUEST_COLUMNS, 'w')} FROM quest.work_items w
+        JOIN core.projects p ON p.id = w.project_id
+        WHERE w.status NOT IN ('completed', 'cancelled')
+          AND w.archived_at IS NULL
+          AND p.quest_completion_mode = 'auto'
+          AND p.status <> 'archived'
+          -- A finished plan: at least one step, every one settled, at least one really done.
+          AND EXISTS (
+            SELECT 1 FROM quest.work_item_steps s
+             WHERE s.work_item_id = w.id AND s.status = 'done'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM quest.work_item_steps s
+             WHERE s.work_item_id = w.id AND s.status NOT IN ('done', 'skipped')
+          )
+          -- Somebody is still working on it, so it is theirs to close.
+          AND NOT EXISTS (
+            SELECT 1 FROM quest.sessions sess
+             WHERE sess.work_item_id = w.id
+               AND sess.state IN ('active', 'awaiting_task')
+          )
+        ORDER BY w.last_activity_at
+        LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map(toQuest);
+  }
+
+  /** True when a session is still active or awaiting a task on this Quest. */
+  async hasLiveSession(
+    q: Queryable,
+    workItemId: string,
+    excludeSessionId?: string,
+  ): Promise<boolean> {
+    const result = await q.query<{ live: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM quest.sessions
+          WHERE work_item_id = $1
+            AND state IN ('active', 'awaiting_task')
+            AND ($2::uuid IS NULL OR id <> $2::uuid)
+       ) AS live`,
+      [workItemId, excludeSessionId ?? null],
+    );
+    return result.rows[0]!.live;
   }
 
   /**

@@ -4,7 +4,11 @@ import { createCleanupHandler } from './handlers/cleanup.js';
 import { createEventProjectionHandler } from './handlers/event-projection.js';
 import { noopHandler } from './handlers/noop.js';
 import { createOutboxDeliveryHandler } from './handlers/outbox-delivery.js';
-import { createPartyReaperHandler, createSessionReaperHandler } from './handlers/quest.js';
+import {
+  createPartyReaperHandler,
+  createQuestPlanSweeperHandler,
+  createSessionReaperHandler,
+} from './handlers/quest.js';
 import {
   createContextSnapshotHandler,
   createEmbeddingHandler,
@@ -68,6 +72,7 @@ export function registerHandlers(ctx: WorkerContext): void {
     }),
   );
   ctx.handlers.register(createSessionReaperHandler({ sessions: ctx.services.sessions }));
+  ctx.handlers.register(createQuestPlanSweeperHandler({ quests: ctx.services.quests }));
   if (ctx.services.party.enabled) {
     ctx.handlers.register(createPartyReaperHandler({ party: ctx.services.party }));
   }
@@ -168,7 +173,7 @@ export function startMaintenance(ctx: WorkerContext): () => void {
   cleanupTimer.unref();
 
   const enqueueReapers = async (): Promise<void> => {
-    for (const jobType of ['session_reaper', 'party_reaper'] as const) {
+    for (const jobType of ['session_reaper', 'party_reaper', 'quest_plan_sweeper'] as const) {
       if (ctx.handlers.get(jobType) === undefined) continue;
       try {
         await ctx.services.jobs.enqueue({

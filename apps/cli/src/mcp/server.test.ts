@@ -15,6 +15,8 @@ const REQUIRED_TOOLS = [
   'saga_activate_task',
   'saga_get_context',
   'saga_search_lore',
+  'saga_plan_quest',
+  'saga_reopen_quest',
   'saga_checkpoint',
   'saga_remember',
   'saga_claim_resource',

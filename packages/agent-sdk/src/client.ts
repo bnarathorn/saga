@@ -20,9 +20,12 @@ import type {
   ProjectDto,
   PromoteSessionRequest,
   QuestDto,
+  QuestPlanDto,
+  ReasonRequest,
   RememberRequest,
   ReportFingerprintsRequest,
   ReportFingerprintsResponse,
+  SetQuestPlanRequest,
   StartSessionRequest,
   StartSessionResponse,
 } from '@saga/contracts';
@@ -211,6 +214,26 @@ export class SagaClient {
     input: PromoteSessionRequest,
   ): Promise<ActivateSessionResponse> {
     return this.request('POST', `/api/sessions/${sessionId}/promote`, input);
+  }
+
+  async questPlan(questId: string): Promise<QuestPlanDto> {
+    return this.request('GET', `/api/quests/${questId}/plan`);
+  }
+
+  /**
+   * Reopen a completed or cancelled Quest. The reason is required and is recorded in the audit
+   * log — this is the one way back from a close, so who did it and why has to survive.
+   */
+  async reopenQuest(questId: string, input: ReasonRequest): Promise<{ quest: QuestDto }> {
+    return this.request('POST', `/api/quests/${questId}/reopen`, input);
+  }
+
+  /**
+   * Declare or re-declare a Quest's numbered plan. Settling the last step completes the Quest,
+   * on a project whose `quest_completion_mode` is `auto`.
+   */
+  async setQuestPlan(questId: string, input: SetQuestPlanRequest): Promise<QuestPlanDto> {
+    return this.request('PUT', `/api/quests/${questId}/plan`, input);
   }
 
   /**

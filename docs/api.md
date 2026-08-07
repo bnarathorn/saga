@@ -63,6 +63,7 @@ sets `idempotency-replayed: true`. A replay with a _different_ body returns
 | `RESOURCE_CLAIM_CONFLICT`  | Another agent holds the resource. `details` carries the owning Quest, its client and the lease expiry. Do not proceed without the claim.                      |
 | `COORDINATION_UNAVAILABLE` | A fail-closed resource and Party is unreachable. Stop, record a checkpoint describing the waiting state.                                                      |
 | `MEMORY_SECRET_DETECTED`   | The candidate contained a credential. `details.findings[].field_path` says where; the value is never echoed.                                                  |
+| `QUEST_STEP_NOT_FOUND`     | You settled a plan step this Quest does not have. Re-read `GET /api/quests/:questId/plan` before settling any more.                                           |
 | `PROJECT_ARCHIVED`         | The project is read-only. Restore it first.                                                                                                                   |
 | `SCOPE_REQUIRED`           | The agent token lacks a scope. `details.permission` names it.                                                                                                 |
 
@@ -141,6 +142,8 @@ POST   /api/quests/:questId/dependencies     add (cycles rejected)
 DELETE /api/quests/:questId/dependencies/:dependsOnId
 GET    /api/quests/:questId/checkpoints
 GET    /api/quests/:questId/sessions
+GET    /api/quests/:questId/plan             numbered sub-tasks and their progress
+PUT    /api/quests/:questId/plan             declare or re-declare the plan
 
 POST   /api/sessions                         phase one: no Quest, no handoff
 GET    /api/sessions/:sessionId
@@ -151,18 +154,57 @@ POST   /api/sessions/:sessionId/end          final handoff + clean end + Quest o
 POST   /api/sessions/:sessionId/heartbeat    durable session liveness
 ```
 
+#### The plan
+
+`PUT /api/quests/:questId/plan` takes `{ "steps": ["…", "…"] }`. Positions are the numbers, from
+
+1. Re-declaring is allowed mid-Quest so an agent can append to its plan: a step keeps its
+   recorded status when its number and title both survive, and anything renamed, inserted or
+   reordered starts `pending`. An empty array removes the plan.
+
+Steps are settled through `step_updates` on `POST /api/sessions/:sessionId/checkpoints` — and on
+the handoff in `/end` — as `[{ "ordinal": 2, "status": "done" }]`, where `status` defaults to
+`done`. They are applied in the checkpoint's own transaction, so a step is never recorded as done
+without the checkpoint that says why. An ordinal the plan does not have answers
+`QUEST_STEP_NOT_FOUND` rather than being ignored.
+
 #### Closing a Quest
 
-`/end` accepts `quest_status`, the agent's statement of what became of the Quest. Nothing is
-inferred from the work state: a handoff with no next steps still leaves the Quest open, because
-stopping is not the same as finishing.
+There are two routes, and both are declarations by the agent (ADR-0010, ADR-0011).
 
-The terminal statuses — `completed` and `cancelled` — are gated twice. The project must be on
-`quest_completion_mode: auto`, and no other session may still be attached to the Quest. Either
-refusal comes back as `quest_status_held`, naming the reason, with the Quest untouched and the
-handoff written as normal; `quest_status` in the response is always the status the Quest
-actually holds. A non-terminal status such as `blocked` applies under either mode, since it
-closes nothing.
+**A finished plan closes the Quest**, whatever `next_steps` still says: at least one step, every
+step settled, and at least one of them actually `done` rather than `skipped`. This happens at the
+checkpoint that settles the last step — mid-session, not only at the end — so the checkpoint
+response carries `quest_status`, `quest_status_held` and the `plan`. `quest_plan_sweeper` on the
+worker does the same for a Quest whose sessions have all gone, which is what survives a crash.
+
+**`/end` accepts `quest_status`**, the agent's statement of what became of a Quest — the way to
+say `blocked` or `cancelled`, or `completed` for a Quest that declared no plan. Nothing is
+inferred from the work state: a handoff with no next steps still leaves a planless Quest open,
+because stopping is not the same as finishing.
+
+Both routes apply the same two gates to the terminal statuses — `completed` and `cancelled`. The
+project must be on `quest_completion_mode: auto`, and no other session may still be attached to
+the Quest. Either refusal comes back as `quest_status_held`, naming the reason, with the Quest
+untouched and the handoff written as normal; `quest_status` in the response is always the status
+the Quest actually holds. A non-terminal status such as `blocked` applies under either mode,
+since it closes nothing.
+
+`POST /api/quests/:questId/reopen` is the way back, and takes a required `reason` that lands in
+the audit log as `quest.reopened`. Settled plan steps survive a reopen, so a re-declared plan
+carries them over. It is not gated on `quest_completion_mode`: the gate exists to stop unwanted
+closes, and reopening is the undo.
+
+#### Re-activating a session after its Quest closes
+
+`POST /api/sessions/:sessionId/activate` may be called again once the session's Quest reaches
+`completed` or `cancelled`. The new task is classified from scratch, so different work becomes a
+new Quest and the session moves onto it; the closed Quest keeps its own checkpoints. This is the
+normal shape now that a finished plan closes a Quest mid-session.
+
+It is still refused with `SESSION_STATE_INVALID` while the attached Quest is open, naming the
+status in `details.quest_status`. Rebinding live work would strand what is in flight and move
+every later checkpoint onto a different Quest.
 
 The asymmetry is deliberate. `completed` and `cancelled` are outside the resumable set, a Quest
 named by id after it closes classifies as `new_work` rather than resuming, and no MCP tool

@@ -103,6 +103,22 @@ function agentRun(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function step(overrides: Record<string, unknown> = {}) {
+  return {
+    id: `s${String(overrides.ordinal ?? 1)}`,
+    work_item_id: QUEST_ID,
+    ordinal: 1,
+    title: 'A step',
+    status: 'pending',
+    completed_at: null,
+    completed_by_session_id: null,
+    completed_by_checkpoint_id: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 function detailBody(overrides: Record<string, unknown> = {}) {
   return {
     quest: quest(),
@@ -111,6 +127,7 @@ function detailBody(overrides: Record<string, unknown> = {}) {
     checkpoints: [],
     sessions: [],
     latest_handoff: null,
+    plan: null,
     ...overrides,
   };
 }
@@ -131,6 +148,70 @@ function renderDetail(permissions?: readonly Permission[]) {
 }
 
 describe('Quest Detail', () => {
+  it('lists the plan in order with each step’s status', async () => {
+    stubFetch({
+      ...partyStubs,
+      [DETAIL]: {
+        body: detailBody({
+          plan: {
+            steps: [
+              step({ ordinal: 1, title: 'Write the migration', status: 'done' }),
+              step({ ordinal: 2, title: 'Wire the routes', status: 'in_progress' }),
+              step({ ordinal: 3, title: 'Update the docs', status: 'pending' }),
+            ],
+            progress: {
+              total: 3,
+              done: 1,
+              skipped: 0,
+              remaining: 2,
+              all_settled: false,
+              next_ordinal: 2,
+            },
+          },
+        }),
+      },
+    });
+    renderDetail();
+
+    expect(await screen.findByText('Write the migration')).toBeInTheDocument();
+    expect(screen.getByText('Wire the routes')).toBeInTheDocument();
+    expect(screen.getByText('Update the docs')).toBeInTheDocument();
+    expect(screen.getByText('1/3 done')).toBeInTheDocument();
+  });
+
+  it('says a finished plan is waiting on a person when the Quest is still open', async () => {
+    // The whole point of the panel on a `manual` project: without this line the Quest looks
+    // merely unfinished, and nobody knows it is theirs to close.
+    stubFetch({
+      ...partyStubs,
+      [DETAIL]: {
+        body: detailBody({
+          plan: {
+            steps: [step({ ordinal: 1, title: 'Write the migration', status: 'done' })],
+            progress: {
+              total: 1,
+              done: 1,
+              skipped: 0,
+              remaining: 0,
+              all_settled: true,
+              next_ordinal: null,
+            },
+          },
+        }),
+      },
+    });
+    renderDetail();
+
+    expect(await screen.findByText(/Every step is settled/)).toBeInTheDocument();
+  });
+
+  it('tells a reader how a plan gets declared when there is none', async () => {
+    stubFetch({ ...partyStubs, [DETAIL]: { body: detailBody() } });
+    renderDetail();
+
+    expect(await screen.findByText('No plan declared')).toBeInTheDocument();
+  });
+
   it('edits the objective and the declared scope through one PATCH', async () => {
     const { calls } = stubFetch({
       ...partyStubs,
