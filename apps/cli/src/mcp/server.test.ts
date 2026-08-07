@@ -4,6 +4,7 @@ import { zodToJsonSchema } from './json-schema.js';
 import {
   MCP_INSTRUCTIONS,
   TOOLS,
+  closeSession,
   openSession,
   toToolError,
   type McpToolContext,
@@ -468,5 +469,72 @@ describe('bootstrapping a project with no Lore', () => {
     };
 
     expect(activated.next_step).not.toMatch(/saga_remember/);
+  });
+});
+
+describe('ending the session when the process goes away', () => {
+  function shutdownContext(sessionId: string | null) {
+    const calls: { sessionId: string; input: unknown }[] = [];
+    let stopped = 0;
+    const ctx = context({ sessionId, agentRunId: 'run-1', questId: 'quest-1' });
+    ctx.client = {
+      endSession: async (id: string, input: unknown) => {
+        calls.push({ sessionId: id, input });
+        return {};
+      },
+    } as unknown as McpToolContext['client'];
+    ctx.heartbeat = {
+      start: () => {},
+      stop: () => {
+        stopped += 1;
+      },
+    };
+    return { ctx, calls, stopped: () => stopped };
+  }
+
+  it('ends the session and stops the heartbeat', async () => {
+    const { ctx, calls, stopped } = shutdownContext('session-1');
+    await closeSession(ctx);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.sessionId).toBe('session-1');
+    expect(stopped()).toBe(1);
+    expect(ctx.session.sessionId).toBeNull();
+    expect(ctx.session.agentRunId).toBeNull();
+  });
+
+  it('declares nothing about the Quest — a dying process is not a finished Quest', async () => {
+    const { ctx, calls } = shutdownContext('session-1');
+    await closeSession(ctx);
+
+    // No handoff and no status: only `saga_end_session` may say what became of the work.
+    expect(calls[0]!.input).toBeUndefined();
+  });
+
+  it('does nothing when no session was ever opened', async () => {
+    const { ctx, calls, stopped } = shutdownContext(null);
+    await closeSession(ctx);
+
+    expect(calls).toEqual([]);
+    // The heartbeat is still stopped: it may have been started and left running.
+    expect(stopped()).toBe(1);
+  });
+
+  it('ends the session only once, however many times shutdown is triggered', async () => {
+    const { ctx, calls } = shutdownContext('session-1');
+    await closeSession(ctx);
+    await closeSession(ctx);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it('gives up rather than keeping the process alive when the server does not answer', async () => {
+    const ctx = context({ sessionId: 'session-1' });
+    ctx.client = {
+      endSession: () => new Promise(() => {}),
+    } as unknown as McpToolContext['client'];
+
+    // Resolves rather than hanging: an unreachable server must not block the exit.
+    await expect(closeSession(ctx, 10)).resolves.toBeUndefined();
   });
 });

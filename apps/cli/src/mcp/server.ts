@@ -180,6 +180,53 @@ async function startSession(ctx: McpToolContext, agent?: string): Promise<StartS
   return started;
 }
 
+/** How long a shutdown waits for the server before letting the process go anyway. */
+export const SHUTDOWN_END_TIMEOUT_MS = 2_000;
+
+/**
+ * End the session because the process is going away.
+ *
+ * A dying process is not a finished Quest, so nothing is declared here: no handoff and no
+ * `quest_status`. It releases the agent run and its claims and leaves the Quest exactly as the
+ * agent left it.
+ *
+ * Skipping this is not free. The session stays `active` until the abandon reaper runs hours
+ * later; the next process opens a second session for the same folder; and a Quest with a
+ * phantom session still attached refuses the completion a *later* agent legitimately declares
+ * — the guard cannot tell an abandoned session from a colleague still working.
+ *
+ * Bounded, because an unreachable server must never be the reason a process will not exit.
+ */
+export async function closeSession(
+  ctx: McpToolContext,
+  timeoutMs = SHUTDOWN_END_TIMEOUT_MS,
+): Promise<void> {
+  ctx.heartbeat?.stop();
+  const sessionId = ctx.session.sessionId;
+  if (sessionId === null) return;
+
+  ctx.session.sessionId = null;
+  ctx.session.agentRunId = null;
+  ctx.session.questId = null;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      ctx.client.endSession(sessionId),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs}ms`)), timeoutMs);
+        // The timeout must not be what keeps the process alive.
+        (timer as { unref?: () => void }).unref?.();
+      }),
+    ]);
+  } catch (error) {
+    // stdout carries the protocol, and the process is leaving either way: say so and go.
+    process.stderr.write(`saga-mcp: could not end the session cleanly: ${errorMessage(error)}\n`);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 // --- tools -----------------------------------------------------------------
 
 export const TOOLS: McpTool[] = [

@@ -5,7 +5,14 @@ import { errorMessage } from '@saga/shared';
 import { CLI_VERSION } from '../version.js';
 import { SessionHeartbeat } from './heartbeat.js';
 import { zodToJsonSchema } from './json-schema.js';
-import { MCP_INSTRUCTIONS, TOOLS, buildToolContext, openSession, toToolError } from './server.js';
+import {
+  MCP_INSTRUCTIONS,
+  TOOLS,
+  buildToolContext,
+  closeSession,
+  openSession,
+  toToolError,
+} from './server.js';
 
 /**
  * The Saga MCP stdio server.
@@ -19,12 +26,6 @@ export async function runMcpServer(clientName = 'saga-mcp'): Promise<void> {
 
   const heartbeat = new SessionHeartbeat(context.client, context.session);
   context.heartbeat = heartbeat;
-  // A host that kills the server mid-session should not leave the lease to time out silently.
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      heartbeat.stop();
-    });
-  }
 
   const server = new Server(
     { name: 'saga', version: CLI_VERSION },
@@ -56,6 +57,28 @@ export async function runMcpServer(clientName = 'saga-mcp'): Promise<void> {
       });
     });
   };
+
+  /**
+   * End the session on the way out, whichever way out it is.
+   *
+   * A host stops an MCP server either by closing stdio or by signalling it, and both were
+   * leaving the session `active` with only the heartbeat stopped. The session then sat attached
+   * to its Quest for hours while the next process opened a second one beside it.
+   *
+   * Nothing is declared here — see `closeSession`. Only `saga_end_session` says what became of
+   * the Quest, because only the agent knows.
+   */
+  let closing: Promise<void> | null = null;
+  const shutdown = (): Promise<void> => (closing ??= closeSession(context));
+
+  server.onclose = () => {
+    void shutdown();
+  };
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      void shutdown().finally(() => process.exit(0));
+    });
+  }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map((tool) => ({
