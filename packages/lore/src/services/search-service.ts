@@ -210,7 +210,10 @@ export class SearchService {
   }
 
   private async loadEdges(projectId: string): Promise<RelationEdge[]> {
-    const links = await this.deps.links.listForProject(this.deps.pool, projectId);
+    // Confirmed only, which is what `listForProject` defaults to. A proposal is a suggestion
+    // waiting on a person, and expanding search into one would put an unreviewed guess in an
+    // agent's context indistinguishably from a curated relation.
+    const links = await this.deps.links.listForProject(this.deps.pool, projectId, 'confirmed');
     // Relations are traversed in both directions: knowing that `server.api uses
     // database.primary` is just as useful when the query was about the database. The relation
     // name is kept as declared so the caller sees a value from the documented vocabulary.

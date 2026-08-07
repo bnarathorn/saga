@@ -2,6 +2,8 @@ import type {
   EvidenceItem,
   MemoryCategory,
   MemoryKind,
+  MemoryLinkSource,
+  MemoryLinkState,
   MemoryRelation,
   MemoryState,
   MemoryUpdateState,
@@ -81,6 +83,12 @@ export interface MemoryLink {
   relation: MemoryRelation;
   toMemoryItemId: string;
   toMemoryKey: string;
+  state: MemoryLinkState;
+  source: MemoryLinkSource;
+  /** The model's own confidence, 0..1. Null unless `source` is `model`. */
+  confidence: number | null;
+  /** One line from the model saying why. Null unless `source` is `model`. */
+  rationale: string | null;
   metadata: Record<string, unknown>;
   createdAt: Date;
 }

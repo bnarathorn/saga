@@ -24,6 +24,7 @@ import {
   createLinkRequestSchema,
   evidenceCheckRequestSchema,
   evidenceCheckResponseSchema,
+  listLinksQuerySchema,
   loreEntrySchema,
   loreSearchRequestSchema,
   loreSearchResponseSchema,
@@ -925,16 +926,28 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     path: '/api/projects/{projectRef}/lore-links',
     tags: ['Lore'],
     summary: 'List the relations between Lore Entries',
-    request: { params: projectRef },
+    description:
+      'Confirmed relations by default. Pass `state=proposed` for the relations the inference job suggested and nobody has reviewed.',
+    request: { params: projectRef, query: listLinksQuerySchema },
     responses: {
       200: { description: 'Relations.', schema: z.object({ items: z.array(memoryLinkSchema) }) },
     },
+  });
+  route({
+    method: 'post',
+    path: '/api/lore-links/{linkId}/confirm',
+    tags: ['Lore'],
+    summary: 'Confirm a proposed relation',
+    description: 'Moves a model proposal into the graph, where search will traverse it.',
+    request: { params: z.object({ linkId: z.string().uuid() }) },
+    responses: { 200: { description: 'Confirmed.', schema: z.object({ link: memoryLinkSchema }) } },
   });
   route({
     method: 'delete',
     path: '/api/lore-links/{linkId}',
     tags: ['Lore'],
     summary: 'Remove a relation',
+    description: 'Also how a proposal is rejected — a rejected proposal is simply not kept.',
     request: { params: z.object({ linkId: z.string().uuid() }) },
     responses: { 200: { description: 'Removed.', schema: z.object({ ok: z.boolean() }) } },
   });

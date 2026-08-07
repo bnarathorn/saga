@@ -66,6 +66,7 @@ export const JOB_TYPES = [
   'session_reaper',
   'party_reaper',
   'quest_plan_sweeper',
+  'relation_inference',
 ] as const;
 
 export const JOB_STATES = [
@@ -88,3 +89,17 @@ export const MEMORY_RELATIONS = [
   'logs_to',
   'relates_to',
 ] as const;
+
+/**
+ * `confirmed` relations are the graph: search traverses them and Guild Hall draws them.
+ * `proposed` ones are suggestions waiting on a person. `rejected` ones are suggestions somebody
+ * turned down, kept as rows so the inference job cannot propose them again on the next publish.
+ */
+export const MEMORY_LINK_STATES = ['proposed', 'confirmed', 'rejected'] as const;
+
+/**
+ * Who decided the relation. Only `model` is ever `proposed` — a person creating a relation is
+ * the confirmation, and a `[[key]]` or bare-key match is confirmed by the text it was read out
+ * of.
+ */
+export const MEMORY_LINK_SOURCES = ['human', 'deterministic', 'model'] as const;

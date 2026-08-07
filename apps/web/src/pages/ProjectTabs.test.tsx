@@ -12,7 +12,9 @@ import { ProjectRelations } from './ProjectRelations.jsx';
 
 const REF = 'ERP%20Backoffice';
 const PROJECT_ID = '00000000-0000-4000-8000-000000000010';
-const LINKS = `/api/projects/${REF}/lore-links`;
+const LINKS = `/api/projects/${REF}/lore-links?state=confirmed`;
+const PROPOSALS = `/api/projects/${REF}/lore-links?state=proposed`;
+const CREATE_LINK = `/api/projects/${REF}/lore-links`;
 const ENTRIES = `/api/projects/${REF}/lore?limit=200`;
 const PROJECT = `/api/projects/${REF}`;
 
@@ -22,6 +24,10 @@ function link(overrides: Record<string, unknown> = {}) {
     from_memory_key: 'server.api',
     relation: 'uses',
     to_memory_key: 'database.primary',
+    state: 'confirmed',
+    source: 'human',
+    confidence: null,
+    rationale: null,
     metadata: {},
     created_at: new Date().toISOString(),
     ...overrides,
@@ -82,6 +88,7 @@ describe('the Relations tab', () => {
   it('lists the relation graph with both endpoints linked', async () => {
     stubFetch({
       [LINKS]: { body: { items: [link()] } },
+      [PROPOSALS]: { body: { items: [] } },
       [ENTRIES]: {
         body: { items: [entry('server.api'), entry('database.primary')], next_cursor: null },
       },
@@ -100,6 +107,7 @@ describe('the Relations tab', () => {
   it('explains the empty graph instead of showing a bare table', async () => {
     stubFetch({
       [LINKS]: { body: { items: [] } },
+      [PROPOSALS]: { body: { items: [] } },
       [ENTRIES]: { body: { items: [], next_cursor: null } },
     });
     renderRelations();
@@ -110,6 +118,7 @@ describe('the Relations tab', () => {
   it('offers relation editing to an operator and withholds it from a viewer', async () => {
     stubFetch({
       [LINKS]: { body: { items: [link()] } },
+      [PROPOSALS]: { body: { items: [] } },
       [ENTRIES]: { body: { items: [entry('server.api')], next_cursor: null } },
     });
     renderRelations(VIEWER_PERMISSIONS);
@@ -122,10 +131,11 @@ describe('the Relations tab', () => {
   it('posts a new relation built from the project’s own entries', async () => {
     const { calls } = stubFetch({
       [LINKS]: { body: { items: [] } },
+      [PROPOSALS]: { body: { items: [] } },
       [ENTRIES]: {
         body: { items: [entry('server.api'), entry('database.primary')], next_cursor: null },
       },
-      [`POST ${LINKS}`]: { status: 201, body: { link: link() } },
+      [`POST ${CREATE_LINK}`]: { status: 201, body: { link: link() } },
     });
     renderRelations();
 
@@ -146,6 +156,7 @@ describe('the Relations tab', () => {
   it('refuses a self-link before it reaches the API', async () => {
     stubFetch({
       [LINKS]: { body: { items: [] } },
+      [PROPOSALS]: { body: { items: [] } },
       [ENTRIES]: { body: { items: [entry('server.api')], next_cursor: null } },
     });
     renderRelations();
@@ -156,6 +167,72 @@ describe('the Relations tab', () => {
 
     expect(screen.getByText('An entry cannot relate to itself.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add relation' })).toBeDisabled();
+  });
+
+  it('shows what the model proposed, with its reason and confidence', async () => {
+    stubFetch({
+      [LINKS]: { body: { items: [] } },
+      [PROPOSALS]: {
+        body: {
+          items: [
+            link({
+              id: '00000000-0000-4000-8000-0000000000f1',
+              relation: 'depends_on',
+              state: 'proposed',
+              source: 'model',
+              confidence: 0.82,
+              rationale: 'The API stores everything in it.',
+            }),
+          ],
+        },
+      },
+      [ENTRIES]: { body: { items: [entry('server.api')], next_cursor: null } },
+    });
+    renderRelations();
+
+    expect(await screen.findByText('The API stores everything in it.')).toBeInTheDocument();
+    expect(screen.getByText('0.82')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument();
+  });
+
+  it('confirms a proposal against the confirm endpoint, not the create one', async () => {
+    const linkId = '00000000-0000-4000-8000-0000000000f1';
+    const { calls } = stubFetch({
+      [LINKS]: { body: { items: [] } },
+      [PROPOSALS]: {
+        body: {
+          items: [link({ id: linkId, state: 'proposed', source: 'model', confidence: 0.9 })],
+        },
+      },
+      [ENTRIES]: { body: { items: [entry('server.api')], next_cursor: null } },
+      [`POST /api/lore-links/${linkId}/confirm`]: {
+        body: { link: link({ id: linkId, source: 'model' }) },
+      },
+    });
+    renderRelations();
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Confirm' }));
+
+    expect(
+      calls.some(
+        (call) => call.method === 'POST' && call.url === `/api/lore-links/${linkId}/confirm`,
+      ),
+    ).toBe(true);
+  });
+
+  it('withholds the review queue from a viewer', async () => {
+    stubFetch({
+      [LINKS]: { body: { items: [] } },
+      [PROPOSALS]: {
+        body: { items: [link({ state: 'proposed', source: 'model', confidence: 0.9 })] },
+      },
+      [ENTRIES]: { body: { items: [entry('server.api')], next_cursor: null } },
+    });
+    renderRelations(VIEWER_PERMISSIONS);
+
+    expect(await screen.findByText('No relations recorded')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument();
   });
 });
 

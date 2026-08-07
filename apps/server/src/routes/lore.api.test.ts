@@ -407,6 +407,152 @@ describe('relations', () => {
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('MEMORY_ITEM_NOT_FOUND');
   });
+
+  it('reports a hand-made relation as a confirmed human one', async () => {
+    const created = await admin.post(`/api/projects/${projectRef}/lore-links`, {
+      from_memory_key: 'run.api.local',
+      relation: 'uses',
+      to_memory_key: 'database.primary',
+    });
+    expect(created.body.link).toMatchObject({
+      state: 'confirmed',
+      source: 'human',
+      confidence: null,
+      rationale: null,
+    });
+  });
+});
+
+describe('inferred relations', () => {
+  beforeEach(async () => {
+    await proposeAndPublish([
+      runLocal,
+      {
+        memory_key: 'database.primary',
+        category: 'database',
+        kind: 'entity',
+        body: 'PostgreSQL 16 with pgvector.',
+        confidence: 0.9,
+        verification_state: 'observed',
+      },
+    ]);
+  });
+
+  /** Write a proposal the way the inference job does; nothing on the API can create one. */
+  async function proposeRelation(confidence = 0.9): Promise<string> {
+    const ids = await harness.pool.query<{ id: string; memory_key: string }>(
+      `SELECT id, memory_key FROM lore.memory_items WHERE project_id = $1`,
+      [projectRef],
+    );
+    const from = ids.rows.find((row) => row.memory_key === 'run.api.local')!.id;
+    const to = ids.rows.find((row) => row.memory_key === 'database.primary')!.id;
+    const inserted = await harness.pool.query<{ id: string }>(
+      `INSERT INTO lore.memory_links
+         (project_id, from_memory_item_id, relation, to_memory_item_id,
+          state, source, confidence, rationale)
+       VALUES ($1, $2, 'depends_on', $3, 'proposed', 'model', $4, 'The API stores state in it.')
+       RETURNING id`,
+      [projectRef, from, to, confidence],
+    );
+    return inserted.rows[0]!.id;
+  }
+
+  it('hides proposals from the default listing', async () => {
+    await proposeRelation();
+    const listed = await admin.get(`/api/projects/${projectRef}/lore-links`);
+    expect(listed.body.items).toEqual([]);
+  });
+
+  it('returns proposals only when asked for them', async () => {
+    await proposeRelation();
+    const listed = await admin.get(`/api/projects/${projectRef}/lore-links?state=proposed`);
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0]).toMatchObject({
+      state: 'proposed',
+      source: 'model',
+      confidence: 0.9,
+      rationale: 'The API stores state in it.',
+    });
+  });
+
+  it('confirming moves a proposal into the graph', async () => {
+    const linkId = await proposeRelation();
+    const confirmed = await admin.post(`/api/lore-links/${linkId}/confirm`, {});
+    expect(confirmed.status).toBe(200);
+    // The source stays `model`: who suggested it is still true after somebody agreed.
+    expect(confirmed.body.link).toMatchObject({ state: 'confirmed', source: 'model' });
+
+    const listed = await admin.get(`/api/projects/${projectRef}/lore-links`);
+    expect(listed.body.items).toHaveLength(1);
+    expect(await admin.get(`/api/projects/${projectRef}/lore-links?state=proposed`)).toMatchObject({
+      body: { items: [] },
+    });
+  });
+
+  it('refuses to confirm a relation that is already in the graph', async () => {
+    const linkId = await proposeRelation();
+    await admin.post(`/api/lore-links/${linkId}/confirm`, {});
+    const again = await admin.post(`/api/lore-links/${linkId}/confirm`, {});
+    expect(again.status).toBe(409);
+    expect(again.body.error.code).toBe('MEMORY_LINK_NOT_PROPOSED');
+  });
+
+  it('answers 404 for confirming a relation that does not exist', async () => {
+    const response = await admin.post(
+      '/api/lore-links/00000000-0000-0000-0000-000000000000/confirm',
+      {},
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it('rejects a proposal and keeps the rejection', async () => {
+    const linkId = await proposeRelation();
+    const removed = await admin.del(`/api/lore-links/${linkId}`);
+    expect(removed.status).toBe(200);
+    expect(
+      (await admin.get(`/api/projects/${projectRef}/lore-links?state=proposed`)).body.items,
+    ).toEqual([]);
+
+    // The row survives as a tombstone. Deleting it outright would only hold until the next
+    // publish re-proposed the same relation.
+    const rejected = await admin.get(`/api/projects/${projectRef}/lore-links?state=rejected`);
+    expect(rejected.body.items).toHaveLength(1);
+    expect(rejected.body.items[0].id).toBe(linkId);
+  });
+
+  it('removes a confirmed relation outright rather than tombstoning it', async () => {
+    const linkId = await proposeRelation();
+    await admin.post(`/api/lore-links/${linkId}/confirm`, {});
+    await admin.del(`/api/lore-links/${linkId}`);
+
+    for (const state of ['confirmed', 'proposed', 'rejected']) {
+      const listed = await admin.get(`/api/projects/${projectRef}/lore-links?state=${state}`);
+      expect([state, listed.body.items]).toEqual([state, []]);
+    }
+  });
+
+  it('lets a person create by hand a relation they rejected', async () => {
+    const linkId = await proposeRelation();
+    await admin.del(`/api/lore-links/${linkId}`);
+
+    const created = await admin.post(`/api/projects/${projectRef}/lore-links`, {
+      from_memory_key: 'run.api.local',
+      relation: 'depends_on',
+      to_memory_key: 'database.primary',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.link).toMatchObject({
+      state: 'confirmed',
+      source: 'human',
+      confidence: null,
+      rationale: null,
+    });
+  });
+
+  it('refuses an unknown state rather than silently listing the graph', async () => {
+    const response = await admin.get(`/api/projects/${projectRef}/lore-links?state=maybe`);
+    expect(response.status).toBe(400);
+  });
 });
 
 describe('context composition', () => {
