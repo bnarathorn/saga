@@ -4,7 +4,7 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Saga — shared project memory, work continuity, and coordination for coding agents.",
+  "description": "Saga \u2014 shared project memory, work continuity, and coordination for coding agents.",
   "engines": {
     "node": ">=22.0.0"
   },
@@ -34,6 +34,8 @@
     "db:reset": "tsc -b packages/database && tsx db/reset.ts",
     "openapi:generate": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts",
     "openapi:check": "tsc -b packages/contracts && tsx scripts/generate-openapi.ts --check",
+    "check:ignores": "node scripts/check-ignores.mjs",
+    "check:env": "node scripts/check-env-example.mjs",
     "saga": "tsc -b packages/agent-sdk && tsx apps/cli/src/main.ts",
     "demo": "tsc -b packages/agent-sdk && tsx scripts/demo.ts"
   },

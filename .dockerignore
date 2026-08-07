@@ -23,6 +23,14 @@ node_modules/
 **/*.tsbuildinfo
 **/.vite/
 
+# Compiled output that lands beside its source instead of in `dist/`. Same hazard as `dist/`:
+# Docker preserves mtimes, so a host build riding in makes `tsc -b` skip the work and the image
+# ships the host's artefacts.
+testing/*.js
+testing/*.js.map
+testing/*.d.ts
+testing/*.d.ts.map
+
 # Built by `pnpm --filter @saga/cli bundle` inside the image. A host copy would be served at
 # /api/cli/saga in its place, which is the one artifact that must match the server exactly.
 apps/cli/pack/
@@ -30,20 +38,20 @@ apps/cli/pack/
 # The quickstart writes a real session secret and a real bootstrap admin password in here
 # (README step 2) before running `docker compose up -d --build`. Compose reads `.env` from the
 # host for interpolation; nothing in the image ever needs the file itself.
-.env
-.env.*
+**/.env
+**/.env.*
 
 # `.env.example` holds no secret and — unlike every other path in this file — is tracked. Losing
 # it from the context makes `git status` inside the build stage report a deleted file, which is
 # what `bundle.mjs` calls a dirty tree, so every image would serve `0.1.0+g<sha>.dirty.<stamp>`.
 # The CI canary that proves no secret leaks tests for `/app/.env` exactly, not for `.env*`.
-!.env.example
+!**/.env.example
 
 # Test and run artifacts. Large, local, and meaningless inside an image.
-test-results/
-playwright-report/
-.saga-run/
-.saga/
+**/test-results/
+**/playwright-report/
+**/.saga-run/
+**/.saga/
 **/coverage/
 **/*.log
 

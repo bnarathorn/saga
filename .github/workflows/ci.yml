@@ -61,6 +61,18 @@ jobs:
         env:
           PGPASSWORD: saga
 
+      # Both of these guard a failure the rest of CI cannot see, so they run before the slow
+      # jobs. The `image` job does catch an over-broad .dockerignore, but only after a full
+      # `docker build`, and only for tracked paths — a gitignored path wrongly left in the
+      # context is invisible to CI entirely, because a fresh checkout does not have one.
+      - name: Check .dockerignore against .gitignore
+        run: pnpm check:ignores
+
+      # SAGA_E2E_DATABASE_URL was undocumented for as long as it existed, hidden by the
+      # workflow-level env: block below. Only a local setup ever hit it.
+      - name: Check .env.example documents every configuration variable
+        run: pnpm check:env
+
       - run: pnpm lint
 
       # Formatting is not style-policing: it drifted once already, when subagent-written files
