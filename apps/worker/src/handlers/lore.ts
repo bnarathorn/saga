@@ -6,9 +6,10 @@ import type {
   EmbeddingProvider,
   LoreService,
   MemoryRepository,
+  RelationService,
   SnapshotRepository,
 } from '@saga/lore';
-import { CORE_SECTIONS, buildSearchText, buildSections } from '@saga/lore';
+import { CORE_SECTIONS, MAX_KEYS_SCANNED, buildSearchText, buildSections } from '@saga/lore';
 import { errorMessage, isSagaError } from '@saga/shared';
 import { JobHandlerError, type JobHandler } from '@saga/shrine';
 import { z } from 'zod';
@@ -439,6 +440,89 @@ export function createStaleDetectionHandler(deps: StaleDetectionDeps): JobHandle
       }
 
       return { project_id: projectId, checked: items.length, marked_stale: markedStale };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// relation inference
+// ---------------------------------------------------------------------------
+
+const relationInferencePayload = z.object({ memory_update_id: z.string().uuid() });
+
+export interface RelationInferenceDeps {
+  relations: RelationService;
+}
+
+/**
+ * Derives relations from the entries a Lore update just published.
+ *
+ * Runs after publication rather than at propose time, because it reads current versions: an
+ * entry that never published has nothing to relate. A model outage is not a job failure — the
+ * deterministic relations found in the same pass are correct without it, and the outcome
+ * reports the error instead of throwing it away with a retry.
+ */
+export function createRelationInferenceHandler(deps: RelationInferenceDeps): JobHandler {
+  return {
+    type: 'relation_inference',
+    describe: {
+      input: '{ memory_update_id: uuid }',
+      idempotency:
+        'Every relation is inserted ON CONFLICT DO NOTHING against the existing uniqueness of (project, from, relation, to), so re-running writes nothing the first run already wrote. A rejected proposal keeps its row as a tombstone, which is what stops the next run proposing it again.',
+      retryPolicy:
+        'A deleted update fails permanently. The model is never retried for: an unreachable provider is reported in the result and the deterministic half still commits. The lease is renewed after each entry, because one model call can take the whole provider timeout.',
+      sideEffects:
+        'Inserts confirmed relations from [[key]] links and bare key mentions, and proposed relations from the model.',
+      result: '{ scanned, confirmed, proposed, below_confidence, truncated, proposer_error }',
+      failureCodes: ['MEMORY_UPDATE_NOT_FOUND'],
+    },
+
+    async handle({ job, logger, renewLease }) {
+      const parsed = relationInferencePayload.safeParse(job.payload);
+      if (!parsed.success) {
+        throw JobHandlerError.permanent(
+          'The relation-inference payload does not match its schema.',
+        );
+      }
+      const updateId = parsed.data.memory_update_id;
+
+      let outcome;
+      try {
+        // An update publishing many entries makes one model call each, and each may take the
+        // full provider timeout — well past the default 60-second lease. Without this a second
+        // worker reclaims the job mid-flight and repeats every model call.
+        outcome = await deps.relations.inferForUpdate(updateId, { onProgress: renewLease });
+      } catch (error) {
+        if (isSagaError(error) && error.code === 'MEMORY_UPDATE_NOT_FOUND') {
+          throw JobHandlerError.permanent(
+            'MEMORY_UPDATE_NOT_FOUND: the Lore update no longer exists.',
+          );
+        }
+        throw JobHandlerError.retryable(errorMessage(error));
+      }
+
+      if (outcome.truncated) {
+        logger.warn(
+          { memory_update_id: updateId, max_keys: MAX_KEYS_SCANNED },
+          'the project has more entries than relation inference scans; the rarest keys will not be matched',
+        );
+      }
+      if (outcome.proposerError !== null) {
+        logger.warn(
+          { memory_update_id: updateId, err: outcome.proposerError },
+          'the inference provider was unavailable; only deterministic relations were written',
+        );
+      }
+
+      return {
+        memory_update_id: updateId,
+        scanned: outcome.scanned,
+        confirmed: outcome.confirmed,
+        proposed: outcome.proposed,
+        below_confidence: outcome.belowConfidence,
+        truncated: outcome.truncated,
+        proposer_error: outcome.proposerError,
+      };
     },
   };
 }

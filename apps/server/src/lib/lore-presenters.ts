@@ -84,6 +84,10 @@ export function presentMemoryLink(link: MemoryLink): MemoryLinkDto {
     from_memory_key: link.fromMemoryKey,
     relation: link.relation,
     to_memory_key: link.toMemoryKey,
+    state: link.state,
+    source: link.source,
+    confidence: link.confidence,
+    rationale: link.rationale,
     metadata: link.metadata,
     created_at: toIsoRequired(link.createdAt),
   };

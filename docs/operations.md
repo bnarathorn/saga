@@ -357,18 +357,19 @@ expires on its own rather than blocking work.
 A worker may only complete a job whose claim token still matches, so a worker that hung past
 its lease cannot overwrite the replacement worker's result.
 
-| Job type            | Purpose                                              |
-| ------------------- | ---------------------------------------------------- |
-| `embedding`         | Vectors for Lore versions and Quests                 |
-| `memory_validation` | Validate, prepare a snapshot, publish in `auto` mode |
-| `context_snapshot`  | Rebuild core context after a stale/archive change    |
-| `stale_detection`   | Compare reported evidence against recorded hashes    |
-| `outbox_delivery`   | Drain the transactional outbox                       |
-| `event_projection`  | Repair gaps in the Shrine feed (see below)           |
-| `session_reaper`    | Mark silent sessions abandoned                       |
-| `party_reaper`      | Expire agent runs and release their claims           |
-| `cleanup`           | Retention                                            |
-| `noop`              | A deterministic probe for operators                  |
+| Job type             | Purpose                                              |
+| -------------------- | ---------------------------------------------------- |
+| `embedding`          | Vectors for Lore versions and Quests                 |
+| `memory_validation`  | Validate, prepare a snapshot, publish in `auto` mode |
+| `context_snapshot`   | Rebuild core context after a stale/archive change    |
+| `stale_detection`    | Compare reported evidence against recorded hashes    |
+| `relation_inference` | Derive relations from published entries (see below)  |
+| `outbox_delivery`    | Drain the transactional outbox                       |
+| `event_projection`   | Repair gaps in the Shrine feed (see below)           |
+| `session_reaper`     | Mark silent sessions abandoned                       |
+| `party_reaper`       | Expire agent runs and release their claims           |
+| `cleanup`            | Retention                                            |
+| `noop`               | A deterministic probe for operators                  |
 
 Outbox delivery also runs _inline_ on the worker's timer rather than as one queue row per
 second — enqueuing at that rate would bury real work under bookkeeping.
@@ -382,6 +383,49 @@ projection over a bounded window and normally finds nothing; enqueue it if the f
 INSERT INTO shrine.jobs (job_type, payload)
 VALUES ('event_projection', '{"window_hours": 168}'::jsonb);
 ```
+
+### Relation inference
+
+`relation_inference` is enqueued inside the publish transaction of every Lore update, and it
+writes to `lore.memory_links` in two ways that are deliberately unequal.
+
+A `[[other.key]]` wiki-link or a bare `other.key` in a published body is a relation somebody
+wrote down, so it is inserted **confirmed** with `source = 'deterministic'` and the relation
+`relates_to` — a text match cannot tell which of the directed relations applies, and does not
+guess. Bare mentions are matched as whole tokens, so `run.api` is never read out of
+`run.api.local`. A mention still cannot tell a statement from a denial: prose saying two
+entries have nothing to do with each other produces the same `relates_to` as prose saying they
+do. That is the accepted cost of matching bare keys.
+
+The model half is off by default. With `SAGA_INFERENCE_PROVIDER=fake` the job proposes nothing
+and only the deterministic half runs, which is why a stock install and CI need no model server.
+Set it to `ollama` and each published entry's nearest neighbours by embedding are shown to
+`SAGA_INFERENCE_MODEL`, which names the relation it believes holds. Those land **proposed**,
+with the model's confidence and one line of reasoning. Search never traverses a proposal and
+`GET /api/projects/:ref/lore-links` never returns one unless asked; the Relations tab in Guild
+Hall is where they are confirmed or rejected. An unreachable model server is logged and the
+job still succeeds — the deterministic relations in the same pass are correct without it.
+
+Rejecting a proposal keeps its row at `state = 'rejected'` rather than deleting it. The job
+re-runs on every publish, so a rejection that removed its row would last exactly until the next
+one and the same proposal would come back. Creating that relation by hand later revives the
+tombstone into a confirmed human relation, so a rejection never permanently forbids a link.
+
+One model call per published entry can take the whole `SAGA_INFERENCE_TIMEOUT_MS`, which is why
+the handler renews its job lease after each entry: `SAGA_JOB_LEASE_SECONDS` defaults to 60 and
+covers the whole job, so a large update would otherwise be reclaimed by a second worker
+mid-flight and repeat every model call.
+
+| Variable                        | Meaning                                                                                                                |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `SAGA_INFERENCE_PROVIDER`       | `fake` (default, proposes nothing) or `ollama`                                                                         |
+| `SAGA_INFERENCE_MODEL`          | Completion model, default `qwen2.5:7b-instruct`. Not the embedding model — `nomic-embed-text` cannot answer a question |
+| `SAGA_INFERENCE_TIMEOUT_MS`     | Per request, default 60000                                                                                             |
+| `SAGA_INFERENCE_MAX_CANDIDATES` | Neighbours judged per entry, default 5                                                                                 |
+| `SAGA_INFERENCE_MIN_CONFIDENCE` | Proposals below this are dropped, default 0.6                                                                          |
+
+`SAGA_OLLAMA_URL` is shared with embeddings. Re-running the job writes nothing it already
+wrote, including relations a person has since confirmed, so a replay is safe.
 
 Graceful shutdown: stop claiming, let in-flight work finish within the timeout, stop renewing
 leases so anything still running is recovered elsewhere, then close the pool.

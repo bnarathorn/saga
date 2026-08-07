@@ -134,6 +134,43 @@ export class SearchRepository {
     return result.rows.map((row) => row.id);
   }
 
+  /**
+   * The entries whose current versions embed nearest to one given entry's.
+   *
+   * The comparison happens in the database against the vector already stored for the subject:
+   * relation inference runs after publication, when that vector exists, so re-embedding the
+   * body to find its own neighbours would pay a model call for a number already on disk. The
+   * subject is excluded, and so is any entry whose embedding is not ready yet — it is simply
+   * not a candidate this time round.
+   */
+  async neighboursOf(
+    q: Queryable,
+    projectId: string,
+    memoryItemId: string,
+    limit: number,
+  ): Promise<string[]> {
+    const result = await q.query<{ id: string }>(
+      `WITH subject AS (
+         SELECT v.embedding
+           FROM lore.memory_items i
+           JOIN lore.memory_versions v ON v.id = i.current_version_id
+          WHERE i.id = $1 AND i.project_id = $2 AND v.embedding_state = 'ready'
+       )
+       SELECT i.id
+         FROM lore.memory_items i
+         JOIN lore.memory_versions v ON v.id = i.current_version_id
+        CROSS JOIN subject s
+        WHERE i.project_id = $2
+          AND i.id <> $1
+          AND i.state <> 'archived'
+          AND v.embedding_state = 'ready'
+        ORDER BY v.embedding <=> s.embedding ASC, i.memory_key ASC
+        LIMIT $3`,
+      [memoryItemId, projectId, limit],
+    );
+    return result.rows.map((row) => row.id);
+  }
+
   /** True when at least one searchable version in the project has a usable embedding. */
   async hasReadyEmbeddings(q: Queryable, projectId: string): Promise<boolean> {
     const result = await q.query<{ present: boolean }>(

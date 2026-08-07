@@ -14,8 +14,11 @@ import {
   LinkRepository,
   LoreService,
   MemoryRepository,
+  RelationService,
+  SearchRepository,
   SnapshotRepository,
   createEmbeddingProvider,
+  createRelationProposer,
   type EmbeddingProvider,
 } from '@saga/lore';
 import {
@@ -51,6 +54,7 @@ export interface WorkerContext {
     memory: MemoryRepository;
     snapshots: SnapshotRepository;
     links: LinkRepository;
+    search: SearchRepository;
     quests: QuestRepository;
     party: PartyRepository;
   };
@@ -58,6 +62,7 @@ export interface WorkerContext {
     jobs: JobService;
     projects: ProjectService;
     lore: LoreService;
+    relations: RelationService;
     quests: QuestService;
     sessions: SessionService;
     party: PartyService;
@@ -100,6 +105,7 @@ export function buildWorkerContext(options: {
     memory: new MemoryRepository(),
     snapshots: new SnapshotRepository(),
     links: new LinkRepository(),
+    search: new SearchRepository(),
     quests: new QuestRepository(),
     party: new PartyRepository(),
   };
@@ -134,6 +140,21 @@ export function buildWorkerContext(options: {
     outbox: repositories.outbox,
     jobs,
     coreContextTokens: config.context.coreTokens,
+  });
+
+  const relations = new RelationService({
+    pool,
+    memory: repositories.memory,
+    links: repositories.links,
+    search: repositories.search,
+    proposer: createRelationProposer({
+      provider: config.inference.provider,
+      model: config.inference.model,
+      ollamaUrl: config.inference.ollamaUrl,
+      timeoutMs: config.inference.timeoutMs,
+    }),
+    maxCandidates: config.inference.maxCandidates,
+    minConfidence: config.inference.minConfidence,
   });
 
   const questService = new QuestService({
@@ -174,6 +195,7 @@ export function buildWorkerContext(options: {
       jobs,
       projects,
       lore,
+      relations,
       quests: questService,
       sessions: sessionService,
       party: partyService,

@@ -97,6 +97,8 @@ export interface AppContext {
       toMemoryItemId: string;
       metadata: Record<string, unknown>;
     }): Promise<MemoryLink>;
+    confirmLink(id: string): Promise<MemoryLink | null>;
+    rejectLink(id: string): Promise<MemoryLink | null>;
     deleteLink(id: string): Promise<boolean>;
   };
 
@@ -395,6 +397,8 @@ export function buildContext(options: BuildContextOptions): AppContext {
       sessions: sessionService,
       party: partyService,
       createLink: (input) => withTransaction(pool, (tx) => repositories.links.create(tx, input)),
+      confirmLink: (id) => withTransaction(pool, (tx) => repositories.links.confirm(tx, id)),
+      rejectLink: (id) => withTransaction(pool, (tx) => repositories.links.reject(tx, id)),
       deleteLink: (id) => withTransaction(pool, (tx) => repositories.links.delete(tx, id)),
     },
     health,

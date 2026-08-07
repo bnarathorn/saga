@@ -122,9 +122,10 @@ POST   /api/lore/updates/:updateId/cancel                    reason required
 POST   /api/projects/:projectRef/lore/:memoryKey/mark-stale  reason required
 POST   /api/projects/:projectRef/lore/:memoryKey/archive     reason required
 POST   /api/projects/:projectRef/lore/evidence/check         report local hashes, detect drift
-GET    /api/projects/:projectRef/lore-links                  relations
+GET    /api/projects/:projectRef/lore-links                  ?state=confirmed|proposed|rejected
 POST   /api/projects/:projectRef/lore-links                  create a relation
-DELETE /api/lore-links/:linkId                               remove a relation
+POST   /api/lore-links/:linkId/confirm                       accept an inferred proposal
+DELETE /api/lore-links/:linkId                               remove a relation; a proposal is tombstoned
 POST   /api/projects/:projectRef/context                     compose agent context
 GET    /api/projects/:projectRef/context/snapshot            the active core snapshot
 ```

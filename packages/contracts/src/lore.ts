@@ -8,6 +8,8 @@ import {
 import {
   MEMORY_CATEGORIES,
   MEMORY_KINDS,
+  MEMORY_LINK_SOURCES,
+  MEMORY_LINK_STATES,
   MEMORY_RELATIONS,
   MEMORY_STATES,
   VERIFICATION_STATES,
@@ -17,6 +19,8 @@ import {
 export {
   MEMORY_CATEGORIES,
   MEMORY_KINDS,
+  MEMORY_LINK_SOURCES,
+  MEMORY_LINK_STATES,
   MEMORY_RELATIONS,
   MEMORY_STATES,
   VERIFICATION_STATES,
@@ -43,6 +47,12 @@ export const embeddingStateSchema = z.enum(EMBEDDING_STATES);
 
 export const memoryRelationSchema = z.enum(MEMORY_RELATIONS);
 export type MemoryRelation = z.infer<typeof memoryRelationSchema>;
+
+export const memoryLinkStateSchema = z.enum(MEMORY_LINK_STATES);
+export type MemoryLinkState = z.infer<typeof memoryLinkStateSchema>;
+
+export const memoryLinkSourceSchema = z.enum(MEMORY_LINK_SOURCES);
+export type MemoryLinkSource = z.infer<typeof memoryLinkSourceSchema>;
 
 export const MEMORY_UPDATE_STATES = [
   'draft',
@@ -270,10 +280,22 @@ export const memoryLinkSchema = z.object({
   from_memory_key: z.string(),
   relation: memoryRelationSchema,
   to_memory_key: z.string(),
+  state: memoryLinkStateSchema,
+  source: memoryLinkSourceSchema,
+  /** The model's own confidence, 0..1. Null unless `source` is `model`. */
+  confidence: z.number().min(0).max(1).nullable(),
+  /** One line from the model saying why. Null unless `source` is `model`. */
+  rationale: z.string().nullable(),
   metadata: z.record(z.unknown()),
   created_at: isoTimestampSchema,
 });
 export type MemoryLinkDto = z.infer<typeof memoryLinkSchema>;
+
+/** Default is `confirmed`: the graph, not the review queue. */
+export const listLinksQuerySchema = z.object({
+  state: memoryLinkStateSchema.optional(),
+});
+export type ListLinksQuery = z.infer<typeof listLinksQuerySchema>;
 
 // --- context ---------------------------------------------------------------
 

@@ -12,6 +12,7 @@ import {
   Table,
 } from '../components/primitives.jsx';
 import {
+  useConfirmLoreLink,
   useCreateLoreLink,
   useDeleteLoreLink,
   useLoreEntries,
@@ -19,22 +20,32 @@ import {
 } from '../lib/lore-queries.js';
 import { useCan } from '../lib/permissions.jsx';
 
+/** How a relation got here. `model` in this table means a proposal somebody confirmed. */
+const SOURCE_LABEL: Record<MemoryLinkDto['source'], string> = {
+  human: 'Added by hand',
+  deterministic: 'Found in the text',
+  model: 'Confirmed proposal',
+};
+
 /**
  * The Relations tab: the knowledge graph between Lore Entries.
  *
  * Relations are identity-level metadata rather than versioned content, so they are edited in
  * place here instead of going through the candidate/publish pipeline that Lore bodies use.
+ * Relations the server inferred are reviewed here too, above the graph they are not yet part of.
  */
 export function ProjectRelations() {
   const { projectRef = '' } = useParams();
   const can = useCan();
   const links = useLoreLinks(projectRef);
+  const proposals = useLoreLinks(projectRef, 'proposed');
   const entries = useLoreEntries(projectRef, '?limit=200');
 
   if (links.isPending) return <LoadingState label="Loading relations…" />;
   if (links.isError) return <ErrorState error={links.error} onRetry={() => void links.refetch()} />;
 
   const items = links.data.items;
+  const pending = proposals.data?.items ?? [];
   const keys = (entries.data?.items ?? []).map((entry) => entry.memory_key).sort();
 
   return (
@@ -49,6 +60,10 @@ export function ProjectRelations() {
         </p>
       </div>
 
+      {can('lore:propose') && pending.length > 0 && (
+        <ProposedRelations projectRef={projectRef} items={pending} />
+      )}
+
       {can('lore:propose') && <CreateRelation projectRef={projectRef} memoryKeys={keys} />}
 
       <Panel title={`Relations (${String(items.length)})`}>
@@ -58,7 +73,9 @@ export function ProjectRelations() {
             description="Link an entry to the server it runs on, the database it uses or the tests that cover it."
           />
         ) : (
-          <Table headers={['From', 'Relation', 'To', can('lore:propose') ? 'Actions' : '']}>
+          <Table
+            headers={['From', 'Relation', 'To', 'Source', can('lore:propose') ? 'Actions' : '']}
+          >
             {items.map((link) => (
               <RelationRow
                 key={link.id}
@@ -71,6 +88,83 @@ export function ProjectRelations() {
         )}
       </Panel>
     </div>
+  );
+}
+
+/**
+ * The review queue for relations the model inferred.
+ *
+ * Kept above the graph rather than mixed into it: a proposal is not part of the project's
+ * knowledge yet, and search does not traverse one. Confirming promotes it; removing it is the
+ * rejection, because a proposal nobody wants is simply not kept.
+ */
+function ProposedRelations({ projectRef, items }: { projectRef: string; items: MemoryLinkDto[] }) {
+  return (
+    <Panel title={`Proposed by inference (${String(items.length)})`}>
+      <p className="px-4 pt-3 text-sm text-ink-500 dark:text-parchment-300/70">
+        A model read these entries and suggested how they relate. Nothing here is part of the graph
+        or reachable from search until you confirm it.
+      </p>
+      <Table headers={['From', 'Relation', 'To', 'Why', 'Actions']}>
+        {items.map((link) => (
+          <ProposalRow key={link.id} link={link} projectRef={projectRef} />
+        ))}
+      </Table>
+    </Panel>
+  );
+}
+
+function ProposalRow({ link, projectRef }: { link: MemoryLinkDto; projectRef: string }) {
+  const confirm = useConfirmLoreLink();
+  const reject = useDeleteLoreLink();
+  const busy = confirm.isPending || reject.isPending;
+  const entryPath = (key: string) =>
+    `/projects/${encodeURIComponent(projectRef)}/lore/${encodeURIComponent(key)}`;
+
+  return (
+    <tr>
+      <td className="table-cell font-mono text-xs">
+        <Link className="link" to={entryPath(link.from_memory_key)}>
+          {link.from_memory_key}
+        </Link>
+      </td>
+      <td className="table-cell">
+        <Badge tone="neutral">{link.relation}</Badge>
+      </td>
+      <td className="table-cell font-mono text-xs">
+        <Link className="link" to={entryPath(link.to_memory_key)}>
+          {link.to_memory_key}
+        </Link>
+      </td>
+      <td className="table-cell text-xs text-ink-500 dark:text-parchment-300/70">
+        {link.rationale === null || link.rationale === '' ? '—' : link.rationale}
+        {link.confidence !== null && (
+          <span className="ml-2 font-mono text-ink-400 dark:text-parchment-300/50">
+            {link.confidence.toFixed(2)}
+          </span>
+        )}
+      </td>
+      <td className="table-cell">
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="btn-primary py-1 text-xs"
+            disabled={busy}
+            onClick={() => confirm.mutate({ linkId: link.id })}
+          >
+            Confirm
+          </button>
+          <button
+            type="button"
+            className="btn-secondary py-1 text-xs"
+            disabled={busy}
+            onClick={() => reject.mutate({ linkId: link.id })}
+          >
+            Reject
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -101,6 +195,9 @@ function RelationRow({
         <Link className="link" to={entryPath(link.to_memory_key)}>
           {link.to_memory_key}
         </Link>
+      </td>
+      <td className="table-cell text-xs text-ink-500 dark:text-parchment-300/70">
+        {SOURCE_LABEL[link.source]}
       </td>
       <td className="table-cell">
         {editable ? (

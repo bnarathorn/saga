@@ -3,6 +3,7 @@ import type {
   LoreEntryDto,
   LoreSearchResponse,
   MemoryLinkDto,
+  MemoryLinkState,
   MemoryRelation,
   MemoryUpdateDto,
   MemoryVersionDto,
@@ -94,11 +95,18 @@ export function useLoreUpdates(
   });
 }
 
-export function useLoreLinks(ref: string): UseQueryResult<{ items: MemoryLinkDto[] }> {
+/** Defaults to the confirmed graph; pass `proposed` for the inference review queue. */
+export function useLoreLinks(
+  ref: string,
+  state: MemoryLinkState = 'confirmed',
+): UseQueryResult<{ items: MemoryLinkDto[] }> {
   return useQuery({
-    queryKey: loreKeys.links(ref),
+    queryKey: [...loreKeys.links(ref), state],
     queryFn: ({ signal }) =>
-      api.get<{ items: MemoryLinkDto[] }>(`/api/projects/${encode(ref)}/lore-links`, signal),
+      api.get<{ items: MemoryLinkDto[] }>(
+        `/api/projects/${encode(ref)}/lore-links?state=${state}`,
+        signal,
+      ),
     enabled: ref.length > 0,
   });
 }
@@ -187,6 +195,22 @@ export function useCreateLoreLink(): UseMutationResult<
   return useMutation({
     mutationFn: ({ ref, ...body }) =>
       api.post<{ link: MemoryLinkDto }>(`/api/projects/${encode(ref)}/lore-links`, body),
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: ['lore'] });
+    },
+  });
+}
+
+/** Accept a model proposal into the graph. Rejecting one is `useDeleteLoreLink`. */
+export function useConfirmLoreLink(): UseMutationResult<
+  { link: MemoryLinkDto },
+  Error,
+  { linkId: string }
+> {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ linkId }) =>
+      api.post<{ link: MemoryLinkDto }>(`/api/lore-links/${linkId}/confirm`, {}),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ['lore'] });
     },

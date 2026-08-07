@@ -13,6 +13,7 @@ import {
   createContextSnapshotHandler,
   createEmbeddingHandler,
   createMemoryValidationHandler,
+  createRelationInferenceHandler,
   createStaleDetectionHandler,
 } from './handlers/lore.js';
 
@@ -71,6 +72,7 @@ export function registerHandlers(ctx: WorkerContext): void {
       projects: ctx.repositories.projects,
     }),
   );
+  ctx.handlers.register(createRelationInferenceHandler({ relations: ctx.services.relations }));
   ctx.handlers.register(createSessionReaperHandler({ sessions: ctx.services.sessions }));
   ctx.handlers.register(createQuestPlanSweeperHandler({ quests: ctx.services.quests }));
   if (ctx.services.party.enabled) {

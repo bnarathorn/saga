@@ -85,6 +85,29 @@ export const configSchema = z.object({
     timeoutMs: intFromEnv(30_000),
   }),
 
+  /**
+   * The model that proposes relations, separate from the embedding model because they are
+   * different jobs: `nomic-embed-text` cannot answer a question. `fake` proposes nothing at
+   * all, which is what keeps a default install and CI from needing a model server.
+   */
+  inference: z.object({
+    provider: strFromEnv('fake').pipe(z.enum(['fake', 'ollama'])),
+    model: strFromEnv('qwen2.5:7b-instruct'),
+    ollamaUrl: strFromEnv('http://127.0.0.1:11434'),
+    timeoutMs: intFromEnv(60_000),
+    /** How many nearest neighbours of a published entry the model is asked to judge. */
+    maxCandidates: intFromEnv(5),
+    /** Proposals below this are dropped rather than queued for someone to read. */
+    minConfidence: z
+      .union([z.number(), z.string()])
+      .optional()
+      .transform((value) => {
+        if (value === undefined || value === '') return 0.6;
+        const parsed = typeof value === 'number' ? value : Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0.6;
+      }),
+  }),
+
   party: z.object({
     mode: strFromEnv('advisory').pipe(z.enum(PARTY_MODES)),
     agentRunLeaseSeconds: intFromEnv(90),
@@ -163,6 +186,14 @@ export function loadConfig(env: EnvSource = process.env): SagaConfig {
       model: env.SAGA_EMBEDDING_MODEL,
       ollamaUrl: env.SAGA_OLLAMA_URL,
       timeoutMs: env.SAGA_EMBEDDING_TIMEOUT_MS,
+    },
+    inference: {
+      provider: env.SAGA_INFERENCE_PROVIDER,
+      model: env.SAGA_INFERENCE_MODEL,
+      ollamaUrl: env.SAGA_OLLAMA_URL,
+      timeoutMs: env.SAGA_INFERENCE_TIMEOUT_MS,
+      maxCandidates: env.SAGA_INFERENCE_MAX_CANDIDATES,
+      minConfidence: env.SAGA_INFERENCE_MIN_CONFIDENCE,
     },
     party: {
       mode: env.PARTY_MODE,

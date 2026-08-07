@@ -376,6 +376,22 @@ export class LoreService {
         preparedSnapshotId: snapshotId,
       });
 
+      // Relation inference reads current versions, so it belongs here rather than at propose
+      // time: before this transaction commits, the entries it would scan are still candidates.
+      // The dedupe key is the update, so a republish of the same update never queues twice.
+      await this.deps.jobs.enqueueIn(tx, {
+        projectId: update.projectId,
+        jobType: 'relation_inference',
+        entityType: 'memory_update',
+        entityId: updateId,
+        dedupeKey: `relation:${updateId}`,
+        payload: { memory_update_id: updateId },
+        correlationId: update.correlationId,
+        // Below embedding and validation: a missing relation degrades context quality, while a
+        // missing embedding degrades search itself.
+        priority: 2,
+      });
+
       await this.deps.outbox.emit(tx, {
         aggregateType: 'memory_update',
         aggregateId: updateId,

@@ -1,6 +1,7 @@
 import {
   contextRequestSchema,
   createLinkRequestSchema,
+  listLinksQuerySchema,
   evidenceCheckRequestSchema,
   listLoreQuerySchema,
   loreSearchRequestSchema,
@@ -366,8 +367,15 @@ export function registerLoreRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/api/projects/:projectRef/lore-links', async (request) => {
     request.requirePermission('lore:read');
     const params = parseOrThrow(projectRefParamsSchema, request.params, 'params');
+    const query = parseOrThrow(listLinksQuerySchema, request.query ?? {}, 'query');
     const project = await resolveAccessibleProject(ctx, request, params.projectRef);
-    const links = await ctx.repositories.links.listForProject(ctx.pool, project.id);
+    // Confirmed unless asked otherwise: the graph is the default answer, the review queue is
+    // something a caller opts into.
+    const links = await ctx.repositories.links.listForProject(
+      ctx.pool,
+      project.id,
+      query.state ?? 'confirmed',
+    );
     return { items: links.map(presentMemoryLink) };
   });
 
@@ -393,12 +401,38 @@ export function registerLoreRoutes(app: FastifyInstance, ctx: AppContext): void 
     return { link: presentMemoryLink(link) };
   });
 
+  app.post('/api/lore-links/:linkId/confirm', async (request) => {
+    request.requirePermission('lore:propose');
+    const { linkId } = request.params as { linkId: string };
+    const link = await ctx.repositories.links.findById(ctx.pool, linkId);
+    if (link === null) throw new SagaError('NOT_FOUND', 'No such relation.');
+    await assertUpdateVisible(ctx, request, link.projectId);
+
+    const confirmed = await ctx.services.confirmLink(linkId);
+    if (confirmed === null) {
+      // Already confirmed. Distinct from "no such relation", because the caller is looking at
+      // a review queue somebody else has already worked through.
+      throw new SagaError(
+        'MEMORY_LINK_NOT_PROPOSED',
+        'That relation is already part of the graph.',
+      );
+    }
+    return { link: presentMemoryLink(confirmed) };
+  });
+
   app.delete('/api/lore-links/:linkId', async (request) => {
     request.requirePermission('lore:propose');
     const { linkId } = request.params as { linkId: string };
     const link = await ctx.repositories.links.findById(ctx.pool, linkId);
     if (link === null) throw new SagaError('NOT_FOUND', 'No such relation.');
     await assertUpdateVisible(ctx, request, link.projectId);
+
+    // Turning down a proposal keeps the row as a tombstone; removing a real relation removes
+    // it. Deleting a proposal instead would only hold until the next publish re-proposed it.
+    if (link.state === 'proposed') {
+      await ctx.services.rejectLink(linkId);
+      return { ok: true as const };
+    }
     await ctx.services.deleteLink(linkId);
     return { ok: true as const };
   });
