@@ -4,8 +4,10 @@ import type {
   DependencyType,
   QuestDependencyDto,
   QuestDto,
+  QuestPlanDto,
   QuestScope,
   QuestStatus,
+  QuestStepStatus,
   WorkState,
 } from '@saga/contracts';
 import { useState, type FormEvent } from 'react';
@@ -86,6 +88,7 @@ export function QuestDetailPage() {
     checkpoints,
     sessions,
     latest_handoff: handoff,
+    plan,
   } = detail.data;
   const closed = quest.status === 'completed' || quest.status === 'cancelled';
 
@@ -222,6 +225,8 @@ export function QuestDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          <PlanPanel plan={plan} closed={closed} />
+
           {handoff !== null && <HandoffPanel handoff={handoff} />}
 
           <Panel title="Checkpoint history">
@@ -668,6 +673,80 @@ function PartyPanel({ projectRef, questId }: { projectRef: string; questId: stri
           </div>
         </>
       )}
+    </Panel>
+  );
+}
+
+const STEP_TONE: Record<QuestStepStatus, BadgeTone> = {
+  done: 'good',
+  skipped: 'neutral',
+  in_progress: 'warn',
+  pending: 'neutral',
+};
+
+/**
+ * The Quest's declared sub-tasks and how far through them it is.
+ *
+ * This is what decides when the Quest closes, so it sits above the checkpoint history rather
+ * than in the sidebar — and it is the only view a person on a `manual` project has of a Quest
+ * that has finished its plan and is waiting for them to confirm it.
+ */
+function PlanPanel({ plan, closed }: { plan: QuestPlanDto | null; closed: boolean }) {
+  if (plan === null) {
+    return (
+      <Panel title="Plan">
+        <EmptyState
+          title="No plan declared"
+          description="An agent breaks a Quest into numbered sub-tasks with saga_plan_quest and settles them as it works. Without a plan, this Quest closes only when someone says so."
+        />
+      </Panel>
+    );
+  }
+
+  const { progress } = plan;
+  const finished = progress.all_settled;
+
+  return (
+    <Panel
+      title="Plan"
+      actions={
+        <span className="text-xs text-ink-500 dark:text-parchment-300/70">
+          {progress.done}/{progress.total} done
+          {progress.skipped > 0 && ` · ${progress.skipped} skipped`}
+        </span>
+      }
+    >
+      {finished && !closed && (
+        <p className="border-b border-parchment-200/70 px-4 py-3 text-sm text-ink-600 dark:border-night-800/70 dark:text-parchment-300/80">
+          Every step is settled but this Quest is still open — either the project requires a person
+          to confirm a completion, or a session is still attached to it. Complete it above when the
+          work really is done.
+        </p>
+      )}
+      <ol className="divide-y divide-parchment-200/70 dark:divide-night-800/70">
+        {plan.steps.map((step) => (
+          <li key={step.id} className="flex items-baseline gap-3 px-4 py-2.5">
+            <span className="w-6 shrink-0 text-xs tabular-nums text-ink-500 dark:text-parchment-300/60">
+              {step.ordinal}.
+            </span>
+            <span
+              className={
+                step.status === 'done' || step.status === 'skipped'
+                  ? 'flex-1 text-sm text-ink-500 dark:text-parchment-300/60'
+                  : 'flex-1 text-sm'
+              }
+            >
+              {step.title}
+            </span>
+            <Badge tone={STEP_TONE[step.status]}>{step.status}</Badge>
+            {step.completed_at !== null && (
+              <span className="text-xs text-ink-500 dark:text-parchment-300/60">
+                <RelativeTime value={step.completed_at} />
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
     </Panel>
   );
 }

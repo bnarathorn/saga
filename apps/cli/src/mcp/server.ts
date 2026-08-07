@@ -1,5 +1,5 @@
 import { SagaClient, RETRY_GUIDANCE } from '@saga/agent-sdk';
-import type { StartSessionResponse } from '@saga/contracts';
+import type { CreateCheckpointResponse, StartSessionResponse } from '@saga/contracts';
 import { SagaError, errorMessage, isSagaError } from '@saga/shared';
 import { z } from 'zod';
 import { detectWorkspace, findBinding, loadConfig, newIdempotencyKey } from '../workspace.js';
@@ -133,6 +133,13 @@ export const MCP_INSTRUCTIONS =
   'task, and record what you find with saga_remember before you stop.\n' +
   'On the first user task call saga_activate_task with the request verbatim, and read the ' +
   'returned Task and Continuation context before editing anything.\n' +
+  'Then break the work into numbered sub-tasks with saga_plan_quest, before you start ' +
+  'changing things. Settle each one with step_updates on saga_checkpoint as you finish it: ' +
+  'the Quest completes by itself when the last step is settled, so the plan is what decides ' +
+  'when the work is done.\n' +
+  'When that Quest has completed and the user asks for something else, call saga_activate_task ' +
+  'again — new work becomes a new Quest in the same session. Reopen the finished one with ' +
+  'saga_reopen_quest only when it was closed by mistake.\n' +
   'Call saga_checkpoint at every milestone and before context compaction. Claim shared ' +
   'resources with saga_claim_resource before risky operations. Record durable knowledge with ' +
   'saga_remember — never transient state, never credentials.\n' +
@@ -264,12 +271,19 @@ export const TOOLS: McpTool[] = [
   {
     name: 'saga_activate_task',
     description:
-      'Report the first user task. Saga classifies it as new_work, resume_work or inquiry, creates or attaches a Quest, and returns Core, Task and (for resume_work) Continuation context. Read the returned context before editing any file.',
+      'Report the first user task. Saga classifies it as new_work, resume_work or inquiry, creates or attaches a Quest, and returns Core, Task and (for resume_work) Continuation context. Read the returned context before editing any file. Call it again whenever the current Quest has completed and the user asks for something else: that starts a new Quest in the same session, which is what different work needs. It is refused while the current Quest is still open — finish that work first rather than rebinding the session.',
     inputSchema: z.object({
       task: z.string().min(1).describe('The user request, verbatim where possible.'),
       mode_hint: z.enum(['auto', 'new_work', 'resume_work', 'inquiry']).optional(),
       requested_quest_id: z.string().optional().describe('Set when the user names a Quest.'),
       scope: scopeSchema.optional().describe('Modules, files and APIs you expect to touch.'),
+      plan: z
+        .array(z.string().min(1))
+        .max(50)
+        .optional()
+        .describe(
+          'The numbered sub-tasks this work breaks into, when you already know them. Applied only to a Quest this call creates; use saga_plan_quest once you have read the context, or to plan a resumed Quest.',
+        ),
     }),
     async handler(args, ctx) {
       requireSession(ctx);
@@ -278,6 +292,7 @@ export const TOOLS: McpTool[] = [
         mode_hint: args.mode_hint as never,
         requested_quest_id: (args.requested_quest_id as string | undefined) ?? null,
         scope: args.scope as never,
+        plan: args.plan as never,
       });
 
       ctx.session.questId = result.quest?.id ?? null;
@@ -295,7 +310,7 @@ export const TOOLS: McpTool[] = [
         next_step:
           (result.activation_mode === 'inquiry'
             ? 'No Quest was created. If this turns into real work, call saga_activate_task again with mode_hint "new_work".'
-            : `Record checkpoints with saga_checkpoint using expected_quest_revision ${result.quest?.revision ?? 0}.`) +
+            : `Break this work into numbered sub-tasks with saga_plan_quest, then record checkpoints with saga_checkpoint using expected_quest_revision ${result.quest?.revision ?? 0}, settling each step as you finish it.`) +
           bootstrap,
       };
     },
@@ -346,13 +361,108 @@ export const TOOLS: McpTool[] = [
   },
 
   {
+    name: 'saga_plan_quest',
+    description:
+      'Declare the numbered sub-tasks this Quest breaks into, 1, 2, 3, … Do this once you have read the context and know the shape of the work, before making changes. Each step is settled individually with step_updates on saga_checkpoint, and the Quest completes by itself when the last one is settled — so make each step a real, finishable piece of the work, not a phase heading. Call it again to add or refine steps: a step keeps its recorded status when its number and wording are unchanged.',
+    inputSchema: z.object({
+      steps: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(50)
+        .describe('Sub-tasks in order. Their positions are their numbers, starting at 1.'),
+    }),
+    async handler(args, ctx) {
+      requireSession(ctx);
+      if (ctx.session.questId === null) {
+        throw new SagaError(
+          'SESSION_STATE_INVALID',
+          'This session has no Quest. Call saga_activate_task with mode_hint "new_work" before declaring a plan.',
+        );
+      }
+
+      const plan = await ctx.client.setQuestPlan(ctx.session.questId, {
+        steps: args.steps as string[],
+      });
+
+      return {
+        plan: plan.steps.map((step) => ({
+          ordinal: step.ordinal,
+          title: step.title,
+          status: step.status,
+        })),
+        progress: plan.progress,
+        next_step:
+          'Settle each step with step_updates on saga_checkpoint as you finish it. The Quest completes when the last step is settled, whatever next_steps you still record.',
+      };
+    },
+  },
+
+  {
+    name: 'saga_reopen_quest',
+    description:
+      'Reopen a Quest that was completed or cancelled and should not have been — a plan settled by mistake, or work that turned out to be unfinished. This is the only way back from a close, so a reason is required and is recorded in the audit log. Do NOT use it to attach new work to a finished Quest: for a different task, call saga_activate_task again and let Saga create a new one.',
+    inputSchema: z.object({
+      reason: z
+        .string()
+        .min(1)
+        .describe('Why this Quest is being reopened. Recorded in the audit log.'),
+      quest_id: z
+        .string()
+        .optional()
+        .describe('Defaults to the Quest this session last worked on.'),
+    }),
+    async handler(args, ctx) {
+      requireSession(ctx);
+      const questId = (args.quest_id as string | undefined) ?? ctx.session.questId;
+      if (questId === null || questId === undefined) {
+        throw new SagaError(
+          'QUEST_NOT_FOUND',
+          'This session has no Quest to reopen. Pass quest_id, or find the Quest in Guild Hall.',
+        );
+      }
+
+      const { quest } = await ctx.client.reopenQuest(questId, { reason: args.reason as string });
+
+      // Re-point the session at it only when it is the one this session was already on. The
+      // revision is authoritative from the server: reopening does not advance it, but a stale
+      // local value would fail the next checkpoint's compare-and-swap for no useful reason.
+      if (questId === ctx.session.questId) {
+        ctx.session.questRevision = quest.revision;
+      }
+
+      return {
+        quest_id: quest.id,
+        title: quest.title,
+        status: quest.status,
+        quest_revision: quest.revision,
+        next_step:
+          questId === ctx.session.questId
+            ? `This Quest is open again at revision ${quest.revision}. Re-declare or extend its plan with saga_plan_quest if the remaining work is not already a step.`
+            : 'That Quest is open again. This session is still on its own Quest; nothing else changed here.',
+      };
+    },
+  },
+
+  {
     name: 'saga_checkpoint',
     description:
-      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
+      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends. Use step_updates to tick off the sub-tasks you declared with saga_plan_quest — settling the last one completes the Quest. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
     inputSchema: z.object({
       kind: z.enum(['automatic', 'milestone', 'final_handoff']).default('automatic'),
       summary: z.string().min(1),
       work_state: workStateSchema,
+      step_updates: z
+        .array(
+          z.object({
+            ordinal: z.number().int().positive().describe('The step number from saga_plan_quest.'),
+            status: z
+              .enum(['pending', 'in_progress', 'done', 'skipped'])
+              .optional()
+              .describe('Defaults to "done". Use "skipped" for a step the work made unnecessary.'),
+          }),
+        )
+        .optional()
+        .describe('Plan steps this checkpoint settles. Only report a step you have finished.'),
       expected_quest_revision: z
         .number()
         .int()
@@ -378,6 +488,7 @@ export const TOOLS: McpTool[] = [
           kind: args.kind as never,
           summary: args.summary as string,
           work_state: args.work_state as never,
+          step_updates: (args.step_updates ?? []) as never,
         },
         { idempotencyKey: newIdempotencyKey() },
       );
@@ -386,7 +497,10 @@ export const TOOLS: McpTool[] = [
       return {
         checkpoint_id: result.checkpoint.id,
         quest_revision: result.quest_revision,
-        next_step: `Use expected_quest_revision ${result.quest_revision} for the next checkpoint.`,
+        plan: result.plan?.progress ?? null,
+        quest_status: result.quest_status,
+        quest_status_held: result.quest_status_held,
+        next_step: describeAfterCheckpoint(result),
       };
     },
   },
@@ -507,15 +621,24 @@ export const TOOLS: McpTool[] = [
   {
     name: 'saga_end_session',
     description:
-      'End the session cleanly: record a final handoff for the Quest, end the durable session, end the agent run and release its claims. Always call this before you stop, so the next session can continue from where you left off. Set quest_status to say what became of the Quest — nothing infers it, so a Quest you leave unmentioned stays open for whoever picks it up next.',
+      'End the session cleanly: record a final handoff for the Quest, end the durable session, end the agent run and release its claims. Always call this before you stop, so the next session can continue from where you left off. Settle any finished plan steps here with step_updates; a Quest whose plan is finished closes itself. Otherwise set quest_status to say what became of the Quest — nothing else infers it, so a Quest you leave unmentioned stays open for whoever picks it up next.',
     inputSchema: z.object({
       summary: z.string().optional().describe('Required when a Quest is attached.'),
       work_state: workStateSchema.optional(),
+      step_updates: z
+        .array(
+          z.object({
+            ordinal: z.number().int().positive().describe('The step number from saga_plan_quest.'),
+            status: z.enum(['pending', 'in_progress', 'done', 'skipped']).optional(),
+          }),
+        )
+        .optional()
+        .describe('Plan steps finished since the last checkpoint. Defaults to status "done".'),
       quest_status: z
         .enum(['completed', 'blocked', 'waiting', 'cancelled'])
         .optional()
         .describe(
-          'What became of the Quest. Set "completed" only when the work itself is done, not merely when you are stopping — a completed Quest cannot be resumed and no tool can reopen it. Omit it to leave the Quest open. The project may require a person to confirm a completion, in which case the reply says so in quest_status_held.',
+          'What became of the Quest. Leave unset when the Quest has a plan — settling its last step is what completes it. Set "completed" only for a Quest with no plan, and only when the work itself is done, not merely when you are stopping: a completed Quest cannot be resumed and no tool can reopen it. Omit it to leave the Quest open. The project may require a person to confirm a completion, in which case the reply says so in quest_status_held.',
         ),
     }),
     async handler(args, ctx) {
@@ -535,6 +658,7 @@ export const TOOLS: McpTool[] = [
               expected_quest_revision: ctx.session.questRevision,
               summary: args.summary as string,
               work_state: args.work_state as never,
+              step_updates: (args.step_updates ?? []) as never,
             }
           : undefined,
         quest_status: args.quest_status as never,
@@ -555,10 +679,36 @@ export const TOOLS: McpTool[] = [
         released_claims: result.released_claims,
         quest_status: result.quest_status,
         quest_status_held: result.quest_status_held,
+        // Optional chaining, not a null check: a server older than this CLI omits the field
+        // entirely, and the CLI is downloaded per host, so the two do drift apart.
+        plan: result.plan?.progress ?? null,
       };
     },
   },
 ];
+
+/**
+ * What the agent should do next after a checkpoint.
+ *
+ * The revision line matters on every call, but a Quest that just closed itself — or that
+ * finished its plan and was held back — is the more urgent fact, and an agent that keeps
+ * checkpointing against a completed Quest will only collect errors.
+ */
+function describeAfterCheckpoint(result: CreateCheckpointResponse): string {
+  const revision = `Use expected_quest_revision ${result.quest_revision} for the next checkpoint.`;
+
+  if (result.quest_status === 'completed') {
+    return 'Every step of the plan is settled and this Quest is now completed. Do not record further checkpoints against it; end the session, or call saga_activate_task for new work.';
+  }
+  if (result.quest_status_held != null) {
+    return `${result.quest_status_held} ${revision}`;
+  }
+  const progress = result.plan?.progress;
+  if (progress !== undefined && progress.next_ordinal !== null) {
+    return `${revision} ${progress.done}/${progress.total} steps done; next is step ${progress.next_ordinal}.`;
+  }
+  return revision;
+}
 
 function requireSession(ctx: McpToolContext): void {
   if (ctx.session.sessionId === null) {

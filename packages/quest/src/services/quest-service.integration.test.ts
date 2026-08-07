@@ -638,3 +638,534 @@ describe('session reaping', () => {
     expect((await quests.get(stale.quest!.id)).revision).toBe(1);
   });
 });
+
+describe('the Quest plan', () => {
+  it('numbers the declared steps from 1 and starts them all pending', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    const plan = await quests.setPlan(activated.quest!.id, [
+      'Write the exporter',
+      'Wire the route',
+      'Document it',
+    ]);
+
+    expect(plan.steps.map((step) => [step.ordinal, step.title, step.status])).toEqual([
+      [1, 'Write the exporter', 'pending'],
+      [2, 'Wire the route', 'pending'],
+      [3, 'Document it', 'pending'],
+    ]);
+    expect(plan.progress).toMatchObject({ total: 3, done: 0, remaining: 3, next_ordinal: 1 });
+  });
+
+  it('settles a step in the checkpoint that reports it, and records which one', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter', 'Wire the route']);
+
+    const result = await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    const settled = result.plan!.steps[0]!;
+    expect(settled.status).toBe('done');
+    expect(settled.completed_by_checkpoint_id).toBe(result.checkpoint.id);
+    expect(settled.completed_by_session_id).toBe(activated.sessionId);
+    expect(settled.completed_at).not.toBeNull();
+    expect(result.plan!.progress.next_ordinal).toBe(2);
+    // One step of two: the Quest is still open.
+    expect(result.questStatus).toBe('in_progress');
+  });
+
+  it('rejects a step number the plan does not have rather than ignoring it', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+
+    await expect(
+      quests.createCheckpoint({
+        sessionId: activated.sessionId,
+        expectedQuestRevision: 0,
+        kind: 'automatic',
+        summary: 'ticking off something that is not there',
+        workState: workState(),
+        stepUpdates: [{ ordinal: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: 'QUEST_STEP_NOT_FOUND' });
+
+    // The whole checkpoint rolled back with it: no half-written progress.
+    expect(await quests.listCheckpoints(activated.quest!.id)).toHaveLength(0);
+    expect((await quests.get(activated.quest!.id)).revision).toBe(0);
+  });
+
+  it('completes the Quest when the last step settles, even with next steps outstanding', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter', 'Wire the route']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    const result = await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 1,
+      kind: 'milestone',
+      summary: 'route wired',
+      workState: workState({ next_steps: ['Consider a follow-up for XLSX too'] }),
+      stepUpdates: [{ ordinal: 2 }],
+    });
+
+    expect(result.questStatus).toBe('completed');
+    expect(result.questStatusHeld).toBeNull();
+    const quest = await quests.get(activated.quest!.id);
+    expect(quest.status).toBe('completed');
+    expect(quest.completedAt).not.toBeNull();
+  });
+
+  it('does not complete a Quest whose plan was only skipped', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+
+    const result = await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'turned out to be unnecessary',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1, status: 'skipped' }],
+    });
+
+    expect(result.questStatus).toBe('in_progress');
+  });
+
+  it('leaves a Quest with no plan exactly as it was before plans existed', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    const result = await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'final_handoff',
+      summary: 'all finished, nothing outstanding',
+      workState: workState(),
+    });
+
+    expect(result.plan).toBeNull();
+    expect(result.questStatus).toBe('in_progress');
+  });
+
+  it('holds the completion on a manual project and says why', async () => {
+    const manual = await projects.create({
+      name: 'Manual Completion Project',
+      questCompletionMode: 'manual',
+    });
+    const started = await sessions.start({ project: manual, client: 'claude-code' });
+    const activated = await sessions.activate({
+      sessionId: started.session.id,
+      project: manual,
+      task: 'Add CSV report export',
+    });
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+
+    const result = await quests.createCheckpoint({
+      sessionId: started.session.id,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    expect(result.questStatus).toBe('in_progress');
+    expect(result.questStatusHeld).toMatch(/manual/);
+    expect((await quests.get(activated.quest!.id)).status).toBe('in_progress');
+  });
+
+  it('holds the completion while another session is still attached', async () => {
+    const first = await startAndActivate('Add CSV report export');
+    await quests.setPlan(first.quest!.id, ['Write the exporter']);
+
+    // A second agent resumes the same Quest: one of them finishing its steps is not the work
+    // being finished.
+    const second = await sessions.start({ project, client: 'codex' });
+    await sessions.activate({
+      sessionId: second.session.id,
+      project,
+      task: 'Continue the CSV report export',
+      modeHint: 'resume_work',
+      requestedQuestId: first.quest!.id,
+    });
+
+    const result = await quests.createCheckpoint({
+      sessionId: first.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    expect(result.questStatus).toBe('in_progress');
+    expect(result.questStatusHeld).toMatch(/another session/);
+  });
+
+  it('keeps a settled step when a re-declared plan appends to it', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter', 'Wire the route']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    const replanned = await quests.setPlan(activated.quest!.id, [
+      'Write the exporter',
+      'Wire the route',
+      'Document it',
+    ]);
+
+    expect(replanned.steps.map((step) => step.status)).toEqual(['done', 'pending', 'pending']);
+    expect(replanned.progress).toMatchObject({ total: 3, done: 1, next_ordinal: 2 });
+  });
+
+  it('resets a step the re-declared plan renamed', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    // Two steps, so settling the first leaves the Quest open and re-plannable.
+    await quests.setPlan(activated.quest!.id, ['Write the exporter', 'Wire the route']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    const replanned = await quests.setPlan(activated.quest!.id, [
+      'Write the exporter and the CLI',
+      'Wire the route',
+    ]);
+    expect(replanned.steps[0]!.status).toBe('pending');
+    expect(replanned.steps[0]!.completed_at).toBeNull();
+    // The untouched step keeps its own status, which here is the pending it started with.
+    expect(replanned.steps[1]!.title).toBe('Wire the route');
+  });
+
+  it('refuses a new plan for a Quest that has already closed', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    expect((await quests.get(activated.quest!.id)).status).toBe('completed');
+
+    await expect(quests.setPlan(activated.quest!.id, ['Something else'])).rejects.toMatchObject({
+      code: 'QUEST_STATE_INVALID',
+    });
+  });
+
+  it('leads the continuation with the plan and the first unsettled step', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter', 'Wire the route']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'final_handoff',
+      summary: 'exporter done, route still to do',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    const continuation = await quests.continuation(activated.quest!.id, 4_000);
+    expect(continuation!.plan!.progress.next_ordinal).toBe(2);
+    expect(continuation!.rendered).toContain('[x] 1. Write the exporter');
+    expect(continuation!.rendered).toContain('[ ] 2. Wire the route');
+    expect(continuation!.rendered).toContain('Resume at step 2');
+  });
+});
+
+describe('the plan sweeper', () => {
+  it('closes a Quest whose plan finished but whose session died before ending', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+
+    // A second session is attached, so the checkpoint cannot close it — this is the crash shape:
+    // steps settled, nobody left to declare the outcome.
+    const other = await sessions.start({ project, client: 'codex' });
+    await sessions.activate({
+      sessionId: other.session.id,
+      project,
+      task: 'Continue the CSV report export',
+      modeHint: 'resume_work',
+      requestedQuestId: activated.quest!.id,
+    });
+    const held = await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    expect(held.questStatus).toBe('in_progress');
+
+    // Both sessions go quiet and are reaped.
+    await pool.query(`UPDATE quest.sessions SET last_seen_at = now() - interval '10 hours'`);
+    await sessions.reapStaleSessions();
+
+    const swept = await quests.sweepCompletedPlans();
+    expect(swept.completed).toContain(activated.quest!.id);
+    expect((await quests.get(activated.quest!.id)).status).toBe('completed');
+  });
+
+  it('leaves a Quest alone while a session is still attached to it', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+    const other = await sessions.start({ project, client: 'codex' });
+    await sessions.activate({
+      sessionId: other.session.id,
+      project,
+      task: 'Continue the CSV report export',
+      modeHint: 'resume_work',
+      requestedQuestId: activated.quest!.id,
+    });
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    expect((await quests.sweepCompletedPlans()).completed).toHaveLength(0);
+    expect((await quests.get(activated.quest!.id)).status).toBe('in_progress');
+  });
+
+  it('never sweeps a Quest that declared no plan, however quiet it is', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'final_handoff',
+      summary: 'all done as far as I know',
+      workState: workState(),
+    });
+    await pool.query(`UPDATE quest.sessions SET last_seen_at = now() - interval '10 hours'`);
+    await sessions.reapStaleSessions();
+
+    expect((await quests.sweepCompletedPlans()).completed).toHaveLength(0);
+    expect((await quests.get(activated.quest!.id)).status).toBe('in_progress');
+  });
+
+  it('never sweeps a Quest on a manual project', async () => {
+    const manual = await projects.create({
+      name: 'Manual Sweep Project',
+      questCompletionMode: 'manual',
+    });
+    const started = await sessions.start({ project: manual, client: 'claude-code' });
+    const activated = await sessions.activate({
+      sessionId: started.session.id,
+      project: manual,
+      task: 'Add CSV report export',
+    });
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+    await quests.createCheckpoint({
+      sessionId: started.session.id,
+      expectedQuestRevision: 0,
+      kind: 'automatic',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    await pool.query(`UPDATE quest.sessions SET last_seen_at = now() - interval '10 hours'`);
+    await sessions.reapStaleSessions();
+
+    expect((await quests.sweepCompletedPlans()).completed).toHaveLength(0);
+    expect((await quests.get(activated.quest!.id)).status).toBe('in_progress');
+  });
+});
+
+describe('re-activating a session whose Quest has closed', () => {
+  it('starts a new Quest for a new request in the same session', async () => {
+    const first = await startAndActivate('Add CSV report export');
+    await quests.setPlan(first.quest!.id, ['Write the exporter']);
+    const completed = await quests.createCheckpoint({
+      sessionId: first.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    expect(completed.questStatus).toBe('completed');
+
+    // The user asks for something else without opening a new session — the common shape now
+    // that a finished plan closes a Quest mid-session.
+    const second = await sessions.activate({
+      sessionId: first.sessionId,
+      project,
+      task: 'Add a Prometheus endpoint to the worker',
+    });
+
+    expect(second.mode).toBe('new_work');
+    expect(second.quest!.id).not.toBe(first.quest!.id);
+    expect(second.quest!.status).toBe('in_progress');
+    // The session moved across; the finished Quest keeps its own history.
+    expect(second.session.workItemId).toBe(second.quest!.id);
+    expect((await quests.get(first.quest!.id)).status).toBe('completed');
+    expect(await quests.listCheckpoints(first.quest!.id)).toHaveLength(1);
+  });
+
+  it('checkpoints the new Quest from its own revision, leaving the closed one alone', async () => {
+    const first = await startAndActivate('Add CSV report export');
+    await quests.setPlan(first.quest!.id, ['Write the exporter']);
+    await quests.createCheckpoint({
+      sessionId: first.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+
+    const second = await sessions.activate({
+      sessionId: first.sessionId,
+      project,
+      task: 'Add a Prometheus endpoint to the worker',
+    });
+    await quests.createCheckpoint({
+      sessionId: first.sessionId,
+      expectedQuestRevision: second.quest!.revision,
+      kind: 'automatic',
+      summary: 'endpoint scaffolded',
+      workState: workState({ goal: 'Add a Prometheus endpoint' }),
+    });
+
+    expect(await quests.listCheckpoints(second.quest!.id)).toHaveLength(1);
+    expect(await quests.listCheckpoints(first.quest!.id)).toHaveLength(1);
+  });
+
+  it('still refuses to rebind a session whose Quest is open', async () => {
+    // The original guard: rebinding live work would strand it and move later checkpoints onto
+    // a different Quest.
+    const first = await startAndActivate('Add CSV report export');
+    await expect(
+      sessions.activate({
+        sessionId: first.sessionId,
+        project,
+        task: 'Add a Prometheus endpoint to the worker',
+      }),
+    ).rejects.toMatchObject({ code: 'SESSION_STATE_INVALID' });
+  });
+
+  it('re-activates after a cancelled Quest too', async () => {
+    const first = await startAndActivate('Add CSV report export');
+    await quests.update(first.quest!.id, { status: 'cancelled' });
+
+    const second = await sessions.activate({
+      sessionId: first.sessionId,
+      project,
+      task: 'Add a Prometheus endpoint to the worker',
+    });
+    expect(second.quest!.id).not.toBe(first.quest!.id);
+  });
+});
+
+describe('reopening a Quest', () => {
+  it('brings a plan-completed Quest back to in_progress with its plan intact', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    expect((await quests.get(activated.quest!.id)).status).toBe('completed');
+
+    const reopened = await quests.reopen(activated.quest!.id);
+    expect(reopened.status).toBe('in_progress');
+    expect(reopened.completedAt).toBeNull();
+
+    // The settled steps survive, so the agent can see what was already done.
+    const plan = await quests.getPlan(activated.quest!.id);
+    expect(plan.progress).toMatchObject({ total: 1, done: 1 });
+  });
+
+  it('lets a reopened Quest take a new plan and complete again', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    await quests.reopen(activated.quest!.id);
+
+    // Appending the step that was actually missing: the first is carried over as done.
+    const replanned = await quests.setPlan(activated.quest!.id, [
+      'Write the exporter',
+      'Handle the empty-result case',
+    ]);
+    expect(replanned.steps.map((step) => step.status)).toEqual(['done', 'pending']);
+
+    const quest = await quests.get(activated.quest!.id);
+    const finished = await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: quest.revision,
+      kind: 'final_handoff',
+      summary: 'empty results handled',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 2 }],
+    });
+    expect(finished.questStatus).toBe('completed');
+  });
+
+  it('will not reopen a Quest that was never closed', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await expect(quests.reopen(activated.quest!.id)).rejects.toMatchObject({
+      code: 'QUEST_STATE_INVALID',
+    });
+  });
+
+  it('does not let the sweeper close a reopened Quest again while work is outstanding', async () => {
+    const activated = await startAndActivate('Add CSV report export');
+    await quests.setPlan(activated.quest!.id, ['Write the exporter']);
+    await quests.createCheckpoint({
+      sessionId: activated.sessionId,
+      expectedQuestRevision: 0,
+      kind: 'milestone',
+      summary: 'exporter done',
+      workState: workState(),
+      stepUpdates: [{ ordinal: 1 }],
+    });
+    await quests.reopen(activated.quest!.id);
+    await quests.setPlan(activated.quest!.id, [
+      'Write the exporter',
+      'Handle the empty-result case',
+    ]);
+    await pool.query(`UPDATE quest.sessions SET last_seen_at = now() - interval '10 hours'`);
+    await sessions.reapStaleSessions();
+
+    // Step 2 is unsettled, so the plan no longer says the Quest is finished.
+    expect((await quests.sweepCompletedPlans()).completed).toHaveLength(0);
+    expect((await quests.get(activated.quest!.id)).status).toBe('in_progress');
+  });
+});

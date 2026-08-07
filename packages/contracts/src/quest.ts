@@ -25,6 +25,10 @@ export const CHECKPOINT_KINDS = ['automatic', 'milestone', 'final_handoff'] as c
 export const checkpointKindSchema = z.enum(CHECKPOINT_KINDS);
 export type CheckpointKind = z.infer<typeof checkpointKindSchema>;
 
+export const QUEST_STEP_STATUSES = ['pending', 'in_progress', 'done', 'skipped'] as const;
+export const questStepStatusSchema = z.enum(QUEST_STEP_STATUSES);
+export type QuestStepStatus = z.infer<typeof questStepStatusSchema>;
+
 export const SESSION_STATES = ['awaiting_task', 'active', 'completed', 'abandoned'] as const;
 export const sessionStateSchema = z.enum(SESSION_STATES);
 export type SessionState = z.infer<typeof sessionStateSchema>;
@@ -116,6 +120,70 @@ export const questDependencySchema = z.object({
 });
 export type QuestDependencyDto = z.infer<typeof questDependencySchema>;
 
+// --- plan ------------------------------------------------------------------
+
+/**
+ * One numbered sub-task of a Quest.
+ *
+ * A step is declared once and settled once. That is what separates it from the free-text
+ * `completed` / `next_steps` arrays in a work state, which are rewritten wholesale on every
+ * checkpoint and address nothing: a step has a stable number an agent can tick off, so the
+ * server can answer "is this Quest finished?" without inferring anything (ADR-0011).
+ */
+export const questStepSchema = z.object({
+  id: uuidSchema,
+  work_item_id: uuidSchema,
+  ordinal: z.number().int().positive(),
+  title: z.string(),
+  status: questStepStatusSchema,
+  completed_at: nullableIsoTimestampSchema,
+  completed_by_session_id: uuidSchema.nullable(),
+  completed_by_checkpoint_id: uuidSchema.nullable(),
+  created_at: isoTimestampSchema,
+  updated_at: isoTimestampSchema,
+});
+export type QuestStepDto = z.infer<typeof questStepSchema>;
+
+/** How far through its plan a Quest is. Derived, never stored. */
+export const planProgressSchema = z.object({
+  total: z.number().int().nonnegative(),
+  done: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  remaining: z.number().int().nonnegative(),
+  /** True when every step is settled and at least one was actually done. */
+  all_settled: z.boolean(),
+  /** The lowest-numbered step still unsettled, or null when the plan is finished. */
+  next_ordinal: z.number().int().positive().nullable(),
+});
+export type PlanProgressDto = z.infer<typeof planProgressSchema>;
+
+export const questPlanSchema = z.object({
+  steps: z.array(questStepSchema),
+  progress: planProgressSchema,
+});
+export type QuestPlanDto = z.infer<typeof questPlanSchema>;
+
+/**
+ * Declare or re-declare a plan. Steps are numbered by their position, from 1.
+ *
+ * Re-declaring is allowed mid-Quest, so an agent that discovers more work can append to its
+ * plan. A step keeps its recorded status when its position and title both survive the
+ * re-declaration; anything renamed, inserted or reordered is a different step and starts
+ * `pending`. Sending an empty array removes the plan and returns the Quest to declaration-only
+ * completion.
+ */
+export const setQuestPlanRequestSchema = z.object({
+  steps: z.array(z.string().min(1).max(500)).max(50),
+});
+export type SetQuestPlanRequest = z.infer<typeof setQuestPlanRequestSchema>;
+
+/** Settle one step by its number. Omitting `status` means the step is done. */
+export const stepUpdateSchema = z.object({
+  ordinal: z.number().int().positive(),
+  status: questStepStatusSchema.optional(),
+});
+export type StepUpdate = z.infer<typeof stepUpdateSchema>;
+
 // --- work state ------------------------------------------------------------
 
 export const blockerSchema = z.object({
@@ -179,12 +247,26 @@ export const createCheckpointRequestSchema = z.object({
   kind: checkpointKindSchema,
   summary: z.string().min(1).max(2_000),
   work_state: workStateSchema,
+  /**
+   * Plan steps settled by this checkpoint. Applied in the same transaction as the checkpoint,
+   * so a step is never recorded as done without the checkpoint that says why.
+   */
+  step_updates: z.array(stepUpdateSchema).max(50).default([]),
 });
 export type CreateCheckpointRequest = z.infer<typeof createCheckpointRequestSchema>;
 
 export const createCheckpointResponseSchema = z.object({
   checkpoint: checkpointSchema,
   quest_revision: z.number().int(),
+  /** Null when the Quest has no plan. */
+  plan: questPlanSchema.nullable(),
+  /** The Quest's status after the checkpoint — `completed` when this checkpoint finished the plan. */
+  quest_status: questStatusSchema,
+  /**
+   * Set when the plan finished but the Quest was left open, naming why. Same two reasons as
+   * ending a session: the project is on `manual`, or another session is still attached.
+   */
+  quest_status_held: z.string().nullable(),
 });
 export type CreateCheckpointResponse = z.infer<typeof createCheckpointResponseSchema>;
 
@@ -249,6 +331,12 @@ export const activateSessionRequestSchema = z.object({
   requested_quest_id: uuidSchema.nullable().optional(),
   /** Declared up front so Party can warn about overlap before work starts. */
   scope: questScopeSchema.optional(),
+  /**
+   * The numbered sub-tasks this work breaks into, when they are already known. Ignored for an
+   * `inquiry` activation, which creates no Quest, and never replaces the plan of a Quest being
+   * resumed — use `PUT /api/quests/:questId/plan` for that.
+   */
+  plan: z.array(z.string().min(1).max(500)).max(50).optional(),
   token_budget: z.number().int().min(500).max(60_000).optional(),
 });
 export type ActivateSessionRequest = z.infer<typeof activateSessionRequestSchema>;
@@ -292,6 +380,7 @@ export const endSessionRequestSchema = z.object({
       expected_quest_revision: z.number().int().nonnegative(),
       summary: z.string().min(1).max(2_000),
       work_state: workStateSchema,
+      step_updates: z.array(stepUpdateSchema).max(50).default([]),
     })
     .optional(),
   /**
@@ -301,6 +390,10 @@ export const endSessionRequestSchema = z.object({
    * statuses (`completed`, `cancelled`) are additionally gated on the project's
    * `quest_completion_mode`, because they cannot be undone from the agent surface — a
    * completed Quest is outside the resumable set, and no MCP tool can reopen one.
+   *
+   * A finished plan closes the Quest on its own, through the handoff's `step_updates`, under
+   * the same gate. This field stays the way to say anything else — `blocked`, `cancelled`, or
+   * `completed` for a Quest that never declared a plan.
    */
   quest_status: questStatusSchema.optional(),
 });
@@ -314,10 +407,13 @@ export const endSessionResponseSchema = z.object({
   /** The Quest's status now. Null when the session owned no Quest. */
   quest_status: questStatusSchema.nullable(),
   /**
-   * Set when a declared status was recorded but not applied, naming why — the project is on
-   * `manual`, or another session is still attached to the Quest. Null when nothing was held.
+   * Set when a status was recorded but not applied, naming why — the project is on `manual`, or
+   * another session is still attached to the Quest. Reports a finished plan that was held back
+   * as well as a declared `quest_status`. Null when nothing was held.
    */
   quest_status_held: z.string().nullable(),
+  /** The Quest's plan as the handoff left it. Null when it has none. */
+  plan: questPlanSchema.nullable(),
 });
 export type EndSessionResponse = z.infer<typeof endSessionResponseSchema>;
 
@@ -330,6 +426,11 @@ export const continuationSchema = z.object({
   recorded_at: isoTimestampSchema,
   /** True when no clean final handoff existed and the latest checkpoint was used instead. */
   recovered_from_interrupted_session: z.boolean(),
+  /**
+   * The Quest's plan as it stands, so a resuming session picks up at the first unsettled step
+   * rather than re-reading a free-text handoff to work out where it is. Null when there is none.
+   */
+  plan: questPlanSchema.nullable(),
   next_steps: z.array(z.string()),
   blockers: z.array(z.record(z.unknown())),
   rendered: z.string(),

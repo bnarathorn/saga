@@ -3,6 +3,7 @@ import type {
   DependencyType,
   QuestDependencyDto,
   QuestDto,
+  QuestPlanDto,
   QuestPriority,
   QuestScope,
   QuestStatus,
@@ -38,6 +39,8 @@ export interface QuestDetail {
   checkpoints: CheckpointDto[];
   sessions: SessionDto[];
   latest_handoff: CheckpointDto | null;
+  /** Null when the Quest declared no plan, which is not the same as a plan with nothing done. */
+  plan: QuestPlanDto | null;
 }
 
 export function useQuests(ref: string, params = ''): UseQueryResult<ListResponse<QuestDto>> {

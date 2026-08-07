@@ -125,18 +125,21 @@ one; its job is to hand the agent its Core Context.
 
 3. Call `saga_activate_task` with the task verbatim, and the scope you expect to touch.
 4. Use the returned Task and Continuation context **before editing any file**.
+5. Break the work into numbered sub-tasks with `saga_plan_quest`, before changing anything.
 
 **During work**
 
-5. Create checkpoints at milestones and before context compaction.
-6. Use `saga_remember` only for durable project knowledge.
-7. Claim critical shared resources before risky operations.
-8. Refresh context when the project or parallel work changes materially.
+6. Create checkpoints at milestones and before context compaction, settling each plan step you
+   have finished with `step_updates`.
+7. Use `saga_remember` only for durable project knowledge.
+8. Claim critical shared resources before risky operations.
+9. Refresh context when the project or parallel work changes materially.
 
 **Before ending**
 
-9. Create a final handoff.
-10. Call `saga_end_session`, setting `quest_status` when the Quest reached a new state.
+10. Create a final handoff.
+11. Call `saga_end_session`, settling any remaining finished steps, and setting `quest_status`
+    only when the Quest reached a state its plan does not already say.
 
 ---
 
@@ -148,7 +151,9 @@ one; its job is to hand the agent its Core Context.
 | `saga_activate_task`  | Report the first task. Saga classifies it and returns the right context.                                    |
 | `saga_get_context`    | Refresh context, with the current memory revision and stale-Lore warnings.                                  |
 | `saga_search_lore`    | Search durable knowledge instead of re-reading the repository.                                              |
-| `saga_checkpoint`     | Record progress. Compare-and-swap on the Quest revision.                                                    |
+| `saga_plan_quest`     | Declare the numbered sub-tasks the Quest breaks into. Settling them all completes it.                       |
+| `saga_reopen_quest`   | Undo a close that should not have happened. Reason required, recorded in the audit log.                     |
+| `saga_checkpoint`     | Record progress and settle plan steps. Compare-and-swap on the Quest revision.                              |
 | `saga_remember`       | Propose Lore Entries. Creates a candidate; never overwrites.                                                |
 | `saga_claim_resource` | Claim a resource before a risky or exclusive operation.                                                     |
 | `saga_release_claim`  | Release as soon as the protected operation finishes. Idempotent.                                            |
@@ -175,20 +180,80 @@ near-matches in `related_quests` for you to offer the user.
 If an inquiry session starts changing files, promote it — `saga_activate_task` again with
 `mode_hint: "new_work"`.
 
+### When the Quest finishes and the user asks for something else
+
+Call `saga_activate_task` again. The new request is classified from scratch, which for genuinely
+different work means a **new Quest in the same session**. You do not need a new session, and you
+should not reopen the finished Quest to hang unrelated work on it.
+
+This is now the ordinary shape of a session rather than an edge case: a finished plan completes
+its Quest the moment the last step settles, so the next thing the user asks arrives with the
+Quest already closed.
+
+Re-activation is refused while the current Quest is still **open** — `SESSION_STATE_INVALID`,
+naming the status. That guard is deliberate: rebinding a session mid-work would strand what is in
+flight and move every later checkpoint onto a different Quest. Finish the work, or close it, and
+then activate again.
+
+### Undoing a close
+
+`saga_reopen_quest` takes a `reason` and puts a `completed` or `cancelled` Quest back to
+`in_progress`. Settled plan steps survive, so you can see what was already done and append the
+steps that were actually missing — a carried-over step keeps its `done` status.
+
+Use it when a close was wrong: a step settled by mistake, or work that turned out to be
+unfinished. Do **not** use it to attach a new task to a finished Quest; that is what a new
+activation is for. The reason goes to the audit log, because this is the only route back.
+
+### The plan is what finishes a Quest
+
+Call `saga_plan_quest` once you have read the context and know the shape of the work, before you
+start changing things. It takes an ordered list of sub-tasks; their positions are their numbers.
+
+Make each step a real, finishable piece of the work rather than a phase heading — you will settle
+them one at a time, and **the Quest completes by itself when the last one is settled**. Settle a
+step with `step_updates` on `saga_checkpoint` as you finish it:
+
+```json
+{ "summary": "…", "work_state": { … }, "step_updates": [{ "ordinal": 2 }] }
+```
+
+`status` defaults to `done`; use `"skipped"` for a step the work made unnecessary. A plan that is
+entirely skipped does not complete a Quest.
+
+This is the part worth being deliberate about: **a Quest with a finished plan closes even though
+`next_steps` still lists things**. Recording what you would do next is not the same as the work
+being unfinished, so only settle a step you have actually finished. Conversely, do not leave a
+finished step unsettled to keep the Quest open — say why in the work state, or declare `blocked`.
+
+Call `saga_plan_quest` again to add or refine steps as you learn more. A step keeps its recorded
+status when its number and wording are both unchanged; anything renamed, inserted or reordered
+starts fresh.
+
+Completion can therefore happen mid-session. `saga_checkpoint` answers with `quest_status`, and
+when it comes back `completed`, stop checkpointing against that Quest.
+
 ### Saying what became of the Quest
 
-`saga_end_session` takes `quest_status`. Nothing infers it: a Quest you do not mention stays
-open for whoever picks it up next, however tidy your work state looks.
+`saga_end_session` takes `quest_status`, for the things a plan does not say: `blocked`,
+`cancelled`, or `completed` for a Quest that never declared a plan. Nothing else infers it — a
+planless Quest you do not mention stays open for whoever picks it up next, however tidy your work
+state looks.
 
 Set `completed` when the work itself is done — not when you are merely stopping. A completed
 Quest is outside the resumable set, naming it by id afterwards classifies as `new_work` rather
 than resuming, and no tool here can reopen one; leaving it open costs a click, closing it
 wrongly costs the thread. `blocked` and `waiting` are safe to declare at any time.
 
-The project decides whether your word is enough. Under `quest_completion_mode: manual` the
-declaration is recorded and a person confirms it in Guild Hall, and the reply tells you so in
-`quest_status_held` — that is not a failure and not something to retry. `quest_status` in the
-reply is always what the Quest actually holds now.
+The project decides whether your word is enough — for a finished plan just as much as for a
+declared status. Under `quest_completion_mode: manual` it is recorded and a person confirms it in
+Guild Hall, and the reply tells you so in `quest_status_held` — that is not a failure and not
+something to retry. The same answer comes back when another session is still attached to the
+Quest, because one agent finishing is not the work being finished. `quest_status` in the reply is
+always what the Quest actually holds now.
+
+If you stop without ending cleanly, a finished plan is not lost: the `quest_plan_sweeper` worker
+closes any Quest whose plan is settled once no session is attached to it.
 
 ---
 

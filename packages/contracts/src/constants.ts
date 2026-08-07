@@ -65,6 +65,7 @@ export const JOB_TYPES = [
   'event_projection',
   'session_reaper',
   'party_reaper',
+  'quest_plan_sweeper',
 ] as const;
 
 export const JOB_STATES = [

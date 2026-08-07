@@ -8,6 +8,7 @@ import {
   projectRefParamsSchema,
   promoteSessionRequestSchema,
   reasonRequestSchema,
+  setQuestPlanRequestSchema,
   startSessionRequestSchema,
   updateQuestRequestSchema,
   type StartSessionResponse,
@@ -100,11 +101,12 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
     const quest = await quests.get(questId);
     await assertQuestVisible(request, quest.projectId);
 
-    const [children, dependencies, checkpoints, questSessions] = await Promise.all([
+    const [children, dependencies, checkpoints, questSessions, plan] = await Promise.all([
       quests.listChildren(questId),
       quests.listDependencies(questId),
       quests.listCheckpoints(questId, 20),
       quests.listSessions(questId),
+      quests.getPlan(questId),
     ]);
 
     return {
@@ -113,6 +115,9 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
       dependencies: dependencies.map(presentDependency),
       checkpoints: checkpoints.map(presentCheckpoint),
       sessions: questSessions.map(presentSession),
+      // Null rather than an empty plan, so the console can tell "no plan declared" from
+      // "a plan with nothing settled yet" — on a manual project those need different actions.
+      plan: plan.steps.length === 0 ? null : plan,
       latest_handoff:
         checkpoints.find((checkpoint) => checkpoint.kind === 'final_handoff') === undefined
           ? null
@@ -196,6 +201,24 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
     await assertQuestVisible(request, existing.projectId);
     await quests.removeDependency(questId, dependsOnId);
     return { ok: true as const };
+  });
+
+  app.get('/api/quests/:questId/plan', async (request) => {
+    request.requirePermission('quest:read');
+    const { questId } = request.params as { questId: string };
+    const quest = await quests.get(questId);
+    await assertQuestVisible(request, quest.projectId);
+    return await quests.getPlan(questId);
+  });
+
+  app.put('/api/quests/:questId/plan', async (request) => {
+    request.requirePermission('quest:write');
+    const { questId } = request.params as { questId: string };
+    const body = parseOrThrow(setQuestPlanRequestSchema, request.body);
+    const quest = await quests.get(questId);
+    await assertQuestVisible(request, quest.projectId);
+    await resolveWritableProject(ctx, request, quest.projectId);
+    return await quests.setPlan(questId, body.steps, request.id);
   });
 
   app.get('/api/quests/:questId/checkpoints', async (request) => {
@@ -282,6 +305,7 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
       modeHint: body.mode_hint,
       requestedQuestId: body.requested_quest_id ?? null,
       scope: body.scope,
+      plan: body.plan,
       correlationId: request.id,
     });
 
@@ -375,6 +399,7 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
         kind: body.kind,
         summary: body.summary,
         workState: body.work_state,
+        stepUpdates: body.step_updates,
         correlationId: request.id,
       });
       return {
@@ -382,6 +407,9 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
         body: {
           checkpoint: presentCheckpoint(result.checkpoint),
           quest_revision: result.questRevision,
+          plan: result.plan,
+          quest_status: result.questStatus,
+          quest_status_held: result.questStatusHeld,
         },
         resourceId: result.checkpoint.id,
       };
@@ -405,6 +433,7 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
               expectedQuestRevision: body.handoff.expected_quest_revision,
               summary: body.handoff.summary,
               workState: body.handoff.work_state,
+              stepUpdates: body.handoff.step_updates,
             },
       questStatus: body.quest_status,
       correlationId: request.id,
@@ -417,6 +446,7 @@ export function registerQuestRoutes(app: FastifyInstance, ctx: AppContext): void
       released_claims: result.releasedClaims,
       quest_status: result.questStatus,
       quest_status_held: result.questStatusHeld,
+      plan: result.plan,
     };
   });
 

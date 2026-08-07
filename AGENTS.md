@@ -84,10 +84,20 @@ Product shape, not implementation detail. Changing one of these is a product dec
   then the first task classifies as `new_work`, `resume_work` or `inquiry`.
 - **Coordination is optional.** `PARTY_MODE=off` leaves Lore and Quest fully usable.
 - **A Quest closes because someone said so, never because Saga inferred it.** An agent declares
-  the outcome with `quest_status` on its final handoff; the project's `quest_completion_mode`
-  decides whether that lands or waits for Guild Hall. Nothing reads the work state and concludes
-  the job is done — `completed` is outside `RESUMABLE` and no tool can reopen it, so a wrong
-  close silently forks the work.
+  the outcome — by settling every step of the numbered plan it declared, or with `quest_status` on
+  its final handoff. The project's `quest_completion_mode` decides whether that lands or waits for
+  Guild Hall. Nothing reads a work state and concludes the job is done: `next_steps` is never
+  consulted, because recording what you would do next is not the same as being unfinished.
+  `completed` is outside `RESUMABLE` and no tool can reopen it, so a wrong close silently forks
+  the work.
+- **A Quest says what finishing it consists of.** Sub-tasks are numbered 1, 2, 3, …, settled one
+  at a time through `step_updates` on a checkpoint, and a Quest whose plan is finished completes
+  itself — mid-session, or through the `quest_plan_sweeper` worker once no session is attached.
+  A plan is optional; a Quest without one closes only on a declaration (0010, 0011).
+- **A closed Quest is never where new work goes.** A session whose Quest has completed may
+  activate again, and a different request becomes a new Quest; re-activation stays refused while
+  the Quest is open, so work in flight is never rebound. `saga_reopen_quest` undoes a close that
+  was wrong — reason required, audit-logged, ungated — and is not a way to extend a finished Quest.
 - **Saga is not source control or a deployment platform.** External systems stay authoritative for
   code, databases and deployments.
 

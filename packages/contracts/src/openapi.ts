@@ -64,8 +64,10 @@ import {
   endSessionRequestSchema,
   endSessionResponseSchema,
   promoteSessionRequestSchema,
+  questPlanSchema,
   questSchema,
   sessionSchema,
+  setQuestPlanRequestSchema,
   startSessionRequestSchema,
   startSessionResponseSchema,
   updateQuestRequestSchema,
@@ -117,7 +119,7 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
   const json = <T extends z.ZodTypeAny>(schema: T) => ({ 'application/json': { schema } });
 
   const route = (config: {
-    method: 'get' | 'post' | 'patch' | 'delete';
+    method: 'get' | 'post' | 'put' | 'patch' | 'delete';
     path: string;
     tags: string[];
     summary: string;
@@ -961,6 +963,27 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     summary: "List a Quest's checkpoints, newest first",
     request: { params: questId },
     responses: { 200: { description: 'Checkpoints.', schema: listOf(checkpointSchema) } },
+  });
+  route({
+    method: 'get',
+    path: '/api/quests/{questId}/plan',
+    tags: ['Quest'],
+    summary: "A Quest's numbered plan and its progress",
+    request: { params: questId },
+    responses: { 200: { description: 'Plan.', schema: questPlanSchema } },
+  });
+  route({
+    method: 'put',
+    path: '/api/quests/{questId}/plan',
+    tags: ['Quest'],
+    summary: "Declare or re-declare a Quest's plan",
+    description:
+      'Steps are numbered by position, from 1. A step keeps its recorded status when its ' +
+      'position and title both survive the re-declaration; anything renamed, inserted or ' +
+      'reordered starts pending. An empty array removes the plan. Settling the last step ' +
+      'completes the Quest, on a project whose quest_completion_mode is auto.',
+    request: { params: questId, body: setQuestPlanRequestSchema },
+    responses: { 200: { description: 'Plan.', schema: questPlanSchema } },
   });
   route({
     method: 'get',
