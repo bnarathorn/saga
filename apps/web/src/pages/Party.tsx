@@ -85,7 +85,9 @@ export function PartyPage() {
             {data.active_agents.map((agent) => (
               <li key={agent.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{agent.client}</span>
+                  {/* The instance id, not `client`: every MCP agent connects as the same client,
+                      so two agents in one folder would otherwise be one indistinguishable row. */}
+                  <span className="font-medium">{agent.agent_instance_id}</span>
                   <Badge tone={agent.live ? 'good' : 'warn'}>
                     {agent.live ? 'live' : 'lease expired'}
                   </Badge>

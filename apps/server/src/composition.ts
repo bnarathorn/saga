@@ -245,11 +245,21 @@ export function buildContext(options: BuildContextOptions): AppContext {
   // leaves sessions and checkpoints working exactly as they are (acceptance criterion 16).
   const partyHooks: PartyHooks = partyService.enabled
     ? {
-        startAgentRun: async ({ projectId, sessionId, client, workspaceKey, workspaceLabel }) => {
+        startAgentRun: async ({
+          projectId,
+          sessionId,
+          client,
+          agent,
+          workspaceKey,
+          workspaceLabel,
+        }) => {
           const run = await partyService.startRun({
             projectId,
             sessionId,
-            agentInstanceId: `${client}:${sessionId.slice(0, 8)}`,
+            // The agent name leads, because `client` is the transport ("saga-mcp" for every MCP
+            // session) while `agent` is what the host calls itself. Two agents in one folder are
+            // otherwise indistinguishable in Guild Hall: same client, same workspace label.
+            agentInstanceId: `${agent ?? client}:${sessionId.slice(0, 8)}`,
             client,
             workspaceKey,
             workspaceLabel,

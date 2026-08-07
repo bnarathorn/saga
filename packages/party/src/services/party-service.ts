@@ -547,6 +547,8 @@ export class PartyService {
       data: {
         mode: this.deps.mode,
         active_agents: peers.map((peer) => ({
+          // Both: `client` says how the peer connects, `agent_instance_id` says which peer it is.
+          agent_instance_id: peer.agentInstanceId,
           client: peer.client,
           quest_title: peer.questTitle,
           workspace_label: runs.find((run) => run.id === peer.agentRunId)?.workspaceLabel ?? null,
@@ -612,7 +614,7 @@ export class PartyService {
           other_client: other.client,
           message:
             `"${other.path}" was changed by "${other.workItemTitle}"` +
-            `${other.client === null ? '' : ` (agent ${other.client})`}` +
+            `${other.agentInstanceId === null ? '' : ` (agent ${other.agentInstanceId})`}` +
             ' since you read it. Re-read the file before writing.',
         });
       }
@@ -646,6 +648,7 @@ export class PartyService {
       return {
         agentRunId: run.id,
         sessionId: run.sessionId,
+        agentInstanceId: run.agentInstanceId,
         client: run.client,
         workspaceKey: run.workspaceKey,
         workItemId: run.workItemId,

@@ -52,6 +52,44 @@ describe('agent runs', () => {
     expect(Object.keys(runs.body.items[0])).not.toContain('workspace_key');
   });
 
+  it('names two runs in the same folder apart, by agent rather than by client', async () => {
+    // Every MCP agent connects as the same `client` ("saga-mcp"), and two agents in one folder
+    // report the same workspace label too — so the run had nothing left to tell them apart.
+    const workspace = { workspace_key: 'machine-a:saga', workspace_label: 'machine-a:saga' };
+    await admin.post('/api/sessions', {
+      project: PROJECT_NAME,
+      client: 'saga-mcp',
+      agent: 'claude-code',
+      ...workspace,
+    });
+    await admin.post('/api/sessions', {
+      project: PROJECT_NAME,
+      client: 'saga-mcp',
+      agent: 'codex',
+      ...workspace,
+    });
+
+    const runs = await admin.get(`/api/projects/${projectId}/party/runs`);
+    const names = (runs.body.items as { agent_instance_id: string }[]).map(
+      (run) => run.agent_instance_id,
+    );
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
+    expect(names.some((name) => name.startsWith('claude-code:'))).toBe(true);
+    expect(names.some((name) => name.startsWith('codex:'))).toBe(true);
+  });
+
+  it('falls back to the client when the host reported no agent name', async () => {
+    const started = await admin.post('/api/sessions', {
+      project: PROJECT_NAME,
+      client: 'saga-mcp',
+    });
+    const runs = await admin.get(`/api/projects/${projectId}/party/runs`);
+    expect(runs.body.items[0].agent_instance_id).toBe(
+      `saga-mcp:${(started.body.session_id as string).slice(0, 8)}`,
+    );
+  });
+
   it('renews the lease on heartbeat', async () => {
     const a = await agent('Add CSV report export', 'claude-code');
     const response = await admin.post(`/api/party/runs/${a.runId}/heartbeat`, {});

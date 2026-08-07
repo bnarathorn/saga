@@ -123,7 +123,7 @@ export async function statusCommand(argv: string[]): Promise<number> {
         `${here.length} agent run${here.length === 1 ? '' : 's'} active in this folder: ${here
           .map(
             (agent) =>
-              `${agent.client}${agent.quest_title === null ? '' : ` on "${agent.quest_title}"`}`,
+              `${agent.agent_instance_id}${agent.quest_title === null ? '' : ` on "${agent.quest_title}"`}`,
           )
           .join(', ')}.`,
       );

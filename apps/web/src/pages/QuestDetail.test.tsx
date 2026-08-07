@@ -90,7 +90,7 @@ function agentRun(overrides: Record<string, unknown> = {}) {
     project_id: '00000000-0000-4000-8000-000000000010',
     session_id: '00000000-0000-4000-8000-000000000110',
     work_item_id: QUEST_ID,
-    agent_instance_id: 'agent-1',
+    agent_instance_id: 'claude-code:11111111',
     client: 'claude-code',
     workspace_label: 'machine-a:erp-main',
     state: 'active',
@@ -323,7 +323,12 @@ describe('Quest Detail', () => {
           active_agents: [
             { ...agentRun(), quest_title: 'Add CSV report export', scope: {}, claims: [] },
             {
-              ...agentRun({ id: 'other-run', work_item_id: OTHER_QUEST_ID, client: 'codex' }),
+              ...agentRun({
+                id: 'other-run',
+                work_item_id: OTHER_QUEST_ID,
+                agent_instance_id: 'codex:22222222',
+                client: 'codex',
+              }),
               quest_title: 'Rework the ledger schema',
               scope: {},
               claims: [],
@@ -345,7 +350,7 @@ describe('Quest Detail', () => {
     renderDetail();
 
     const party = await screen.findByRole('region', { name: 'Party' });
-    expect(await within(party).findByText('claude-code')).toBeInTheDocument();
+    expect(await within(party).findByText('claude-code:11111111')).toBeInTheDocument();
     expect(await within(party).findByText('file:apps/api/reports.ts')).toBeInTheDocument();
     // Another Quest's agent and claim must not leak into this Quest's panel.
     expect(within(party).queryByText('codex')).not.toBeInTheDocument();
