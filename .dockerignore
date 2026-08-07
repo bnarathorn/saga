@@ -1,5 +1,12 @@
 # What must never enter a build context.
 #
+# Every path excluded here must also be ignored by `.gitignore`, with one deliberate exception
+# (`.git`, below). Exclude a path git tracks and `git status` inside the build stage reports it
+# deleted, which `apps/cli/scripts/bundle.mjs` reads as a dirty tree — every image then serves
+# `0.1.0+g<sha>.dirty.<stamp>` and CI's `image` job fails. Patterns here are not `.gitignore`
+# patterns: a bare `coverage/` matches the repository root only, so mirroring a recursive
+# `.gitignore` entry takes the `**/` form.
+#
 # `deploy/docker/Dockerfile` and `Dockerfile.web` both `COPY . .`, and the runtime stage of the
 # first copies `/app/apps` and `/app/packages` wholesale. Without this file the developer's own
 # `dist/` rides along into the image — and because Docker preserves mtimes, `tsc -b` then finds
@@ -14,6 +21,7 @@ node_modules/
 **/node_modules/
 **/dist/
 **/*.tsbuildinfo
+**/.vite/
 
 # Built by `pnpm --filter @saga/cli bundle` inside the image. A host copy would be served at
 # /api/cli/saga in its place, which is the one artifact that must match the server exactly.
@@ -36,6 +44,15 @@ test-results/
 playwright-report/
 .saga-run/
 .saga/
+**/coverage/
+**/*.log
+
+# Editor and agent-tool configuration. It names a particular server, project or workstation, so
+# it is per-developer by definition and has no meaning inside an image. `.gitignore` keeps it out
+# of the repository for the same reason; this keeps it out of images built on a developer's
+# machine, where — unlike a CI checkout — the files are actually present.
+**/.mcp.json
+**/.claude/
 
 # `.git` is deliberately NOT excluded: `apps/cli/scripts/bundle.mjs` reads the commit from it to
 # stamp the CLI build, and without it every image would serve `0.1.0+local.<wall clock>` instead
