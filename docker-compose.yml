@@ -109,7 +109,11 @@ services:
       - api
     restart: unless-stopped
 
-  # Optional local embedding provider. Start with:  docker compose --profile ollama up -d
+  # Optional local model server, for embeddings and for relation inference. Both read
+  # SAGA_OLLAMA_URL above, and each needs its own model pulled into this container:
+  #   docker compose --profile ollama up -d
+  #   docker compose exec ollama ollama pull nomic-embed-text     # SAGA_EMBEDDING_PROVIDER=ollama
+  #   docker compose exec ollama ollama pull qwen2.5:7b-instruct  # SAGA_INFERENCE_PROVIDER=ollama
   ollama:
     image: ollama/ollama:latest
     profiles: ['ollama']

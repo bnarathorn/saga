@@ -113,6 +113,13 @@ describe('parseProposals', () => {
 });
 
 describe('NullRelationProposer', () => {
+  it('reports healthy, because proposing nothing is its job', async () => {
+    // Degraded here would fire on every default install and train operators to ignore the check.
+    const health = await new NullRelationProposer().healthCheck();
+    expect(health.status).toBe('healthy');
+    expect(health.message).toContain('SAGA_INFERENCE_PROVIDER=fake');
+  });
+
   it('proposes nothing, which is what makes it the default', async () => {
     const proposer = new NullRelationProposer();
     const proposed = await proposer.propose({ memoryKey: 'server.api', body: 'anything' }, [

@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto';
 import { SagaError } from '@saga/shared';
-
-export interface ProviderHealth {
-  status: 'healthy' | 'degraded' | 'unhealthy';
-  message: string;
-  detail?: Record<string, unknown>;
-}
+import { fetchWithTimeout, normalizeBaseUrl, probeOllamaModel } from '../ollama.js';
+import type { ProviderHealth } from '../ollama.js';
 
 export interface EmbeddingProvider {
   readonly name: string;
@@ -102,46 +98,19 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
   private readonly timeoutMs: number;
 
   constructor(options: OllamaOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/$/, '');
+    this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.model = options.model;
     this.dimensions = options.dimensions;
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
 
   async healthCheck(): Promise<ProviderHealth> {
-    try {
-      const response = await this.fetchWithTimeout(`${this.baseUrl}/api/tags`, { method: 'GET' });
-      if (!response.ok) {
-        return {
-          status: 'unhealthy',
-          message: `Ollama answered ${response.status}.`,
-          detail: { base_url: this.baseUrl },
-        };
-      }
-      const body = (await response.json()) as { models?: { name?: string }[] };
-      const names = (body.models ?? []).map((entry) => entry.name ?? '');
-      const present = names.some(
-        (name) => name === this.model || name.startsWith(`${this.model}:`),
-      );
-      if (!present) {
-        return {
-          status: 'degraded',
-          message: `Ollama is reachable but the model "${this.model}" is not pulled. Run: ollama pull ${this.model}`,
-          detail: { base_url: this.baseUrl, model: this.model },
-        };
-      }
-      return {
-        status: 'healthy',
-        message: `Ollama is serving "${this.model}".`,
-        detail: { base_url: this.baseUrl, model: this.model, dimensions: this.dimensions },
-      };
-    } catch (error) {
-      return {
-        status: 'unhealthy',
-        message: `Ollama is unreachable at ${this.baseUrl}.`,
-        detail: { reason: error instanceof Error ? error.message : 'unknown' },
-      };
-    }
+    return probeOllamaModel({
+      baseUrl: this.baseUrl,
+      model: this.model,
+      timeoutMs: this.timeoutMs,
+      detail: { dimensions: this.dimensions },
+    });
   }
 
   async embed(texts: string[]): Promise<number[][]> {
@@ -149,11 +118,15 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
 
     let response: Response;
     try {
-      response = await this.fetchWithTimeout(`${this.baseUrl}/api/embed`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: this.model, input: texts }),
-      });
+      response = await fetchWithTimeout(
+        `${this.baseUrl}/api/embed`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model: this.model, input: texts }),
+        },
+        this.timeoutMs,
+      );
     } catch (error) {
       throw new SagaError(
         'EMBEDDING_PROVIDER_UNAVAILABLE',
@@ -194,16 +167,6 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
     }
 
     return vectors.map((vector) => l2Normalize(vector));
-  }
-
-  private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
   }
 }
 

@@ -198,7 +198,12 @@ export async function doctorCommand(argv: string[]): Promise<number> {
       checks?: { name: string; status: string; message: string }[];
     } | null;
 
-    for (const name of ['workers', 'embedding_provider', 'job_queue']) {
+    for (const name of [
+      'workers',
+      'embedding_provider',
+      'relation_inference_provider',
+      'job_queue',
+    ]) {
       const check = detailed?.checks?.find((entry) => entry.name === name);
       if (check === undefined) continue;
       checks.push({

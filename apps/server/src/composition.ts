@@ -23,6 +23,7 @@ import {
   SearchService,
   SnapshotRepository,
   createEmbeddingProvider,
+  createRelationProposer,
   type EmbeddingProvider,
   type MemoryLink,
 } from '@saga/lore';
@@ -372,6 +373,35 @@ export function buildContext(options: BuildContextOptions): AppContext {
             ? `${health.message} Vector search is unavailable; full-text and trigram search continue to work.`
             : health.message,
         detail: { provider: embeddings.name, ...health.detail },
+      };
+    },
+  });
+
+  // The API never runs relation inference — the worker does — but it is the process that
+  // serves health, and both read the same configuration on the same host. Constructing the
+  // proposer here costs nothing: it holds no connection, only a base URL and a model name.
+  const relationProposer = createRelationProposer({
+    provider: config.inference.provider,
+    model: config.inference.model,
+    ollamaUrl: config.inference.ollamaUrl,
+    timeoutMs: config.inference.timeoutMs,
+  });
+
+  health.register({
+    name: 'relation_inference_provider',
+    // Relations are an enrichment, and the deterministic half of the job writes them with no
+    // model at all. An outage here must never take the API out of rotation.
+    readiness: false,
+    async check() {
+      const health = await relationProposer.healthCheck();
+      return {
+        name: 'relation_inference_provider',
+        status: health.status === 'unhealthy' ? 'degraded' : health.status,
+        message:
+          health.status === 'unhealthy'
+            ? `${health.message} Relations found in entry text are still written; the model proposes none.`
+            : health.message,
+        detail: { provider: relationProposer.name, ...health.detail },
       };
     },
   });

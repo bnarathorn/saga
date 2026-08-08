@@ -1,5 +1,7 @@
 import { MEMORY_RELATIONS, type MemoryRelation } from '@saga/contracts';
 import { SagaError } from '@saga/shared';
+import { fetchWithTimeout, normalizeBaseUrl, probeOllamaModel } from '../ollama.js';
+import type { ProviderHealth } from '../ollama.js';
 
 /** One entry, as the model sees it. */
 export interface RelationSubject {
@@ -18,6 +20,13 @@ export interface ProposedRelation {
 export interface RelationProposer {
   readonly name: string;
   /**
+   * Whether this proposer could answer if asked. Reported on the health endpoint next to the
+   * embedding provider, because the failure that actually happens — a model nobody pulled —
+   * is otherwise invisible: the job logs one warning per publish and quietly writes only its
+   * deterministic half.
+   */
+  healthCheck(): Promise<ProviderHealth>;
+  /**
    * Judge which of `candidates` the `subject` actually relates to, and how. Returning fewer
    * than were offered — including none — is the expected outcome, not a failure.
    */
@@ -35,6 +44,18 @@ export interface RelationProposer {
  */
 export class NullRelationProposer implements RelationProposer {
   readonly name = 'fake';
+
+  /**
+   * Healthy, not degraded. Proposing nothing is this provider's job, so reporting a problem
+   * would train operators to ignore the check on every default install.
+   */
+  async healthCheck(): Promise<ProviderHealth> {
+    return {
+      status: 'healthy',
+      message:
+        'Model relation inference is off (SAGA_INFERENCE_PROVIDER=fake). Relations found in entry text are still written.',
+    };
+  }
 
   async propose(): Promise<ProposedRelation[]> {
     return [];
@@ -89,10 +110,18 @@ export class OllamaRelationProposer implements RelationProposer {
   private readonly maxBodyChars: number;
 
   constructor(options: OllamaProposerOptions) {
-    this.baseUrl = options.baseUrl.replace(/\/$/, '');
+    this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.model = options.model;
     this.timeoutMs = options.timeoutMs ?? 60_000;
     this.maxBodyChars = options.maxBodyChars ?? 1_500;
+  }
+
+  async healthCheck(): Promise<ProviderHealth> {
+    return probeOllamaModel({
+      baseUrl: this.baseUrl,
+      model: this.model,
+      timeoutMs: this.timeoutMs,
+    });
   }
 
   async propose(
@@ -105,18 +134,22 @@ export class OllamaRelationProposer implements RelationProposer {
 
     let response: Response;
     try {
-      response = await this.fetchWithTimeout(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: this.model,
-          prompt,
-          stream: false,
-          format: 'json',
-          // Deterministic-ish: the same publish re-running should not churn the review queue.
-          options: { temperature: 0 },
-        }),
-      });
+      response = await fetchWithTimeout(
+        `${this.baseUrl}/api/generate`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: this.model,
+            prompt,
+            stream: false,
+            format: 'json',
+            // Deterministic-ish: the same publish re-running should not churn the review queue.
+            options: { temperature: 0 },
+          }),
+        },
+        this.timeoutMs,
+      );
     } catch (error) {
       throw new SagaError(
         'INFERENCE_PROVIDER_UNAVAILABLE',
@@ -162,16 +195,6 @@ ${clip(subject.body)}
 
 CANDIDATES
 ${rendered}`;
-  }
-
-  private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      return await fetch(url, { ...init, signal: controller.signal });
-    } finally {
-      clearTimeout(timer);
-    }
   }
 }
 
