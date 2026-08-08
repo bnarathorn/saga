@@ -296,9 +296,12 @@ function report(checks: Check[], json: boolean): number {
 
   const out = process.stdout;
   out.write('\nSaga doctor\n\n');
+  // Align on the longest name actually present. A fixed width ran the name straight into the
+  // message as soon as one check exceeded it, and every `server: *` check does.
+  const labelWidth = Math.max(22, ...checks.map((check) => check.name.length));
   for (const check of checks) {
     const mark = check.status === 'ok' ? '✓' : check.status === 'warning' ? '!' : '✗';
-    out.write(`  ${mark} ${check.name.padEnd(22)}${check.message}\n`);
+    out.write(`  ${mark} ${check.name.padEnd(labelWidth)}  ${check.message}\n`);
     if (check.action !== undefined) out.write(`      → ${check.action}\n`);
   }
 
