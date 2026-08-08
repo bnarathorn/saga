@@ -72,7 +72,13 @@ export function registerHandlers(ctx: WorkerContext): void {
       projects: ctx.repositories.projects,
     }),
   );
-  ctx.handlers.register(createRelationInferenceHandler({ relations: ctx.services.relations }));
+  ctx.handlers.register(
+    createRelationInferenceHandler({
+      relations: ctx.services.relations,
+      // A third of the lease, floored so a very short lease cannot spin the timer.
+      renewalIntervalMs: Math.max(5_000, (ctx.config.worker.jobLeaseSeconds * 1_000) / 3),
+    }),
+  );
   ctx.handlers.register(createSessionReaperHandler({ sessions: ctx.services.sessions }));
   ctx.handlers.register(createQuestPlanSweeperHandler({ quests: ctx.services.quests }));
   if (ctx.services.party.enabled) {

@@ -452,6 +452,11 @@ const relationInferencePayload = z.object({ memory_update_id: z.string().uuid() 
 
 export interface RelationInferenceDeps {
   relations: RelationService;
+  /**
+   * How often to renew the job lease while inference runs. A third of the lease, so two
+   * consecutive missed ticks still leave the claim alive.
+   */
+  renewalIntervalMs: number;
 }
 
 /**
@@ -486,12 +491,17 @@ export function createRelationInferenceHandler(deps: RelationInferenceDeps): Job
       }
       const updateId = parsed.data.memory_update_id;
 
+      // Renewal runs on a timer, not between entries. `SAGA_INFERENCE_TIMEOUT_MS` defaults to
+      // 60_000 and `SAGA_JOB_LEASE_SECONDS` to 60, so a single model call is allowed to last
+      // exactly as long as the whole lease: anything that renews only after an entry finishes
+      // fires for the first time after the claim it was protecting has already lapsed.
+      const renewal = setInterval(() => void renewLease(), deps.renewalIntervalMs);
+      // A pending timer must not hold the process open at shutdown.
+      renewal.unref?.();
+
       let outcome;
       try {
-        // An update publishing many entries makes one model call each, and each may take the
-        // full provider timeout — well past the default 60-second lease. Without this a second
-        // worker reclaims the job mid-flight and repeats every model call.
-        outcome = await deps.relations.inferForUpdate(updateId, { onProgress: renewLease });
+        outcome = await deps.relations.inferForUpdate(updateId);
       } catch (error) {
         if (isSagaError(error) && error.code === 'MEMORY_UPDATE_NOT_FOUND') {
           throw JobHandlerError.permanent(
@@ -499,6 +509,8 @@ export function createRelationInferenceHandler(deps: RelationInferenceDeps): Job
           );
         }
         throw JobHandlerError.retryable(errorMessage(error));
+      } finally {
+        clearInterval(renewal);
       }
 
       if (outcome.truncated) {

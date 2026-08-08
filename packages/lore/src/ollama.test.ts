@@ -8,8 +8,19 @@ function stubFetch(handler: (url: string) => Response | Promise<Response>): void
   );
 }
 
+/** Local models carry a real format; a cloud pointer's is empty. */
 function tags(names: string[]): Response {
-  return new Response(JSON.stringify({ models: names.map((name) => ({ name })) }), { status: 200 });
+  return new Response(
+    JSON.stringify({ models: names.map((name) => ({ name, details: { format: 'gguf' } })) }),
+    { status: 200 },
+  );
+}
+
+function cloudTags(names: string[]): Response {
+  return new Response(
+    JSON.stringify({ models: names.map((name) => ({ name, details: { format: '' } })) }),
+    { status: 200 },
+  );
 }
 
 afterEach(() => {
@@ -105,6 +116,32 @@ describe('probeOllamaModel', () => {
       timeoutMs: 100,
     });
     expect(seen).toEqual(['http://host:11434/api/tags']);
+  });
+
+  it('does not claim a cloud model is being served', async () => {
+    // /api/tags only proves the name is registered locally. For a cloud model the weights and
+    // the credential live elsewhere, so "serving" would assert something never checked.
+    stubFetch(() => cloudTags(['gpt-oss:20b-cloud']));
+    const health = await probeOllamaModel({
+      baseUrl: 'http://host:11434',
+      model: 'gpt-oss:20b-cloud',
+      timeoutMs: 100,
+    });
+    expect(health.status).toBe('healthy');
+    expect(health.message).toContain('registration only');
+    expect(health.message).not.toContain('is serving');
+    expect(health.detail).toMatchObject({ hosting: 'cloud' });
+  });
+
+  it('labels a local model as locally hosted', async () => {
+    stubFetch(() => tags(['nomic-embed-text:latest']));
+    const health = await probeOllamaModel({
+      baseUrl: 'http://host:11434',
+      model: 'nomic-embed-text',
+      timeoutMs: 100,
+    });
+    expect(health.message).toContain('is serving');
+    expect(health.detail).toMatchObject({ hosting: 'local' });
   });
 
   it('carries the caller detail through every outcome', async () => {

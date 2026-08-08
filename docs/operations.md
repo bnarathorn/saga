@@ -411,10 +411,17 @@ re-runs on every publish, so a rejection that removed its row would last exactly
 one and the same proposal would come back. Creating that relation by hand later revives the
 tombstone into a confirmed human relation, so a rejection never permanently forbids a link.
 
-One model call per published entry can take the whole `SAGA_INFERENCE_TIMEOUT_MS`, which is why
-the handler renews its job lease after each entry: `SAGA_JOB_LEASE_SECONDS` defaults to 60 and
-covers the whole job, so a large update would otherwise be reclaimed by a second worker
-mid-flight and repeat every model call.
+One model call per published entry can take the whole `SAGA_INFERENCE_TIMEOUT_MS`, which
+defaults to 60 seconds — exactly what `SAGA_JOB_LEASE_SECONDS` allows for the entire job. The
+handler therefore renews its lease **on a timer** (a third of the lease) for as long as
+inference runs, not between entries: a single slow call would otherwise outlive the claim
+before any per-entry renewal could fire, and a second worker would reclaim the job and repeat
+every model call.
+
+`relation_inference_provider` on `/api/shrine/health` reads `/api/tags`, which is local and
+costs nothing. For a **cloud** model that proves the name is registered and no more — the
+weights and the credential are remote — so the check says "registration only" rather than
+"serving". Whether the remote actually answers shows up in the job result as `proposer_error`.
 
 | Variable                        | Meaning                                                                                                                |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |

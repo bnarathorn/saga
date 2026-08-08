@@ -354,30 +354,6 @@ describe('model relations', () => {
     expect(await links.listForProject(pool, project.id)).toHaveLength(1);
   });
 
-  it('renews the job lease after every entry it processes', async () => {
-    await publish([
-      entry({ memory_key: 'a.one', body: 'One.' }),
-      entry({ memory_key: 'a.two', body: 'Two.' }),
-      entry({ memory_key: 'a.three', body: 'Three.' }),
-    ]);
-    await embedAll();
-
-    let renewals = 0;
-    const outcome = await relationService(new ScriptedProposer()).inferForItems(
-      project.id,
-      await itemIds(),
-      {
-        onProgress: async () => {
-          renewals += 1;
-        },
-      },
-    );
-    // One per entry: a model call per entry can each take the whole provider timeout, and the
-    // default lease is 60 seconds for the entire job.
-    expect(renewals).toBe(outcome.scanned);
-    expect(outcome.scanned).toBe(3);
-  });
-
   it('does not re-propose a relation a person already confirmed', async () => {
     await publish([
       entry({ memory_key: 'server.api', body: 'Fastify.' }),

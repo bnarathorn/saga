@@ -70,14 +70,16 @@ export async function probeOllamaModel(options: {
       };
     }
 
-    const body = (await response.json()) as { models?: { name?: string }[] };
-    const names = (body.models ?? []).map((entry) => entry.name ?? '');
+    const body = (await response.json()) as {
+      models?: { name?: string; details?: { format?: string } }[];
+    };
+    const models = body.models ?? [];
     // `ollama pull qwen2.5:7b` registers `qwen2.5:7b`, while a bare `qwen2.5` registers
     // `qwen2.5:latest` — so an exact match or a tagged form of the same name both count.
-    const present = names.some(
-      (name) => name === options.model || name.startsWith(`${options.model}:`),
+    const match = models.find(
+      (entry) => entry.name === options.model || (entry.name ?? '').startsWith(`${options.model}:`),
     );
-    if (!present) {
+    if (match === undefined) {
       return {
         status: 'degraded',
         message: `Ollama is reachable but the model "${options.model}" is not pulled. Run: ollama pull ${options.model}`,
@@ -85,10 +87,23 @@ export async function probeOllamaModel(options: {
       };
     }
 
+    // A cloud-backed model is registered locally as a pointer with no weights and an empty
+    // format, and it answers from Ollama's servers. `/api/tags` therefore proves only that the
+    // name is registered — not that the remote can be reached or that the credential still
+    // works. Saying "serving" would overclaim exactly where the failure would be silent.
+    const cloud = (match.details?.format ?? '') === '';
+    if (cloud) {
+      return {
+        status: 'healthy',
+        message: `Ollama has "${options.model}" registered. It runs in Ollama's cloud, so this check confirms registration only — whether the remote answers is proven by the jobs that call it.`,
+        detail: { ...detail, hosting: 'cloud' },
+      };
+    }
+
     return {
       status: 'healthy',
       message: `Ollama is serving "${options.model}".`,
-      detail,
+      detail: { ...detail, hosting: 'local' },
     };
   } catch (error) {
     return {
