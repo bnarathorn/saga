@@ -415,6 +415,22 @@ describe('shrine API', () => {
     expect(names).toContain('job_queue');
   });
 
+  it('reports both model providers without either being able to fail readiness', async () => {
+    const admin = await harness.loginAs('admin');
+    const response = await admin.get('/api/shrine/health');
+    const checks = response.body.checks as { name: string; status: string; message: string }[];
+
+    const inference = checks.find((check) => check.name === 'relation_inference_provider');
+    // Defaults to the fake provider, which is healthy on purpose: proposing nothing is its job.
+    expect(inference).toBeDefined();
+    expect(inference!.status).toBe('healthy');
+    expect(inference!.message).toContain('SAGA_INFERENCE_PROVIDER=fake');
+
+    // Neither model provider is a readiness check — Saga works with both switched off.
+    expect(checks.find((check) => check.name === 'embedding_provider')).toBeDefined();
+    expect(response.body.status).not.toBe('unhealthy');
+  });
+
   it('never exposes credentials in the sanitized configuration', async () => {
     const admin = await harness.loginAs('admin');
     const response = await admin.get('/api/shrine/config');

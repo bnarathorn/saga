@@ -1,6 +1,7 @@
 export * from './domain/lore.js';
 export * from './secrets.js';
 export * from './search/fusion.js';
+export * from './ollama.js';
 export * from './embedding/provider.js';
 export * from './relations/extract.js';
 export * from './relations/provider.js';
