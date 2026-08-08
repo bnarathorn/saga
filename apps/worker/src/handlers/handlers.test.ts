@@ -3,7 +3,11 @@ import { SagaError } from '@saga/shared';
 import { createSilentLogger } from '@saga/shared/logging';
 import { JobHandlerError, type ClaimedJob, type JobHandler } from '@saga/shrine';
 import { describe, expect, it, vi } from 'vitest';
-import { createEmbeddingHandler, createMemoryValidationHandler } from './lore.js';
+import {
+  createEmbeddingHandler,
+  createMemoryValidationHandler,
+  createRelationInferenceHandler,
+} from './lore.js';
 import { createPartyReaperHandler, createSessionReaperHandler } from './quest.js';
 
 /**
@@ -429,6 +433,127 @@ describe('reaper handlers', () => {
 });
 
 // ---------------------------------------------------------------------------
+// relation inference
+// ---------------------------------------------------------------------------
+
+describe('relation_inference handler', () => {
+  /** Resolves once `release()` is called, so a test can hold inference open. */
+  function gate(): { promise: Promise<void>; release: () => void } {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { promise, release };
+  }
+
+  const OUTCOME = {
+    scanned: 1,
+    confirmed: 0,
+    proposed: 0,
+    belowConfidence: 0,
+    truncated: false,
+    proposerError: null,
+  };
+
+  it('renews the lease while a single entry is still being inferred', async () => {
+    // The failure this guards: one model call may last the entire SAGA_INFERENCE_TIMEOUT_MS,
+    // which defaults to exactly the 60-second lease. Renewing only between entries fires for
+    // the first time after the claim it protects has already lapsed.
+    const held = gate();
+    const relations = {
+      inferForUpdate: vi.fn(async () => {
+        await held.promise;
+        return OUTCOME;
+      }),
+    };
+    let renewals = 0;
+
+    const handler = createRelationInferenceHandler({
+      relations: relations as never,
+      renewalIntervalMs: 10,
+    });
+    const running = handler.handle({
+      job: job({ jobType: 'relation_inference', payload: { memory_update_id: UPDATE_ID } }),
+      logger: createSilentLogger(),
+      signal: new AbortController().signal,
+      renewLease: () => {
+        renewals += 1;
+        return Promise.resolve(true);
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // Still inside the one and only entry, and the lease has already been renewed.
+    expect(renewals).toBeGreaterThan(0);
+
+    held.release();
+    await running;
+
+    const afterFinish = renewals;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    // And the timer stops with the handler rather than renewing a claim nobody holds.
+    expect(renewals).toBe(afterFinish);
+  });
+
+  it('stops renewing when inference fails', async () => {
+    const relations = {
+      inferForUpdate: vi.fn(async () => {
+        throw new SagaError('INTERNAL_ERROR', 'boom');
+      }),
+    };
+    let renewals = 0;
+
+    const handler = createRelationInferenceHandler({
+      relations: relations as never,
+      renewalIntervalMs: 10,
+    });
+    await expectFailure(
+      handler.handle({
+        job: job({ jobType: 'relation_inference', payload: { memory_update_id: UPDATE_ID } }),
+        logger: createSilentLogger(),
+        signal: new AbortController().signal,
+        renewLease: () => {
+          renewals += 1;
+          return Promise.resolve(true);
+        },
+      }),
+      'retryable',
+    );
+
+    const afterFailure = renewals;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(renewals).toBe(afterFailure);
+  });
+
+  it('fails permanently for an update that no longer exists', async () => {
+    const relations = {
+      inferForUpdate: vi.fn(async () => {
+        throw new SagaError('MEMORY_UPDATE_NOT_FOUND', 'gone');
+      }),
+    };
+    await expectFailure(
+      run(
+        createRelationInferenceHandler({ relations: relations as never, renewalIntervalMs: 10 }),
+        { payload: { memory_update_id: UPDATE_ID } },
+      ),
+      'permanent',
+    );
+  });
+
+  it('rejects a payload that is not an update id', async () => {
+    const relations = { inferForUpdate: vi.fn() };
+    await expectFailure(
+      run(
+        createRelationInferenceHandler({ relations: relations as never, renewalIntervalMs: 10 }),
+        { payload: { nope: true } },
+      ),
+      'permanent',
+    );
+    expect(relations.inferForUpdate).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // the described contract itself
 // ---------------------------------------------------------------------------
 
@@ -436,6 +561,7 @@ describe('handler self-description (spec 12.9)', () => {
   const handlers: JobHandler[] = [
     createEmbeddingHandler(embeddingDeps() as never),
     createMemoryValidationHandler(validationDeps() as never),
+    createRelationInferenceHandler({ relations: {} as never, renewalIntervalMs: 20_000 }),
     createSessionReaperHandler({ sessions: {} } as never),
     createPartyReaperHandler({ party: {} } as never),
   ];

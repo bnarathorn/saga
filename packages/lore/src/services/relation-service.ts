@@ -29,15 +29,6 @@ export interface RelationServiceDeps {
   minConfidence: number;
 }
 
-export interface InferenceOptions {
-  /**
-   * Called after each entry is processed. The handler passes the job's lease renewal here: one
-   * model call may take the whole provider timeout, so a busy update can outlive the default
-   * 60-second lease many times over and be reclaimed mid-flight by a second worker.
-   */
-  onProgress?: () => Promise<unknown>;
-}
-
 export interface InferenceOutcome {
   /** Entries whose bodies were examined. */
   scanned: number;
@@ -65,10 +56,7 @@ export interface InferenceOutcome {
 export class RelationService {
   constructor(private readonly deps: RelationServiceDeps) {}
 
-  async inferForUpdate(
-    updateId: string,
-    options: InferenceOptions = {},
-  ): Promise<InferenceOutcome> {
+  async inferForUpdate(updateId: string): Promise<InferenceOutcome> {
     const update = await this.deps.memory.findUpdateById(this.deps.pool, updateId);
     if (update === null) {
       throw new SagaError('MEMORY_UPDATE_NOT_FOUND', 'No such Lore update.');
@@ -77,14 +65,12 @@ export class RelationService {
     return this.inferForItems(
       update.projectId,
       items.map((item) => item.memoryItemId),
-      options,
     );
   }
 
   async inferForItems(
     projectId: string,
     memoryItemIds: readonly string[],
-    options: InferenceOptions = {},
   ): Promise<InferenceOutcome> {
     const outcome: InferenceOutcome = {
       scanned: 0,
@@ -123,9 +109,6 @@ export class RelationService {
 
       const proposals = await this.modelFor(projectId, subject, body, byId, outcome);
       modelled.push(...proposals);
-
-      // After the model call, not before: that is the step that takes real time.
-      await options.onProgress?.();
     }
 
     const written = await withTransaction(this.deps.pool, async (tx) => {
