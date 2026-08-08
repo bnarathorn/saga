@@ -214,9 +214,16 @@ test('8: Party shows the agent run as live', async ({ page }) => {
   await page.goto(projectPath('/party'));
 
   const agents = page.getByRole('region', { name: 'Party' }).or(page.locator('body'));
-  await expect(agents.getByText('claude-code').first()).toBeVisible();
+  // A run is named by its `agent_instance_id` — `${agent}:${session prefix}`, so `claude:…`
+  // for the run seeded above. Never by `client`, which is the transport: every MCP session
+  // reports the same one, so two agents in one workspace became one indistinguishable row.
+  await expect(agents.getByText(/\bclaude:[0-9a-f]{8}\b/).first()).toBeVisible();
   await expect(page.getByText('live').first()).toBeVisible();
   await expect(page.getByText('Add CSV report export').first()).toBeVisible();
+
+  // The transport must not be what identifies the run. This is the regression the naming
+  // change exists to prevent, and asserting the new label alone would not catch a revert.
+  await expect(page.locator('#main')).not.toContainText('claude-code');
 
   // A local absolute path is never exposed: only the sanitized label reaches the browser.
   // Scoped to the application content, because the Vite dev server injects module paths of
