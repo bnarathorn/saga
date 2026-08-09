@@ -48,6 +48,14 @@ die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 as_service() { sudo -u "$SERVICE_USER" env HOME="$BUILD_HOME" GIT_TERMINAL_PROMPT=0 "$@"; }
 target_git() { as_service git -C "$TARGET" "$@"; }
 
+# Corepack reads `packageManager` from the *current directory* and ignores `pnpm -C`, and
+# `sudo` keeps the caller's cwd. A deploy launched from anywhere but the checkout therefore
+# ran whatever pnpm corepack defaults to — which worked silently until that default became a
+# different major and refused to switch down to the pinned one. Run pnpm inside the target.
+in_target() {
+  sudo -u "$SERVICE_USER" env -C "$TARGET" HOME="$BUILD_HOME" GIT_TERMINAL_PROMPT=0 "$@"
+}
+
 served_build() {
   curl -fsS -k "$ORIGIN/api/cli/saga" 2>/dev/null | grep -ao '0\.1\.0+g[a-z0-9.]*' | head -1 || true
 }
@@ -103,12 +111,12 @@ assert_clean() {
 # also picks up changes to the deploy procedure itself.
 deploy_checkout() {
   say "Installing dependencies"
-  as_service pnpm -C "$TARGET" install --frozen-lockfile
+  in_target pnpm install --frozen-lockfile
 
   # `build` is tsc -b + the web bundle + the CLI bundle. The CLI bundle stamps itself
   # with the commit it was built from, which is what the verification below reads.
   say "Building"
-  as_service pnpm -C "$TARGET" build
+  in_target pnpm build
 
   say "Publishing $WEB_ROOT"
   sudo rsync -a --delete "$TARGET/apps/web/dist/" "$WEB_ROOT/"
