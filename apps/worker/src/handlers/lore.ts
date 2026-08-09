@@ -473,7 +473,7 @@ export function createRelationInferenceHandler(deps: RelationInferenceDeps): Job
     describe: {
       input: '{ memory_update_id: uuid }',
       idempotency:
-        'Every relation is inserted ON CONFLICT DO NOTHING against the existing uniqueness of (project, from, relation, to), so re-running writes nothing the first run already wrote. A rejected proposal keeps its row as a tombstone, which is what stops the next run proposing it again.',
+        'Every relation is inserted against the existing uniqueness of (project, from, relation, to), so re-running writes nothing the first run already wrote. A model proposal that collides does nothing, which is what stops a rejected proposal being proposed again. A deterministic match that collides with a proposal confirms it, because the body it was read out of outranks the guess; a rejected row is still left alone.',
       retryPolicy:
         'A deleted update fails permanently. The model is never retried for: an unreachable provider is reported in the result and the deterministic half still commits. The lease is renewed after each entry, because one model call can take the whole provider timeout.',
       sideEffects:

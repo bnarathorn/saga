@@ -179,6 +179,80 @@ describe('deterministic relations', () => {
     expect(await links.listForProject(pool, project.id)).toEqual([]);
   });
 
+  it('confirms a relation the model had only proposed, once the text says it plainly', async () => {
+    await publish([
+      entry({ memory_key: 'server.api', body: 'Fastify.' }),
+      entry({ memory_key: 'database.primary', body: 'PostgreSQL 15.' }),
+    ]);
+    await embedAll();
+
+    // The model gets there first, guessing the same relation the text half writes.
+    const proposer = new ScriptedProposer({
+      'server.api': [
+        {
+          toMemoryKey: 'database.primary',
+          relation: 'relates_to',
+          confidence: 0.6,
+          rationale: 'They look related.',
+        },
+      ],
+    });
+    await relationService(proposer).inferForItems(project.id, await itemIds());
+    expect(await links.listForProject(pool, project.id, 'proposed')).toHaveLength(1);
+
+    // Then somebody writes it down. A relation stated in an entry body belongs in the graph,
+    // not stuck in a review queue behind the guess that happened to land first.
+    await publish([
+      entry({ memory_key: 'server.api', body: 'Fastify. See [[database.primary]].' }),
+    ]);
+    const outcome = await relationService(new NullRelationProposer()).inferForItems(
+      project.id,
+      await itemIds(),
+    );
+
+    expect(outcome.confirmed).toBe(1);
+    const graph = await links.listForProject(pool, project.id);
+    expect(graph).toHaveLength(1);
+    expect(graph[0]).toMatchObject({ relation: 'relates_to', state: 'confirmed' });
+    expect(await links.listForProject(pool, project.id, 'proposed')).toEqual([]);
+  });
+
+  it('does not revive a rejected relation, even when the text names it', async () => {
+    await publish([
+      entry({ memory_key: 'server.api', body: 'Fastify.' }),
+      entry({ memory_key: 'database.primary', body: 'PostgreSQL 15.' }),
+    ]);
+    await embedAll();
+
+    const proposer = new ScriptedProposer({
+      'server.api': [
+        {
+          toMemoryKey: 'database.primary',
+          relation: 'relates_to',
+          confidence: 0.6,
+          rationale: 'They look related.',
+        },
+      ],
+    });
+    await relationService(proposer).inferForItems(project.id, await itemIds());
+    const [pending] = await links.listForProject(pool, project.id, 'proposed');
+    await links.reject(pool, pending!.id);
+
+    // Confirming a proposal the text agrees with must not become a way for the job to undo a
+    // rejection: reviving a tombstone stays a deliberate act by a person (`links.create`).
+    await publish([
+      entry({ memory_key: 'server.api', body: 'Fastify. See [[database.primary]].' }),
+    ]);
+    const outcome = await relationService(new NullRelationProposer()).inferForItems(
+      project.id,
+      await itemIds(),
+    );
+
+    expect(outcome.confirmed).toBe(0);
+    expect(await links.listForProject(pool, project.id)).toEqual([]);
+    expect(await links.listForProject(pool, project.id, 'rejected')).toHaveLength(1);
+  });
+
   it('is idempotent: a second pass writes nothing', async () => {
     await publish([
       entry({ memory_key: 'a.one', body: 'See [[a.two]].' }),

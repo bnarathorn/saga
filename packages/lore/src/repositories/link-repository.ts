@@ -112,24 +112,38 @@ export class LinkRepository {
   }
 
   /**
-   * Write relations the server inferred, skipping every one that already exists in any state.
+   * Write relations the server inferred, without disturbing one that already exists — except
+   * the one case where the text has more authority than what is on the row.
    *
-   * `ON CONFLICT DO NOTHING` rather than catching the unique violation: the job re-runs over
-   * entries it has already seen on every publish, so a collision is the normal case and not an
-   * error. Self-links are dropped here too — the model is perfectly capable of proposing one,
-   * and the CHECK constraint would abort the whole batch.
+   * The collision is the normal case, not an error: the job re-runs over entries it has already
+   * seen on every publish. A model proposal therefore does nothing when the relation exists in
+   * any state, which is what keeps a `rejected` tombstone from being re-proposed for ever.
+   *
+   * A deterministic match is different. It was read out of a body somebody wrote, so when it
+   * collides with a *proposal* — the model guessed `relates_to` before the entry was edited to
+   * say `[[key]]` outright — the proposal is confirmed rather than left in the review queue
+   * behind a guess. `source` is not rewritten, for the same reason `confirm()` keeps it: who
+   * suggested the relation stays true once something agrees with it. `rejected` and already
+   * `confirmed` rows are untouched, so a rejection still holds.
+   *
+   * Self-links are dropped here too — the model is perfectly capable of proposing one, and the
+   * CHECK constraint would abort the whole batch.
    */
   async insertInferred(tx: Queryable, inputs: readonly InferredLinkInput[]): Promise<MemoryLink[]> {
     const written: MemoryLink[] = [];
     for (const input of inputs) {
       if (input.fromMemoryItemId === input.toMemoryItemId) continue;
       const state: MemoryLinkState = input.source === 'model' ? 'proposed' : 'confirmed';
+      const onConflict =
+        input.source === 'model'
+          ? 'DO NOTHING'
+          : `DO UPDATE SET state = 'confirmed' WHERE memory_links.state = 'proposed'`;
       const inserted = await tx.query<{ id: string }>(
         `INSERT INTO lore.memory_links
            (project_id, from_memory_item_id, relation, to_memory_item_id, metadata,
             state, source, confidence, rationale)
          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
-         ON CONFLICT ON CONSTRAINT memory_links_unique DO NOTHING
+         ON CONFLICT ON CONSTRAINT memory_links_unique ${onConflict}
          RETURNING id`,
         [
           input.projectId,

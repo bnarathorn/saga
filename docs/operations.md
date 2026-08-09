@@ -406,10 +406,17 @@ with the model's confidence and one line of reasoning. Search never traverses a 
 Hall is where they are confirmed or rejected. An unreachable model server is logged and the
 job still succeeds — the deterministic relations in the same pass are correct without it.
 
+A proposal the text later agrees with is promoted rather than left in the queue behind it. If
+an entry is edited to name `[[other.key]]` outright, the deterministic half of the next run
+confirms the existing `relates_to` proposal instead of losing the insert to it: the body
+somebody wrote outranks the guess that happened to land first. `source` still records the
+model, exactly as it does when a person confirms one by hand.
+
 Rejecting a proposal keeps its row at `state = 'rejected'` rather than deleting it. The job
 re-runs on every publish, so a rejection that removed its row would last exactly until the next
-one and the same proposal would come back. Creating that relation by hand later revives the
-tombstone into a confirmed human relation, so a rejection never permanently forbids a link.
+one and the same proposal would come back. Neither half of the job promotes a rejected row —
+only creating that relation by hand revives the tombstone, into a confirmed human relation, so
+a rejection never permanently forbids a link but nothing automatic can undo it.
 
 One model call per published entry can take the whole `SAGA_INFERENCE_TIMEOUT_MS`, which
 defaults to 60 seconds — exactly what `SAGA_JOB_LEASE_SECONDS` allows for the entire job. The
