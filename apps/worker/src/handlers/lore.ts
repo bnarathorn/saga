@@ -475,7 +475,7 @@ export function createRelationInferenceHandler(deps: RelationInferenceDeps): Job
       idempotency:
         'Every relation is inserted against the existing uniqueness of (project, from, relation, to), so re-running writes nothing the first run already wrote. A model proposal that collides does nothing, which is what stops a rejected proposal being proposed again. A deterministic match that collides with a proposal confirms it, because the body it was read out of outranks the guess; a rejected row is still left alone.',
       retryPolicy:
-        'A deleted update fails permanently. The model is never retried for: an unreachable provider is reported in the result and the deterministic half still commits. The lease is renewed after each entry, because one model call can take the whole provider timeout.',
+        'A deleted update fails permanently. The model is never retried for: an unreachable provider is reported in the result and the deterministic half still commits. The lease is renewed on a timer for as long as inference runs, because one model call can take the whole provider timeout — longer than the lease itself.',
       sideEffects:
         'Inserts confirmed relations from [[key]] links and bare key mentions, and proposed relations from the model.',
       result: '{ scanned, confirmed, proposed, below_confidence, truncated, proposer_error }',
