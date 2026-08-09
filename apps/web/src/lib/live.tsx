@@ -67,11 +67,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
-    if (typeof EventSource === 'undefined') {
-      setMode('polling');
-      return;
-    }
-
     let source: EventSource | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -136,7 +131,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       };
     };
 
-    connect();
+    // No `EventSource` at all — an ancient browser, a hardened embedding — is the same
+    // situation as a stream that will not stay up, and gets the same answer. Reporting
+    // `polling` without starting the timer left the page frozen under a label that said it
+    // was refreshing.
+    if (typeof EventSource === 'undefined') startPolling();
+    else connect();
 
     return () => {
       disposed = true;

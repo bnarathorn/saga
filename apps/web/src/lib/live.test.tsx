@@ -127,8 +127,18 @@ describe('the live event stream', () => {
   });
 
   it('polls without a stream at all, rather than showing a frozen page', async () => {
+    // Asserting the label alone was vacuous: it read "Polling" while no timer had been started
+    // at all, so the page sat frozen under a badge claiming it was refreshing. The refetch is
+    // the thing worth checking.
+    vi.useFakeTimers();
     vi.stubGlobal('EventSource', undefined);
-    renderIndicator();
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Polling'));
+    const queryClient = renderIndicator();
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Polling');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_500);
+    });
+    expect(invalidate).toHaveBeenCalled();
   });
 });
