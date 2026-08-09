@@ -223,8 +223,8 @@ export function QuestDetailPage() {
         </Panel>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <PlanPanel plan={plan} closed={closed} />
 
           {handoff !== null && <HandoffPanel handoff={handoff} />}
@@ -260,7 +260,7 @@ export function QuestDetailPage() {
           <PartyPanel projectRef={projectRef} questId={questId} />
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Panel title="Scope">
             {Object.keys(quest.scope).length === 0 ? (
               <p className="px-4 py-3 text-sm text-ink-500 dark:text-parchment-300/70">
@@ -271,7 +271,7 @@ export function QuestDetailPage() {
                 {Object.entries(quest.scope).map(([field, values]) => (
                   <div key={field}>
                     <dt className="metric-label">{field.replace('_', ' ')}</dt>
-                    <dd className="mt-0.5 font-mono text-xs text-ink-600 dark:text-parchment-300/80">
+                    <dd className="mt-0.5 break-all font-mono text-xs text-ink-600 dark:text-parchment-300/80">
                       {(values as string[]).join(', ')}
                     </dd>
                   </div>
@@ -403,7 +403,7 @@ function EditQuestPanel({ quest, onDone }: { quest: QuestDto; onDone: () => void
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {SCOPE_FIELDS.map(([field, label]) => (
             <div key={field}>
               <label className="field-label" htmlFor={`scope-${field}`}>
@@ -646,7 +646,7 @@ function PartyPanel({ projectRef, questId }: { projectRef: string; questId: stri
                     </Badge>
                     <Badge tone="neutral">{member.state}</Badge>
                     {member.workspace_label !== null && (
-                      <span className="font-mono text-xs text-ink-500 dark:text-parchment-300/60">
+                      <span className="break-all font-mono text-xs text-ink-500 dark:text-parchment-300/60">
                         {member.workspace_label}
                       </span>
                     )}
@@ -806,7 +806,7 @@ function ChangedFiles({ files }: { files: WorkState['changed_files'] }) {
   return (
     <div>
       <h4 className="metric-label mb-1">Changed files</h4>
-      <ul className="space-y-0.5 font-mono text-xs text-ink-700 dark:text-parchment-200">
+      <ul className="space-y-0.5 break-all font-mono text-xs text-ink-700 dark:text-parchment-200">
         {files.map((file, index) => (
           <li key={index}>
             {file.path}
@@ -836,7 +836,7 @@ function Commands({ commands }: { commands: WorkState['commands'] }) {
       <ul className="space-y-1">
         {commands.map((command, index) => (
           <li key={index} className="flex flex-wrap items-baseline gap-2">
-            <code className="font-mono text-xs text-ink-700 dark:text-parchment-200">
+            <code className="break-all font-mono text-xs text-ink-700 dark:text-parchment-200">
               {command.command}
             </code>
             {command.status !== undefined && (

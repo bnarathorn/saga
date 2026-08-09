@@ -65,14 +65,14 @@ export function QuestBoardPage() {
         </div>
 
         {can('quest:write') && (
-          <form onSubmit={submit} className="flex items-end gap-2">
-            <div>
+          <form onSubmit={submit} className="flex w-full items-end gap-2 sm:w-auto">
+            <div className="min-w-0 flex-1 sm:flex-none">
               <label className="field-label" htmlFor="new-quest">
                 New Quest
               </label>
               <input
                 id="new-quest"
-                className="field-input w-72"
+                className="field-input sm:w-72"
                 placeholder="Add CSV report export"
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
@@ -99,7 +99,7 @@ export function QuestBoardPage() {
       )}
 
       {quests.data !== undefined && quests.data.items.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
           {COLUMNS.map((column) => {
             const items = byStatus.get(column.status) ?? [];
             const extra = column.status === 'completed' ? cancelled : [];

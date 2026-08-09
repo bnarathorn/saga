@@ -70,6 +70,13 @@ creation, the Lore bootstrap state, proposing and publishing an Entry, an agent 
 checkpoint, the Quest Board and its handoff, Party liveness, and retrying a failed job from
 Shrine with the reason landing in the audit log.
 
+`tests/e2e/mobile.spec.ts` reads the same console at a 390×844 viewport and asserts that no
+route scrolls the _document_ sideways. A data table wider than the screen is expected and
+scrolls inside its own container; the page must not. The failure this guards against is a box
+that cannot shrink — a table in a grid item with no explicit column, a panel header that does
+not wrap, a UUID with no break opportunity — and it is invisible to the desktop suite, which
+runs every other spec at `Desktop Chrome`.
+
 The stack is hermetic and disposable:
 
 - its own ports (API 4419, Guild Hall 4420), so it cannot collide with `scripts/stack.sh`;

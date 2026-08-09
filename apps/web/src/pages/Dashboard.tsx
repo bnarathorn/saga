@@ -51,7 +51,7 @@ export function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel
           title="System health"
           actions={health.data !== undefined ? <StatusPill status={health.data.status} /> : null}
@@ -163,7 +163,7 @@ export function DashboardPage() {
 
       <JobQueuePanel />
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel title="Schema version">
           {schema.isPending && <LoadingState />}
           {schema.isError && (
@@ -287,7 +287,7 @@ function ConfigRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <>
       <dt className="text-ink-500 dark:text-parchment-300/70">{label}</dt>
-      <dd className="font-mono text-xs">{value}</dd>
+      <dd className="break-words font-mono text-xs">{value}</dd>
     </>
   );
 }
@@ -303,7 +303,7 @@ function ThroughputPanels({ metrics }: { metrics: MetricsSummaryDto }) {
   const errors = Object.entries(metrics.http.errors_by_code).sort((a, b) => b[1] - a[1]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Panel title="Throughput">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3 text-sm">
           <ConfigRow label="Requests" value={metrics.http.requests.toLocaleString()} />

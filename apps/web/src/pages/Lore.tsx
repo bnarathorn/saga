@@ -539,7 +539,7 @@ function ProposePanel({ projectRef }: { projectRef: string }) {
           through the same validation and publication pipeline as an agent proposal.
         </p>
 
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label className="field-label" htmlFor="propose-key">
               Memory key

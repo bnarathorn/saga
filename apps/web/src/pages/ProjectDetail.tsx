@@ -260,13 +260,13 @@ export function ProjectOverview() {
   const data = project.data.project;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Panel title="Summary">
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-3 text-sm">
           <dt className="text-ink-500 dark:text-parchment-300/70">Identifier</dt>
-          <dd className="font-mono text-xs">{data.id}</dd>
+          <dd className="break-all font-mono text-xs">{data.id}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Name key</dt>
-          <dd className="font-mono text-xs">{data.name_key}</dd>
+          <dd className="break-all font-mono text-xs">{data.name_key}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Also known as</dt>
           <dd>{data.aliases.length === 0 ? '—' : data.aliases.join(', ')}</dd>
           <dt className="text-ink-500 dark:text-parchment-300/70">Lore approval</dt>

@@ -48,13 +48,13 @@ export function ProjectPicker() {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
       <label className="sr-only" htmlFor="project-picker">
         Project
       </label>
       <select
         id="project-picker"
-        className="field-input w-52 py-1.5 text-sm"
+        className="field-input py-1.5 text-sm sm:w-52"
         value={current?.name ?? ''}
         disabled={projects.isPending}
         onChange={(event) => go(event.target.value)}

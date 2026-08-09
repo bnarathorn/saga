@@ -228,7 +228,7 @@ function CreateRelation({ projectRef, memoryKeys }: { projectRef: string; memory
   return (
     <Panel title="Add a relation">
       <form
-        className="flex flex-wrap items-end gap-3 px-4 py-3"
+        className="grid grid-cols-1 items-end gap-3 px-4 py-3 sm:grid-cols-2 lg:grid-cols-4"
         onSubmit={(event) => {
           event.preventDefault();
           if (!ready) return;
@@ -243,7 +243,7 @@ function CreateRelation({ projectRef, memoryKeys }: { projectRef: string; memory
           );
         }}
       >
-        <div>
+        <div className="min-w-0">
           <label className="field-label" htmlFor="relation-from">
             From
           </label>
@@ -262,7 +262,7 @@ function CreateRelation({ projectRef, memoryKeys }: { projectRef: string; memory
           </select>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="field-label" htmlFor="relation-kind">
             Relation
           </label>
@@ -280,7 +280,7 @@ function CreateRelation({ projectRef, memoryKeys }: { projectRef: string; memory
           </select>
         </div>
 
-        <div>
+        <div className="min-w-0">
           <label className="field-label" htmlFor="relation-to">
             To
           </label>
@@ -299,7 +299,11 @@ function CreateRelation({ projectRef, memoryKeys }: { projectRef: string; memory
           </select>
         </div>
 
-        <button type="submit" className="btn-primary" disabled={!ready || create.isPending}>
+        <button
+          type="submit"
+          className="btn-primary w-full sm:w-auto sm:justify-self-start"
+          disabled={!ready || create.isPending}
+        >
           Add relation
         </button>
       </form>

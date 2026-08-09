@@ -45,7 +45,7 @@ export function ShrinePage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Panel
           title="Context"
           actions={
@@ -74,7 +74,9 @@ export function ShrinePage() {
               <dt className="text-ink-500 dark:text-parchment-300/70">Lore revision</dt>
               <dd className="tabular-nums">{data.memory_revision}</dd>
               <dt className="text-ink-500 dark:text-parchment-300/70">Active snapshot</dt>
-              <dd className="font-mono text-xs">{data.active_context_snapshot_id ?? 'none'}</dd>
+              <dd className="break-all font-mono text-xs">
+                {data.active_context_snapshot_id ?? 'none'}
+              </dd>
               <dt className="text-ink-500 dark:text-parchment-300/70">Lore approval</dt>
               <dd>{data.lore_approval_mode}</dd>
               <dt className="text-ink-500 dark:text-parchment-300/70">Lifecycle</dt>

@@ -46,7 +46,7 @@ export function LoreEntryPage() {
         )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Panel title="Current version" className="lg:col-span-2">
           {current === null ? (
             <p className="px-4 py-6 text-sm text-ink-500 dark:text-parchment-300/70">
@@ -71,7 +71,7 @@ export function LoreEntryPage() {
               {current.evidence.length > 0 && (
                 <div>
                   <h3 className="metric-label mb-1">Evidence</h3>
-                  <ul className="space-y-0.5 font-mono text-xs text-ink-600 dark:text-parchment-300/80">
+                  <ul className="space-y-0.5 break-all font-mono text-xs text-ink-600 dark:text-parchment-300/80">
                     {current.evidence.map((item, index) => (
                       <li key={index}>
                         {String(item.path)}
@@ -119,7 +119,7 @@ export function LoreEntryPage() {
         <Panel title="Relations">
           <ul className="divide-y divide-parchment-200/70 px-4 dark:divide-night-800/70">
             {links.map((link) => (
-              <li key={link.id} className="py-2 font-mono text-xs">
+              <li key={link.id} className="break-all py-2 font-mono text-xs">
                 <Link
                   className="link"
                   to={`/projects/${encodeURIComponent(projectRef)}/lore/${encodeURIComponent(link.from_memory_key)}`}

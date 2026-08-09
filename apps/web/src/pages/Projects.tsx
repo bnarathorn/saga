@@ -50,14 +50,14 @@ export function ProjectsPage() {
         </div>
 
         {can('project:write') && (
-          <form onSubmit={submit} className="flex items-end gap-2">
-            <div>
+          <form onSubmit={submit} className="flex w-full items-end gap-2 sm:w-auto">
+            <div className="min-w-0 flex-1 sm:flex-none">
               <label className="field-label" htmlFor="new-project">
                 New project
               </label>
               <input
                 id="new-project"
-                className="field-input w-64"
+                className="field-input sm:w-64"
                 value={name}
                 placeholder="ERP Backoffice"
                 onChange={(event) => setName(event.target.value)}
@@ -79,13 +79,13 @@ export function ProjectsPage() {
       <Panel
         title="All projects"
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <label className="sr-only" htmlFor="filter-search">
               Search projects
             </label>
             <input
               id="filter-search"
-              className="field-input w-44 py-1 text-xs"
+              className="field-input w-40 py-1 text-xs sm:w-44"
               placeholder="Search…"
               value={search}
               onChange={(event) => {
