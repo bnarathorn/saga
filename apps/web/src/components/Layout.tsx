@@ -68,12 +68,16 @@ export function Layout({ me }: { me: MeResponse }) {
             <ProjectPicker />
           </nav>
 
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             <LiveIndicator />
             {health.data !== undefined && <StatusPill status={health.data.status} />}
             <ThemeToggle />
-            <div className="flex items-center gap-2 border-l border-parchment-300 pl-3 dark:border-night-700">
-              <span className="text-sm text-ink-600 dark:text-parchment-300">
+            {/* The divider only reads as one when the cluster is on a single line, which it is
+                from `sm` up; below that this block has wrapped onto a line of its own. */}
+            <div className="flex min-w-0 items-center gap-2 sm:border-l sm:border-parchment-300 sm:pl-3 dark:sm:border-night-700">
+              {/* Who is signed in is context, not a control: on the narrowest screens the
+                  header keeps the button and drops the label rather than growing a row. */}
+              <span className="hidden truncate text-sm text-ink-600 sm:inline dark:text-parchment-300">
                 {me.user?.display_name ?? me.agent?.name ?? 'Signed in'}
               </span>
               <button

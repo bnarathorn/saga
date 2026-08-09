@@ -93,7 +93,7 @@ export function PartyPage() {
                   </Badge>
                   <Badge tone="neutral">{agent.state}</Badge>
                   {agent.workspace_label !== null && (
-                    <span className="font-mono text-xs text-ink-500 dark:text-parchment-300/60">
+                    <span className="break-all font-mono text-xs text-ink-500 dark:text-parchment-300/60">
                       {agent.workspace_label}
                     </span>
                   )}
@@ -125,7 +125,7 @@ export function PartyPage() {
                 )}
 
                 {agent.claims.length > 0 && (
-                  <p className="mt-1 text-xs text-ink-500 dark:text-parchment-300/60">
+                  <p className="mt-1 break-all text-xs text-ink-500 dark:text-parchment-300/60">
                     Claims:{' '}
                     {agent.claims
                       .map((claim) => `${claim.resource_type}:${claim.resource_key}`)
@@ -223,7 +223,7 @@ function OverlapRow({ overlap }: { overlap: OverlapDto }) {
         <span className="text-sm">{overlap.message}</span>
       </div>
       {overlap.values.length > 0 && (
-        <p className="mt-1 font-mono text-xs text-ink-500 dark:text-parchment-300/60">
+        <p className="mt-1 break-all font-mono text-xs text-ink-500 dark:text-parchment-300/60">
           {overlap.values.join(', ')}
         </p>
       )}

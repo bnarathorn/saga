@@ -40,11 +40,15 @@
   .panel {
     @apply rounded-lg border border-parchment-300 bg-white/70 shadow-panel;
     @apply dark:border-night-700 dark:bg-night-900/70;
+    /* A panel is usually a grid item, and a grid item's automatic minimum size is its
+       content's min-content width — which a table wide enough to scroll would otherwise push
+       the whole page past the viewport on a phone. */
+    @apply min-w-0;
   }
 
   .panel-header {
-    @apply flex items-center justify-between gap-3 border-b border-parchment-200 px-4 py-3;
-    @apply dark:border-night-800;
+    @apply flex flex-wrap items-center justify-between gap-3 border-b border-parchment-200;
+    @apply px-4 py-3 dark:border-night-800;
   }
 
   .panel-title {

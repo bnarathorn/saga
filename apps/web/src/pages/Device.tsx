@@ -173,7 +173,7 @@ export function DevicePage() {
         {!projects.isPending && !projects.isError && (projects.data?.items.length ?? 0) > 0 && (
           <>
             <form className="space-y-4 px-4 py-4" onSubmit={submit}>
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="field-label" htmlFor="device-code">
                     Device code
