@@ -495,6 +495,60 @@ describe('relation_inference handler', () => {
     expect(renewals).toBe(afterFinish);
   });
 
+  const RENEWAL_FAILURE = 'the connection was reset while renewing the lease';
+
+  it('survives a renewal that rejects instead of taking the worker down with it', async () => {
+    // The failure this guards: a discarded renewal promise is an unhandled rejection, and Node
+    // exits on those. One database blip during inference would have killed a healthy worker and
+    // every other job in flight on it.
+    const held = gate();
+    const relations = {
+      inferForUpdate: vi.fn(async () => {
+        await held.promise;
+        return OUTCOME;
+      }),
+    };
+    const rejections: unknown[] = [];
+    // Only this test's own rejections count: `unhandledRejection` is process-wide, and a
+    // listener that collected everything would fail on any unrelated one.
+    const onRejection = (reason: unknown): void => {
+      if (reason instanceof Error && reason.message === RENEWAL_FAILURE) rejections.push(reason);
+    };
+    process.on('unhandledRejection', onRejection);
+
+    let renewals = 0;
+    const warn = vi.fn();
+    const logger = { ...createSilentLogger(), warn } as never;
+    const handler = createRelationInferenceHandler({
+      relations: relations as never,
+      renewalIntervalMs: 10,
+    });
+
+    try {
+      const running = handler.handle({
+        job: job({ jobType: 'relation_inference', payload: { memory_update_id: UPDATE_ID } }),
+        logger,
+        signal: new AbortController().signal,
+        renewLease: () => {
+          renewals += 1;
+          return Promise.reject(new Error(RENEWAL_FAILURE));
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      held.release();
+      await expect(running).resolves.toMatchObject({ scanned: 1 });
+
+      expect(renewals).toBeGreaterThan(0);
+      expect(warn).toHaveBeenCalled();
+      // Let any rejection that escaped reach the process before asserting none did.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+  });
+
   it('stops renewing when inference fails', async () => {
     const relations = {
       inferForUpdate: vi.fn(async () => {

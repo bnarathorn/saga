@@ -495,7 +495,17 @@ export function createRelationInferenceHandler(deps: RelationInferenceDeps): Job
       // 60_000 and `SAGA_JOB_LEASE_SECONDS` to 60, so a single model call is allowed to last
       // exactly as long as the whole lease: anything that renews only after an entry finishes
       // fires for the first time after the claim it was protecting has already lapsed.
-      const renewal = setInterval(() => void renewLease(), deps.renewalIntervalMs);
+      const renewal = setInterval(() => {
+        // A renewal that rejects is a database problem, not a reason to take the worker down.
+        // Discarding the promise with `void` alone leaves the rejection unhandled, which Node
+        // turns into process exit — killing every other in-flight job with it.
+        renewLease().catch((error: unknown) => {
+          logger.warn(
+            { err: error, memory_update_id: updateId },
+            'could not renew the relation-inference lease; the job may be reclaimed',
+          );
+        });
+      }, deps.renewalIntervalMs);
       // A pending timer must not hold the process open at shutdown.
       renewal.unref?.();
 
