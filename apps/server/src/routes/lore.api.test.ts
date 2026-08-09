@@ -505,6 +505,23 @@ describe('inferred relations', () => {
     expect(response.status).toBe(404);
   });
 
+  it('answers 400 for an id that is not a uuid, not 500', async () => {
+    // The id goes straight into `WHERE id = $1` against a uuid column, so PostgreSQL raises
+    // 22P02 rather than returning no rows. Reported as INTERNAL_ERROR it both blames the server
+    // for a malformed request and files a scanner's traffic under the alerting code that means
+    // an outage.
+    const response = await admin.post('/api/lore-links/not-a-uuid/confirm', {});
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('BAD_REQUEST');
+
+    // The same holds when the query runs inside a transaction: `withTransaction` rolls back and
+    // rethrows the original error, so the mapping still sees the PostgreSQL code rather than a
+    // wrapper. `publish` reads the update inside its own transaction, `confirm` does not.
+    const inTransaction = await admin.post('/api/lore/updates/not-a-uuid/publish', {});
+    expect(inTransaction.status).toBe(400);
+    expect(inTransaction.body.error.code).toBe('BAD_REQUEST');
+  });
+
   it('rejects a proposal and keeps the rejection', async () => {
     const linkId = await proposeRelation();
     const removed = await admin.del(`/api/lore-links/${linkId}`);

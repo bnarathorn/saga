@@ -32,8 +32,14 @@ export function registerErrorHandler(app: FastifyInstance, exposeInternals: bool
 
     if (sagaError.status >= 500) {
       request.log.error({ ...logPayload, err: error }, 'request failed');
-    } else {
+    } else if (isSagaError(error)) {
+      // Saga raised this itself, so the code and the message are the whole story.
       request.log.warn(logPayload, 'request rejected');
+    } else {
+      // Something else — Fastify, or PostgreSQL — that `toSagaError` mapped down to a 4xx. The
+      // mapped message is deliberately generic, so without the original the log would say a
+      // request was rejected and nothing about what failed.
+      request.log.warn({ ...logPayload, err: error }, 'request rejected');
     }
 
     const envelope = sagaError.toEnvelope(request.id);
@@ -51,6 +57,15 @@ function toSagaError(error: unknown): SagaError {
   if (isSagaError(error)) return error;
 
   const shape = error as FastifyErrorish;
+
+  // PostgreSQL 22P02 — a value that did not parse as its column type. Every value that reaches
+  // SQL here came from the request, and the one that actually happens is a path id that is not
+  // a uuid: `/api/lore-links/not-a-uuid`. Answering 500 both misreports a malformed request as
+  // a server fault and files it under INTERNAL_ERROR in the error metrics, where it is
+  // indistinguishable from a real outage.
+  if (shape.code === '22P02') {
+    return new SagaError('BAD_REQUEST', 'A value in the request is not of the expected type.');
+  }
 
   // Fastify's own errors carry a statusCode; map the ones a client can act on.
   if (typeof shape.statusCode === 'number') {
