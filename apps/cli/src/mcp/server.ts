@@ -134,15 +134,18 @@ export const MCP_INSTRUCTIONS =
   'On the first user task call saga_activate_task with the request verbatim, and read the ' +
   'returned Task and Continuation context before editing anything.\n' +
   'Then break the work into numbered sub-tasks with saga_plan_quest, before you start ' +
-  'changing things. Settle each one with step_updates on saga_checkpoint as you finish it: ' +
-  'the Quest completes by itself when the last step is settled, so the plan is what decides ' +
-  'when the work is done.\n' +
+  'changing things. Mark a step in_progress with step_updates on saga_checkpoint when you ' +
+  'begin it, and settle it the same way when you finish it: the Quest completes by itself ' +
+  'when the last step is settled, so the plan is what decides when the work is done.\n' +
   'When that Quest has completed and the user asks for something else, call saga_activate_task ' +
   'again — new work becomes a new Quest in the same session. Reopen the finished one with ' +
   'saga_reopen_quest only when it was closed by mistake.\n' +
-  'Call saga_checkpoint at every milestone and before context compaction. Claim shared ' +
-  'resources with saga_claim_resource before risky operations. Record durable knowledge with ' +
-  'saga_remember — never transient state, never credentials.\n' +
+  'Call saga_checkpoint at every milestone, before context compaction, and at least every 10 ' +
+  'minutes while you are still working — say what you are doing even when nothing has ' +
+  'finished, because a Quest that has not moved for longer is indistinguishable in Guild Hall ' +
+  'from an agent that died. Claim shared resources with saga_claim_resource before risky ' +
+  'operations. Record durable knowledge with saga_remember — never transient state, never ' +
+  'credentials.\n' +
   'Call saga_end_session with a final handoff before you stop, so the next session can continue.';
 
 /**
@@ -446,7 +449,7 @@ export const TOOLS: McpTool[] = [
   {
     name: 'saga_checkpoint',
     description:
-      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends. Use step_updates to tick off the sub-tasks you declared with saga_plan_quest — settling the last one completes the Quest. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
+      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends — and at least every 10 minutes while work continues, even when nothing has finished yet, because a Quest that stops moving looks the same as an agent that died. Use step_updates to move the sub-tasks you declared with saga_plan_quest: in_progress when you start one, done when you finish it — settling the last one completes the Quest. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
     inputSchema: z.object({
       kind: z.enum(['automatic', 'milestone', 'final_handoff']).default('automatic'),
       summary: z.string().min(1),
@@ -458,11 +461,17 @@ export const TOOLS: McpTool[] = [
             status: z
               .enum(['pending', 'in_progress', 'done', 'skipped'])
               .optional()
-              .describe('Defaults to "done". Use "skipped" for a step the work made unnecessary.'),
+              .describe(
+                'Defaults to "done". Use "in_progress" for the step you have just started, and ' +
+                  '"skipped" for a step the work made unnecessary.',
+              ),
           }),
         )
         .optional()
-        .describe('Plan steps this checkpoint settles. Only report a step you have finished.'),
+        .describe(
+          'Plan steps this checkpoint moves. Report in_progress for the step you are working on, ' +
+            'and done only for a step you have actually finished.',
+        ),
       expected_quest_revision: z
         .number()
         .int()

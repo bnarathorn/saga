@@ -129,16 +129,20 @@ one; its job is to hand the agent its Core Context.
 
 **During work**
 
-6. Create checkpoints at milestones and before context compaction, settling each plan step you
-   have finished with `step_updates`.
-7. Use `saga_remember` only for durable project knowledge.
-8. Claim critical shared resources before risky operations.
-9. Refresh context when the project or parallel work changes materially.
+6. Create checkpoints at milestones and before context compaction, marking a plan step
+   `in_progress` with `step_updates` when you start it and settling it when you finish it.
+7. Create one at least every 10 minutes while work continues, even when nothing has finished.
+   Guild Hall shows a Quest by when it last moved, and it cannot tell a long step from a dead
+   agent: an hour of silence from a working agent reads exactly like an hour of silence from a
+   crashed one. A checkpoint that only says what is being attempted is worth more than none.
+8. Use `saga_remember` only for durable project knowledge.
+9. Claim critical shared resources before risky operations.
+10. Refresh context when the project or parallel work changes materially.
 
 **Before ending**
 
-10. Create a final handoff.
-11. Call `saga_end_session`, settling any remaining finished steps, and setting `quest_status`
+11. Create a final handoff.
+12. Call `saga_end_session`, settling any remaining finished steps, and setting `quest_status`
     only when the Quest reached a state its plan does not already say.
 
 ---
@@ -220,6 +224,11 @@ step with `step_updates` on `saga_checkpoint` as you finish it:
 
 `status` defaults to `done`; use `"skipped"` for a step the work made unnecessary. A plan that is
 entirely skipped does not complete a Quest.
+
+Send `"in_progress"` for a step when you start it, before it can be settled. It settles nothing,
+so it costs no correctness — what it buys is that Guild Hall shows which sub-task is being worked
+on rather than a plan that has not moved since the last one finished. On a step that takes longer
+than the 10-minute checkpoint cadence, repeat it with a summary of where the work has got to.
 
 This is the part worth being deliberate about: **a Quest with a finished plan closes even though
 `next_steps` still lists things**. Recording what you would do next is not the same as the work

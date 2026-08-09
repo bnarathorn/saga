@@ -299,6 +299,14 @@ describe('server instructions', () => {
     expect(MCP_INSTRUCTIONS).toMatch(/bootstrap_required/);
     expect(MCP_INSTRUCTIONS).toMatch(/bootstrap_plan/);
   });
+
+  // "At every milestone" is a judgement the agent makes, and an agent deep in one long step
+  // decides it has not reached one — so the Quest stops moving in Guild Hall while the agent is
+  // still alive. A wall-clock bound is the part that does not depend on that judgement.
+  it('bounds how long a working agent may go without checkpointing', () => {
+    expect(MCP_INSTRUCTIONS).toMatch(/at least every 10 minutes/);
+    expect(MCP_INSTRUCTIONS).toMatch(/in_progress/);
+  });
 });
 
 describe('opening the session', () => {
