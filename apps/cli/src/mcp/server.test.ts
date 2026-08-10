@@ -1,14 +1,8 @@
 import { SagaError } from '@saga/shared';
 import { describe, expect, it } from 'vitest';
+import { MCP_INSTRUCTIONS } from '../agent-instructions.js';
 import { zodToJsonSchema } from './json-schema.js';
-import {
-  MCP_INSTRUCTIONS,
-  TOOLS,
-  closeSession,
-  openSession,
-  toToolError,
-  type McpToolContext,
-} from './server.js';
+import { TOOLS, closeSession, openSession, toToolError, type McpToolContext } from './server.js';
 
 const REQUIRED_TOOLS = [
   'saga_start_session',

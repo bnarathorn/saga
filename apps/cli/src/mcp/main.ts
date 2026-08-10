@@ -2,17 +2,11 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { errorMessage } from '@saga/shared';
+import { MCP_INSTRUCTIONS } from '../agent-instructions.js';
 import { CLI_VERSION } from '../version.js';
 import { SessionHeartbeat } from './heartbeat.js';
 import { zodToJsonSchema } from './json-schema.js';
-import {
-  MCP_INSTRUCTIONS,
-  TOOLS,
-  buildToolContext,
-  closeSession,
-  openSession,
-  toToolError,
-} from './server.js';
+import { TOOLS, buildToolContext, closeSession, openSession, toToolError } from './server.js';
 
 /**
  * The Saga MCP stdio server.

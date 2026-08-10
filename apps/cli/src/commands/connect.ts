@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline/promises';
 import { SagaClient } from '@saga/agent-sdk';
 import { errorMessage, isSagaError } from '@saga/shared';
+import { writeAgentInstructions } from '../agent-instructions.js';
 import { CredentialStore } from '../credentials.js';
 import { writeMcpConfig } from '../mcp-config.js';
 import { checkApiCompatibility } from '../version.js';
@@ -229,6 +230,30 @@ export async function connectCommand(argv: string[]): Promise<number> {
     out.write(`MCP configuration NOT written: ${file.path} — ${file.reason}.\n`);
   }
 
+  // 8. the session policy, in the files a host reads that does not surface MCP `instructions`.
+  //    Unlike the MCP configuration this lands in files the whole team shares, so it says so
+  //    plainly and `--no-agent-instructions` declines it.
+  if (flags.agentInstructions === false) {
+    out.write('Agent instructions: skipped (--no-agent-instructions).\n');
+  } else {
+    const instructions = writeAgentInstructions(workspace.root);
+    for (const file of instructions.written) {
+      out.write(`Agent instructions written: ${file} (in the \`saga:begin\` block).\n`);
+    }
+    for (const file of instructions.unchanged) {
+      out.write(`Agent instructions already current: ${file}.\n`);
+    }
+    for (const file of instructions.skipped) {
+      out.write(`Agent instructions NOT written: ${file.path} — ${file.reason}.\n`);
+    }
+    if (instructions.written.length > 0) {
+      out.write(
+        '  These are project files, not personal configuration: commit them so every agent ' +
+          'on the project gets the same policy, or re-run with --no-agent-instructions.\n',
+      );
+    }
+  }
+
   out.write(
     `\nNext: run \`saga status\` to confirm, or start your agent — Saga opens a session as soon ` +
       `as the agent's client connects, and Guild Hall shows it in Party.\n` +
@@ -321,6 +346,8 @@ export interface CliFlags {
   reauth?: boolean;
   json?: boolean;
   debug?: boolean;
+  /** `false` only when `--no-agent-instructions` was passed; absent means write them. */
+  agentInstructions?: boolean;
 }
 
 export function parseFlags(argv: readonly string[]): CliFlags {
@@ -331,6 +358,7 @@ export function parseFlags(argv: readonly string[]): CliFlags {
     else if (arg === '--token') flags.token = argv[++index];
     else if (arg === '--project') flags.project = argv[++index];
     else if (arg === '--reauth') flags.reauth = true;
+    else if (arg === '--no-agent-instructions') flags.agentInstructions = false;
     else if (arg === '--json') flags.json = true;
     else if (arg === '--debug') flags.debug = true;
   }

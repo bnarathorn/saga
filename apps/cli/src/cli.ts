@@ -32,6 +32,11 @@ Options:
       --project <name>      Fail unless the token is bound to this project,
                             by name or id (connect)
       --reauth              Discard stored credentials and authorize again (connect)
+      --no-agent-instructions
+                            Do not write the Saga session policy into AGENTS.md
+                            and CLAUDE.md (connect). They are project files the
+                            whole team shares; the block between the saga:begin
+                            and saga:end markers is the only part Saga owns
       --debug               Print stack traces
 `;
 
