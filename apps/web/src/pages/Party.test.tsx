@@ -3,7 +3,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { renderWithProviders, stubFetch, VIEWER_PERMISSIONS } from '../test-utils.jsx';
-import { PartyPage } from './Party.jsx';
+import { PartyPage, presence } from './Party.jsx';
 
 const REF = 'ERP%20Backoffice';
 const STATUS = `/api/projects/${REF}/party/status`;
@@ -71,6 +71,25 @@ function renderParty(permissions?: readonly Permission[]) {
   });
 }
 
+describe('presence', () => {
+  it('separates a live lease from work actually being done', () => {
+    expect(presence({ live: true, work_item_id: null })).toEqual({
+      tone: 'neutral',
+      label: 'idle',
+    });
+    expect(presence({ live: true, work_item_id: 'w1' })).toEqual({ tone: 'good', label: 'live' });
+  });
+
+  it('still reports an expired lease as expired, whether or not a Quest was attached', () => {
+    for (const workItemId of [null, 'w1']) {
+      expect(presence({ live: false, work_item_id: workItemId })).toEqual({
+        tone: 'warn',
+        label: 'lease expired',
+      });
+    }
+  });
+});
+
 describe('Party page', () => {
   it('explains a disabled Party rather than showing an empty roster', async () => {
     stubFetch({
@@ -106,6 +125,34 @@ describe('Party page', () => {
 
     expect(await screen.findByText('claude-code:11111111')).toBeInTheDocument();
     expect(screen.getByText('codex:22222222')).toBeInTheDocument();
+  });
+
+  it('badges an agent that holds a lease but has taken no Quest as idle, not live', async () => {
+    // The bug this replaces: a session that opened and never called saga_activate_task
+    // heartbeats exactly like one mid-Quest, so the board implied progress that did not exist.
+    stubFetch({
+      [STATUS]: {
+        body: {
+          ...liveStatus.body,
+          active_agents: [
+            activeAgent(),
+            activeAgent({
+              id: '00000000-0000-4000-8000-000000000302',
+              agent_instance_id: 'codex:33333333',
+              work_item_id: '00000000-0000-4000-8000-000000000001',
+              quest_title: 'Add CSV report export',
+            }),
+          ],
+        },
+      },
+      [CLAIMS]: { body: { items: [] } },
+    });
+    renderParty();
+
+    expect(await screen.findByText('idle')).toBeInTheDocument();
+    expect(screen.getByText('live')).toBeInTheDocument();
+    // Counted all the same: it is present, and hiding it would lose the coordination signal.
+    expect(screen.getByText('No Quest attached yet')).toBeInTheDocument();
   });
 
   it('releases a claim whose lease has lapsed, on behalf of its own agent run', async () => {

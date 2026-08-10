@@ -19,6 +19,25 @@ const SEVERITY_TONE: Record<string, BadgeTone> = {
   info: 'neutral',
 };
 
+/**
+ * How an agent run reads on the board.
+ *
+ * A live lease says a process is alive, not that anybody is working: a session that opened and
+ * never called `saga_activate_task` heartbeats exactly like one mid-Quest, and rendering both as
+ * "live" is what let an agent sit in `awaiting_task` for twenty minutes while this page implied
+ * progress. `work_item_id` is the structural difference — it is set when a Quest is attached
+ * (`PartyRepository.attachQuest`) and null until then — so an idle run is named as idle here and
+ * still counted, because it is genuinely present.
+ */
+export function presence(agent: { live: boolean; work_item_id: string | null }): {
+  tone: BadgeTone;
+  label: string;
+} {
+  if (!agent.live) return { tone: 'warn', label: 'lease expired' };
+  if (agent.work_item_id === null) return { tone: 'neutral', label: 'idle' };
+  return { tone: 'good', label: 'live' };
+}
+
 export function PartyPage() {
   const { projectRef = '' } = useParams();
 
@@ -88,9 +107,7 @@ export function PartyPage() {
                   {/* The instance id, not `client`: every MCP agent connects as the same client,
                       so two agents in one folder would otherwise be one indistinguishable row. */}
                   <span className="font-medium">{agent.agent_instance_id}</span>
-                  <Badge tone={agent.live ? 'good' : 'warn'}>
-                    {agent.live ? 'live' : 'lease expired'}
-                  </Badge>
+                  <Badge tone={presence(agent).tone}>{presence(agent).label}</Badge>
                   <Badge tone="neutral">{agent.state}</Badge>
                   {agent.workspace_label !== null && (
                     <span className="break-all font-mono text-xs text-ink-500 dark:text-parchment-300/60">

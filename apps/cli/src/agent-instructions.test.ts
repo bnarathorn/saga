@@ -25,16 +25,40 @@ const read = (name: string): string => readFileSync(join(root, name), 'utf8');
 
 describe('renderAgentInstructions', () => {
   it('carries the policy itself, not a summary of it', () => {
-    const block = renderAgentInstructions();
+    const plain = renderAgentInstructions().replaceAll('`', '');
     for (const line of MCP_INSTRUCTIONS.split('\n')) {
-      expect(block).toContain(line);
+      expect(plain).toContain(line);
     }
   });
 
   it('separates the policy into paragraphs, because a single newline is not a Markdown break', () => {
     expect(renderAgentInstructions()).toContain(
-      'Before reading any file, call saga_start_session and read the Core Context it returns.\n\n',
+      'Before reading any file, call `saga_start_session` and read the Core Context it returns.\n\n',
     );
+  });
+
+  it('code-spans every snake_case identifier, so no renderer reads the underscores as emphasis', () => {
+    const block = renderAgentInstructions();
+    for (const identifier of [
+      'saga_start_session',
+      'saga_activate_task',
+      'saga_plan_quest',
+      'saga_checkpoint',
+      'saga_remember',
+      'saga_end_session',
+      'bootstrap_required',
+      'bootstrap_plan',
+      'step_updates',
+      'in_progress',
+    ]) {
+      expect(block).toContain(`\`${identifier}\``);
+    }
+    // Nothing outside a code span may carry a bare underscore, which is what editors mis-pair.
+    expect(block.replaceAll(/`[^`]+`/g, '')).not.toContain('_');
+  });
+
+  it('leaves the MCP instructions string itself plain: a protocol field is not Markdown', () => {
+    expect(MCP_INSTRUCTIONS).not.toContain('`');
   });
 });
 

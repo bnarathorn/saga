@@ -59,11 +59,23 @@ export interface AgentInstructionsResult {
   skipped: { path: string; reason: string }[];
 }
 
+/**
+ * Every snake_case identifier in the policy: tool names, and the response fields the policy
+ * tells an agent to read.
+ */
+const IDENTIFIER = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g;
+
 /** The managed block on its own, as it appears in the file. */
 export function renderAgentInstructions(): string {
-  // Each line of the policy becomes its own paragraph: in Markdown a single newline is not a
-  // break, so rendering it verbatim would run the whole policy into one wall of text.
-  const body = MCP_INSTRUCTIONS.split('\n').join('\n\n');
+  const body = MCP_INSTRUCTIONS
+    // Each line of the policy becomes its own paragraph: in Markdown a single newline is not a
+    // break, so rendering it verbatim would run the whole policy into one wall of text.
+    .split('\n')
+    .join('\n\n')
+    // CommonMark leaves an intra-word `_` alone, so `saga_activate_task` is safe by the spec —
+    // but editors and looser renderers pair those underscores as emphasis and colour half the
+    // block. They are identifiers either way, and a code span is what an identifier deserves.
+    .replace(IDENTIFIER, '`$&`');
   return `${BEGIN}\n\n## Saga\n\n${body}\n\n${END}`;
 }
 
