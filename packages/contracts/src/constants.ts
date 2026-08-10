@@ -59,7 +59,6 @@ export const JOB_TYPES = [
   'embedding',
   'context_snapshot',
   'memory_validation',
-  'stale_detection',
   'cleanup',
   'outbox_delivery',
   'event_projection',

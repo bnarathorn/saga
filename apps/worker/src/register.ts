@@ -14,7 +14,6 @@ import {
   createEmbeddingHandler,
   createMemoryValidationHandler,
   createRelationInferenceHandler,
-  createStaleDetectionHandler,
 } from './handlers/lore.js';
 
 const CLEANUP_INTERVAL_MS = 60 * 60_000;
@@ -62,14 +61,6 @@ export function registerHandlers(ctx: WorkerContext): void {
       memory: ctx.repositories.memory,
       snapshots: ctx.repositories.snapshots,
       coreContextTokens: ctx.config.context.coreTokens,
-    }),
-  );
-  ctx.handlers.register(
-    createStaleDetectionHandler({
-      pool: ctx.pool,
-      lore: ctx.services.lore,
-      memory: ctx.repositories.memory,
-      projects: ctx.repositories.projects,
     }),
   );
   ctx.handlers.register(

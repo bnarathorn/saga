@@ -362,7 +362,6 @@ its lease cannot overwrite the replacement worker's result.
 | `embedding`          | Vectors for Lore versions and Quests                 |
 | `memory_validation`  | Validate, prepare a snapshot, publish in `auto` mode |
 | `context_snapshot`   | Rebuild core context after a stale/archive change    |
-| `stale_detection`    | Compare reported evidence against recorded hashes    |
 | `relation_inference` | Derive relations from published entries (see below)  |
 | `outbox_delivery`    | Drain the transactional outbox                       |
 | `event_projection`   | Repair gaps in the Shrine feed (see below)           |
@@ -589,8 +588,15 @@ saga check-evidence --json     # for a script
 
 It reads the project's active entries, hashes each evidence path it finds under the workspace
 root, and posts the observations. Entries whose evidence moved come back stale, named, with the
-file that changed. A stale entry is still served and still searched — the flag asks for review,
-it does not hide knowledge. Re-record the entry to clear it.
+file that changed.
+
+**Marking an entry stale takes it out of Core Context.** `buildSections` filters `state === 'stale'`
+unless asked otherwise, and the `context_snapshot` job does not ask, so a stale entry disappears
+from the context every session reads first. It is still returned by search — down-ranked, with a
+warning on the response — and still appears in task context carrying a `STALE — <reason>` label,
+so nothing is lost. But the entry is out of the front page until somebody re-records it, and on a
+project whose Lore is ranked by importance that can be most of the top of the list at once. Run
+this when you are able to act on what it finds.
 
 Three things it deliberately does **not** do. A path that resolves outside the workspace is
 never read, because evidence is written by whoever recorded the entry and is not trusted input.

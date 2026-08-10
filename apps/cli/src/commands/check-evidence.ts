@@ -159,8 +159,9 @@ export async function checkEvidenceCommand(argv: string[]): Promise<number> {
   report.marked_stale = [...new Set(report.marked_stale)].sort();
   if (report.marked_stale.length > 0) {
     report.notes.push(
-      'A stale entry is still served and still searched; it is flagged for review, not hidden. ' +
-        'Re-record it with saga_remember, or clear the flag in Guild Hall.',
+      'A stale entry drops out of Core Context — the context every session reads first — until ' +
+        'it is re-recorded. It is still searched, and still shown in task context under a STALE ' +
+        'label, so nothing is lost. Re-record it with saga_remember to put it back.',
     );
   }
   // Drift is the answer, not a failure: an entry going stale is this command working.
