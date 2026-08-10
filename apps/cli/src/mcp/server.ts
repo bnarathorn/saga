@@ -499,9 +499,25 @@ export const TOOLS: McpTool[] = [
             evidence: z
               .array(z.object({ path: z.string(), content_hash: z.string().optional() }))
               .optional(),
-            confidence: z.number().min(0).max(1),
+            confidence: z
+              .number()
+              .min(0)
+              .max(1)
+              .describe('How sure you are, 0 to 1. Not a percentage.'),
             verification_state: z.enum(['observed', 'inferred', 'verified']),
-            importance: z.number().int().min(0).max(100).optional(),
+            importance: z
+              .number()
+              .int()
+              .min(0)
+              .max(100)
+              .optional()
+              .describe(
+                'How much this entry deserves a place in the Core Context every session reads, ' +
+                  'scored 0 to 100 — not 1 to 5. Omit it and the entry is filed at 50, which is ' +
+                  'the right answer unless you know otherwise. Core Context is token-budgeted ' +
+                  'and ranked by this number first, so a low score does not shrink an entry, it ' +
+                  'removes it.',
+              ),
             volatility: z.enum(['stable', 'operational']).optional(),
           }),
         )

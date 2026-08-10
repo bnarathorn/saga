@@ -55,7 +55,17 @@ function convert(schema: z.ZodTypeAny): Record<string, unknown> {
   }
   if (schema instanceof z.ZodString) return withDescription({ type: 'string' });
   if (schema instanceof z.ZodNumber) {
-    return withDescription({ type: schema.isInt ? 'integer' : 'number' });
+    // Bounds are carried, not dropped. A bare `{"type":"integer"}` tells the model nothing
+    // about the scale it is answering on, and `importance` is scored 0-100: every agent that
+    // met it bare guessed 1-5, which is inside the range and so passes validation while filing
+    // the entry below everything already recorded. Nine entries in this project's own Lore
+    // arrived that way, across several sessions, and one was evicted from Core Context by it.
+    // `confidence` is 0-1 and fails loudly instead, which is why nobody noticed the converter.
+    return withDescription({
+      type: schema.isInt ? 'integer' : 'number',
+      ...(schema.minValue === null ? {} : { minimum: schema.minValue }),
+      ...(schema.maxValue === null ? {} : { maximum: schema.maxValue }),
+    });
   }
   if (schema instanceof z.ZodBoolean) return withDescription({ type: 'boolean' });
   if (schema instanceof z.ZodRecord) {

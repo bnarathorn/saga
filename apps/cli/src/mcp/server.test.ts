@@ -137,6 +137,33 @@ describe('tool schemas', () => {
     expect(schema.required).not.toContain('expected_quest_revision');
   });
 
+  it('carries the bounds of a number, so the model knows what scale it is answering on', () => {
+    // The failure this replaces: `importance` reached the model as a bare `{"type":"integer"}`,
+    // so agents assumed 1-5 on a field scored 0-100. That is inside the range, so nothing
+    // rejected it — the entry was simply filed below everything already recorded, and the only
+    // symptom was that it stopped appearing in Core Context.
+    const remember = TOOLS.find((tool) => tool.name === 'saga_remember')!;
+    const schema = zodToJsonSchema(remember.inputSchema) as {
+      properties: {
+        entries: {
+          items: {
+            properties: Record<
+              string,
+              { minimum?: number; maximum?: number; description?: string }
+            >;
+          };
+        };
+      };
+    };
+    const entry = schema.properties.entries.items.properties;
+
+    expect(entry.importance).toMatchObject({ minimum: 0, maximum: 100 });
+    expect(entry.importance?.description).toMatch(/0 to 100/);
+    // `confidence` is the other scale on this tool and runs 0-1, which is exactly the confusion
+    // worth ruling out: two numbers on one entry, neither of which announced its range.
+    expect(entry.confidence).toMatchObject({ minimum: 0, maximum: 1 });
+  });
+
   it('keeps the description on an optional field, which is where most of them are', () => {
     // Unwrapping ZodOptional without re-applying the wrapper's description dropped the hint on
     // every optional argument — the model saw a bare type and no reason to fill it in.
