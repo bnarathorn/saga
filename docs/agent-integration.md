@@ -103,13 +103,21 @@ per-user install (`~/.local/bin/saga`) are the two ways forward.
 
 ## 2. The integration policy
 
-This is what an agent should do. It reaches the agent twice: the MCP server returns it as
-`instructions` from `initialize`, which a host puts in front of the model before it starts
-work, and each step is repeated in the description of the tool that performs it.
+This is what an agent should do. It reaches the agent three ways, from one definition in
+`apps/cli/src/agent-instructions.ts`: the MCP server returns it as `instructions` from
+`initialize`, which a host puts in front of the model before it starts work; each step is
+repeated in the description of the tool that performs it; and `saga connect` writes it into
+`AGENTS.md` and `CLAUDE.md`, between `<!-- saga:begin -->` and `<!-- saga:end -->` markers.
 
 Tool descriptions alone are not enough. A description is read when the agent is already looking
 for a tool to call, so nothing in it can prompt the agent to act _before_ it starts — which is
 how a folder ends up bound, authorised, healthy and still absent from Guild Hall.
+
+Neither is `instructions` alone: not every host surfaces it. Codex does not, and its agents
+opened sessions, never called `saga_activate_task`, and heartbeated in `awaiting_task` while the
+Quest board stayed empty. The file is what those hosts read. Only the region between the markers
+is Saga's — the rest of a team's own `AGENTS.md` is never touched — and `saga connect
+--no-agent-instructions` declines the write. `saga doctor` reports the block as `session policy`.
 
 **When starting**
 
@@ -138,11 +146,14 @@ one; its job is to hand the agent its Core Context.
 8. Use `saga_remember` only for durable project knowledge.
 9. Claim critical shared resources before risky operations.
 10. Refresh context when the project or parallel work changes materially.
+11. When that Quest has completed and the user asks for something else, call
+    `saga_activate_task` again: different work is a new Quest in the same session. Reopen the
+    finished one with `saga_reopen_quest` only when it was closed by mistake.
 
 **Before ending**
 
-11. Create a final handoff.
-12. Call `saga_end_session`, settling any remaining finished steps, and setting `quest_status`
+12. Create a final handoff.
+13. Call `saga_end_session`, settling any remaining finished steps, and setting `quest_status`
     only when the Quest reached a state its plan does not already say.
 
 ---

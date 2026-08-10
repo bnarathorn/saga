@@ -1,5 +1,10 @@
 import { existsSync } from 'node:fs';
 import { SagaClient } from '@saga/agent-sdk';
+import {
+  agentInstructionsStatus,
+  type AgentInstructionsFile,
+  type AgentInstructionsState,
+} from '../agent-instructions.js';
 import { CredentialStore } from '../credentials.js';
 import { mcpConfigStatus } from '../mcp-config.js';
 import { checkApiCompatibility } from '../version.js';
@@ -243,6 +248,11 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     ...(configured.length > 0 ? {} : { action: 'Run `saga connect` to write it.' }),
   });
 
+  // The second channel the policy travels on, and the only one a host that ignores the MCP
+  // `instructions` string ever reads. Never a failure: MCP still carries the policy to every
+  // host that does surface it, and `--no-agent-instructions` declines these files on purpose.
+  checks.push(sessionPolicyCheck(agentInstructionsStatus(workspace.root)));
+
   checks.push({
     name: 'guild hall',
     status: 'ok',
@@ -250,6 +260,49 @@ export async function doctorCommand(argv: string[]): Promise<number> {
   });
 
   return report(checks, flags.json === true);
+}
+
+/**
+ * Report the session policy on disk, worst state first.
+ *
+ * An unterminated marker outranks a stale block, which outranks an absent one: the first is the
+ * only state `saga connect` refuses to repair by itself, so it is the only one that needs the
+ * user to do something other than re-run the command.
+ */
+function sessionPolicyCheck(files: readonly AgentInstructionsFile[]): Check {
+  const named = (state: AgentInstructionsState): string =>
+    files
+      .filter((file) => file.state === state)
+      .map((file) => file.path)
+      .join(', ');
+
+  if (named('unterminated') !== '') {
+    return {
+      name: 'session policy',
+      status: 'warning',
+      message: `${named('unterminated')} has a \`saga:begin\` marker with no \`saga:end\`.`,
+      action: 'Close the marker, or delete it, then run `saga connect`.',
+    };
+  }
+  if (named('stale') !== '') {
+    return {
+      name: 'session policy',
+      status: 'warning',
+      message: `${named('stale')} carries an older policy than this CLI.`,
+      action: 'Run `saga connect` to refresh the block.',
+    };
+  }
+  if (named('current') === '') {
+    return {
+      name: 'session policy',
+      status: 'warning',
+      message: 'No instruction file carries the Saga session policy.',
+      action:
+        'Run `saga connect` to write it. An agent whose host ignores the MCP `instructions` ' +
+        'string has nothing else to read.',
+    };
+  }
+  return { name: 'session policy', status: 'ok', message: named('current') };
 }
 
 // Every deployment except the development stack serves Guild Hall from the API's own origin:

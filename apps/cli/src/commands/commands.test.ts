@@ -325,6 +325,55 @@ describe('saga doctor', () => {
     expect(report.checks.find((check) => check.name === 'project binding')?.status).toBe('failure');
   });
 
+  it('reports the session policy on disk, the channel MCP `instructions` cannot reach', async () => {
+    stubFetch(doctorRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    await doctorCommand(['--json']);
+
+    const report = JSON.parse(stdout) as { checks: { name: string; status: string }[] };
+    const policy = report.checks.find((check) => check.name === 'session policy');
+    expect(policy?.status).toBe('ok');
+  });
+
+  it('warns, without failing, when nothing on disk carries the session policy', async () => {
+    stubFetch(doctorRoutes);
+    await connectCommand(['--server', SERVER, '--no-agent-instructions']);
+    stdout = '';
+
+    const code = await doctorCommand(['--json']);
+
+    const report = JSON.parse(stdout) as {
+      checks: { name: string; status: string; message: string }[];
+    };
+    const policy = report.checks.find((check) => check.name === 'session policy');
+    expect(policy?.status).toBe('warning');
+    expect(policy?.message).toContain('No instruction file');
+    // MCP still carries the policy to every host that surfaces it, so this cannot fail CI.
+    expect(code).toBe(0);
+  });
+
+  it('warns when a block written by an older CLI no longer matches this one', async () => {
+    stubFetch(doctorRoutes);
+    await connectCommand(['--server', SERVER]);
+    writeFileSync(
+      join(root, 'AGENTS.md'),
+      '<!-- saga:begin — managed by `saga connect` -->\nold policy\n<!-- saga:end -->\n',
+    );
+    stdout = '';
+
+    const code = await doctorCommand(['--json']);
+
+    const report = JSON.parse(stdout) as {
+      checks: { name: string; status: string; action?: string }[];
+    };
+    const policy = report.checks.find((check) => check.name === 'session policy');
+    expect(policy?.status).toBe('warning');
+    expect(policy?.action).toContain('saga connect');
+    expect(code).toBe(0);
+  });
+
   it('treats a warning as non-fatal so it is usable in CI', async () => {
     stubFetch(doctorRoutes);
     await connectCommand(['--server', SERVER]);

@@ -79,6 +79,54 @@ export function renderAgentInstructions(): string {
   return `${BEGIN}\n\n## Saga\n\n${body}\n\n${END}`;
 }
 
+/** What one instruction file says, relative to the policy this CLI carries. */
+export type AgentInstructionsState =
+  /** The managed block is there and says exactly this. */
+  | 'current'
+  /** A managed block is there and says something else — an older CLI wrote it. */
+  | 'stale'
+  /** No marker at all. The file may not even exist. */
+  | 'absent'
+  /** A `saga:begin` with no `saga:end`. Saga will not write here. */
+  | 'unterminated';
+
+/** One instruction file and what it says. */
+export interface AgentInstructionsFile {
+  path: string;
+  state: AgentInstructionsState;
+}
+
+interface Located extends AgentInstructionsFile {
+  /** The file as it is on disk, or `null` when there is no file. */
+  existing: string | null;
+  /** Bounds of the managed block in `existing`, when `state` is `current` or `stale`. */
+  begin: number;
+  end: number;
+}
+
+/**
+ * Read one instruction file and say what its managed block is.
+ *
+ * The single classifier behind both the write and `saga doctor`'s report of it: a `doctor` that
+ * decided "current" by its own reasoning would eventually disagree with what `connect` does,
+ * and a diagnostic that contradicts the command it tells you to run is worse than none.
+ */
+function locate(path: string, block: string): Located {
+  const existing = existsSync(path) ? readFileSync(path, 'utf8') : null;
+  const absent: Located = { path, state: 'absent', existing, begin: -1, end: -1 };
+  if (existing === null) return absent;
+
+  const begin = existing.indexOf(BEGIN_PREFIX);
+  if (begin === -1) return absent;
+
+  const endMarker = existing.indexOf(END, begin);
+  if (endMarker === -1) return { path, state: 'unterminated', existing, begin, end: -1 };
+
+  const end = endMarker + END.length;
+  const state = existing.slice(begin, end) === block ? 'current' : 'stale';
+  return { path, state, existing, begin, end };
+}
+
 /**
  * Put the policy in the instruction files this workspace's agents actually read.
  *
@@ -92,9 +140,8 @@ export function writeAgentInstructions(root: string): AgentInstructionsResult {
   const result: AgentInstructionsResult = { written: [], unchanged: [], skipped: [] };
   const block = renderAgentInstructions();
 
-  for (const name of INSTRUCTION_FILES) {
-    const path = join(root, name);
-    const existing = existsSync(path) ? readFileSync(path, 'utf8') : null;
+  for (const found of locateAll(root, block)) {
+    const { path, existing } = found;
 
     if (existing === null) {
       writeFile(path, `${block}\n`);
@@ -102,44 +149,53 @@ export function writeAgentInstructions(root: string): AgentInstructionsResult {
       continue;
     }
 
-    const begin = existing.indexOf(BEGIN_PREFIX);
-    if (begin === -1) {
-      const separator = existing.length === 0 ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
-      writeFile(path, `${existing}${separator}${block}\n`);
-      result.written.push(path);
-      continue;
-    }
-
-    const endMarker = existing.indexOf(END, begin);
-    if (endMarker === -1) {
-      // Replacing from an unterminated marker to the end of the file would delete whatever the
-      // user wrote after it. There is no way to tell that content from a truncated block.
-      result.skipped.push({
-        path,
-        reason:
-          'it contains a `<!-- saga:begin` marker with no matching `<!-- saga:end -->`. Saga ' +
-          'left it untouched rather than guessing where the managed block stops. Close the ' +
-          'marker, or delete it, and re-run `saga connect`',
-      });
-      continue;
-    }
-
-    const end = endMarker + END.length;
-    if (existing.slice(begin, end) === block) {
+    if (found.state === 'current') {
       result.unchanged.push(path);
       continue;
     }
 
-    writeFile(path, `${existing.slice(0, begin)}${block}${existing.slice(end)}`);
+    if (found.state === 'unterminated') {
+      // Replacing from an unterminated marker to the end of the file would delete whatever the
+      // user wrote after it. There is no way to tell that content from a truncated block.
+      result.skipped.push({ path, reason: UNTERMINATED_REASON });
+      continue;
+    }
+
+    if (found.state === 'stale') {
+      writeFile(path, `${existing.slice(0, found.begin)}${block}${existing.slice(found.end)}`);
+      result.written.push(path);
+      continue;
+    }
+
+    // A file the team already had, with no marker in it: every byte kept, the block at the end.
+    const separator = existing.length === 0 ? '' : existing.endsWith('\n') ? '\n' : '\n\n';
+    writeFile(path, `${existing}${separator}${block}\n`);
     result.written.push(path);
   }
 
   return result;
 }
 
-/** Where the block would go, for `saga doctor` and for reporting a skip. */
-export function agentInstructionPaths(root: string): string[] {
-  return INSTRUCTION_FILES.map((name) => join(root, name));
+/** Why a file with a half-written marker is left alone, in both `connect` and `doctor`. */
+const UNTERMINATED_REASON =
+  'it contains a `<!-- saga:begin` marker with no matching `<!-- saga:end -->`. Saga ' +
+  'left it untouched rather than guessing where the managed block stops. Close the ' +
+  'marker, or delete it, and re-run `saga connect`';
+
+/**
+ * What each instruction file currently says, for `saga doctor`.
+ *
+ * Worth checking on its own: the whole reason these files exist is the host that never surfaces
+ * the MCP `instructions` string, so for those agents a block that was deleted by a merge, or
+ * left behind by an older CLI, is the difference between a policy and no policy — and nothing
+ * about the session would look wrong until the Quest board stayed empty.
+ */
+export function agentInstructionsStatus(root: string): AgentInstructionsFile[] {
+  return locateAll(root, renderAgentInstructions()).map(({ path, state }) => ({ path, state }));
+}
+
+function locateAll(root: string, block: string): Located[] {
+  return INSTRUCTION_FILES.map((name) => locate(join(root, name), block));
 }
 
 function writeFile(path: string, content: string): void {
