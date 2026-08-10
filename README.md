@@ -148,11 +148,12 @@ saga doctor
 _Check:_ the last line ends in `0 failure(s)`.
 
 ```text
-  12 ok, 1 warning(s), 0 failure(s)
+  … ok, … warning(s), 0 failure(s)
 ```
 
-Warnings about plain HTTP, and about the token living in a credential file rather than a keychain,
-are both expected on a local install. Only `failure(s)` matters.
+How many checks run depends on what the server reports, so the first two numbers are not worth
+matching. Warnings about plain HTTP, and about the token living in a credential file rather than
+a keychain, are both expected on a local install. Only `failure(s)` matters.
 
 ### Done
 

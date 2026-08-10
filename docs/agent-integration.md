@@ -28,14 +28,21 @@ saga connect
 
 `saga connect` does the whole flow: finds the server, authorizes this machine through the
 browser device flow, detects the project root, binds the folder to a project, reports whether
-Lore bootstrap is required, and writes MCP configuration.
+Lore bootstrap is required, writes MCP configuration, and writes the session policy of §2 into
+this workspace's instruction files.
 
-It writes two files:
+It writes four files:
 
 | File                                                 | For         | Scope                                                      |
 | ---------------------------------------------------- | ----------- | ---------------------------------------------------------- |
 | `.mcp.json` at the project root                      | Claude Code | project-local                                              |
 | `$CODEX_HOME/config.toml`, or `~/.codex/config.toml` | Codex       | user-global (Codex has no project-level MCP configuration) |
+| `AGENTS.md` at the project root                      | Codex       | project-local, and shared with the team                    |
+| `CLAUDE.md` at the project root                      | Claude Code | project-local, and shared with the team                    |
+
+The first two are configuration and belong to the machine. The last two are the team's own
+files, which is why Saga owns only the region between its markers there, why they are worth
+committing, and why `--no-agent-instructions` exists to decline them.
 
 Claude Code reads JSON:
 
@@ -103,11 +110,12 @@ per-user install (`~/.local/bin/saga`) are the two ways forward.
 
 ## 2. The integration policy
 
-This is what an agent should do. It reaches the agent three ways, from one definition in
-`apps/cli/src/agent-instructions.ts`: the MCP server returns it as `instructions` from
-`initialize`, which a host puts in front of the model before it starts work; each step is
-repeated in the description of the tool that performs it; and `saga connect` writes it into
-`AGENTS.md` and `CLAUDE.md`, between `<!-- saga:begin -->` and `<!-- saga:end -->` markers.
+This is what an agent should do. It reaches the agent three ways. Two carry it verbatim from one
+definition, `MCP_INSTRUCTIONS` in `apps/cli/src/agent-instructions.ts`: the MCP server returns it
+as `instructions` from `initialize`, which a host puts in front of the model before it starts
+work, and `saga connect` writes it into `AGENTS.md` and `CLAUDE.md`, between
+`<!-- saga:begin -->` and `<!-- saga:end -->` markers. The third is separate text — each step is
+restated in the description of the tool that performs it, where that tool is defined.
 
 Tool descriptions alone are not enough. A description is read when the agent is already looking
 for a tool to call, so nothing in it can prompt the agent to act _before_ it starts — which is
