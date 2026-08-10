@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetLocalChanges } from '../local-changes.js';
 import { detectWorkspace, loadConfig } from '../workspace.js';
+import { checkEvidenceCommand } from './check-evidence.js';
 import { connectCommand, matchesProject } from './connect.js';
 import { doctorCommand, guildHallUrl } from './doctor.js';
 import { statusCommand } from './status.js';
@@ -277,6 +278,188 @@ describe('guildHallUrl', () => {
       'https://example.test/saga (served from this origin).',
     );
     expect(guildHallUrl('not a url')).toBe('not a url');
+  });
+});
+
+describe('saga check-evidence', () => {
+  const LORE = `${SERVER}/api/projects/${PROJECT_ID}/lore?state=active&limit=200`;
+  const CHECK = `POST ${SERVER}/api/projects/${PROJECT_ID}/lore/evidence/check`;
+
+  function entry(evidence: { path: string; content_hash?: string }[], key = 'project.overview') {
+    return {
+      id: '00000000-0000-4000-8000-000000000900',
+      project_id: PROJECT_ID,
+      memory_key: key,
+      category: 'overview',
+      kind: 'fact',
+      state: 'active',
+      importance: 90,
+      volatility: 'stable',
+      current_version: { evidence },
+      last_verified_at: null,
+      stale_reason: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  function loreRoutes(evidence: { path: string; content_hash?: string }[], check: unknown = {}) {
+    return {
+      ...connectRoutes,
+      [LORE]: { body: { items: [entry(evidence)], next_cursor: null, has_more: false } },
+      [CHECK]: {
+        body: { checked: 1, drifted: [], marked_stale: [], ...(check as object) },
+      },
+    };
+  }
+
+  it('hashes each evidence file and reports what it saw', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    writeFileSync(join(root, 'README.md'), 'hello\n');
+    stdout = '';
+
+    const { calls } = stubFetch(
+      loreRoutes([{ path: 'README.md', content_hash: 'sha256:stale' }], {
+        drifted: [
+          {
+            memory_key: 'project.overview',
+            path: 'README.md',
+            recorded_hash: 'sha256:stale',
+            observed_hash: 'sha256:x',
+            reason: 'hash_changed',
+          },
+        ],
+        marked_stale: ['project.overview'],
+      }),
+    );
+    const code = await checkEvidenceCommand(['--json']);
+
+    expect(calls).toContain(CHECK);
+    const report = JSON.parse(stdout) as {
+      observed: number;
+      drifted: { memory_key: string }[];
+      marked_stale: string[];
+    };
+    expect(report.observed).toBe(1);
+    expect(report.drifted[0]?.memory_key).toBe('project.overview');
+    expect(report.marked_stale).toEqual(['project.overview']);
+    // Drift is the command working, not a failure, so it must not fail a CI step.
+    expect(code).toBe(0);
+  });
+
+  it('sends the sha256 of the bytes on disk, in the form the server recorded', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    writeFileSync(join(root, 'README.md'), 'hello\n');
+    stdout = '';
+
+    let sent: { observations: { path: string; content_hash: string | null }[] } = {
+      observations: [],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/lore/evidence/check')) {
+          sent = JSON.parse(String(init?.body)) as typeof sent;
+          return new Response(JSON.stringify({ checked: 1, drifted: [], marked_stale: [] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(
+          JSON.stringify({ items: [entry([{ path: 'README.md' }])], has_more: false }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+    await checkEvidenceCommand(['--json']);
+
+    // `sha256:` + hex of "hello\n", which is what `sha256sum` prints. The recorded hashes use
+    // exactly this form, and a mismatch in shape would report every file as drifted.
+    expect(sent.observations[0]?.content_hash).toBe(
+      `sha256:${createHash('sha256').update('hello\n').digest('hex')}`,
+    );
+  });
+
+  it('does not report a missing file as deleted, which would mark the project stale', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    // The footgun this guards: run from a shallow clone or simply the wrong folder and every
+    // path looks deleted, so one call marks every entry in the project stale.
+    const { calls } = stubFetch(loreRoutes([{ path: 'docs/architecture.md' }]));
+    const code = await checkEvidenceCommand(['--json']);
+
+    const report = JSON.parse(stdout) as { missing: string[]; observed: number; notes: string[] };
+    expect(report.missing).toEqual(['docs/architecture.md']);
+    expect(report.observed).toBe(0);
+    expect(report.notes.join(' ')).toMatch(/--include-missing/);
+    // Nothing to say, so the server is never called and no entry is touched.
+    expect(calls).not.toContain(CHECK);
+    expect(code).toBe(0);
+  });
+
+  it('reports a missing file as deleted only when asked', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    const { calls } = stubFetch(loreRoutes([{ path: 'docs/architecture.md' }]));
+    await checkEvidenceCommand(['--json', '--include-missing']);
+
+    const report = JSON.parse(stdout) as { observed: number };
+    expect(report.observed).toBe(1);
+    expect(calls).toContain(CHECK);
+  });
+
+  it('does not call a directory deleted, even when asked to report what is missing', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    mkdirSync(join(root, 'db'), { recursive: true });
+    stdout = '';
+
+    // `db/` and `docs/adr` are cited as evidence in this project's own Lore. A directory is
+    // present and has no bytes to hash — reporting it gone would mark its entries stale for a
+    // folder sitting right there, and `--include-missing` is exactly when that would bite.
+    const { calls } = stubFetch(loreRoutes([{ path: 'db' }]));
+    await checkEvidenceCommand(['--json', '--include-missing']);
+
+    const report = JSON.parse(stdout) as {
+      not_a_file: string[];
+      missing: string[];
+      observed: number;
+    };
+    expect(report.not_a_file).toEqual(['db']);
+    expect(report.missing).toEqual([]);
+    expect(report.observed).toBe(0);
+    expect(calls).not.toContain(CHECK);
+  });
+
+  it('never reads an evidence path that escapes the workspace', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    // Evidence is written by whoever recorded the entry, so it is not trusted input. Hashing
+    // this would report the contents of a file outside the project to the server.
+    stubFetch(loreRoutes([{ path: '../../../etc/passwd' }, { path: '/etc/hostname' }]));
+    await checkEvidenceCommand(['--json']);
+
+    const report = JSON.parse(stdout) as { outside_workspace: string[]; observed: number };
+    expect(report.outside_workspace).toEqual(['../../../etc/passwd', '/etc/hostname']);
+    expect(report.observed).toBe(0);
+  });
+
+  it('exits non-zero and touches nothing when the folder is not bound', async () => {
+    stubFetch(connectRoutes);
+    const code = await checkEvidenceCommand(['--json']);
+
+    const report = JSON.parse(stdout) as { notes: string[] };
+    expect(code).toBe(1);
+    expect(report.notes.join(' ')).toMatch(/saga connect/);
   });
 });
 

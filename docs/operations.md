@@ -575,3 +575,29 @@ system-events setting above.
 **Durable Lore and Quest history is archived, never deleted.** Marking an entry stale keeps
 its content and adds a reason; archiving hides it from search and context but preserves every
 version.
+
+### Keeping Lore honest about the files it was read from
+
+An entry records the files it was read out of and a hash of each. When one of them changes, the
+entry should be flagged stale — but the server never reads the caller's filesystem, so nothing
+happens until somebody local hashes those files and reports what they saw:
+
+```bash
+saga check-evidence            # from the project root
+saga check-evidence --json     # for a script
+```
+
+It reads the project's active entries, hashes each evidence path it finds under the workspace
+root, and posts the observations. Entries whose evidence moved come back stale, named, with the
+file that changed. A stale entry is still served and still searched — the flag asks for review,
+it does not hide knowledge. Re-record the entry to clear it.
+
+Three things it deliberately does **not** do. A path that resolves outside the workspace is
+never read, because evidence is written by whoever recorded the entry and is not trusted input.
+A directory cited as evidence is reported as present with nothing to hash, never as deleted. And
+a path that is simply absent is _not_ reported unless you pass `--include-missing`: the server
+marks an entry stale for a path it is told is gone, so one run from a shallow clone or the wrong
+folder would otherwise mark a whole project stale.
+
+Worth running after a merge, on a schedule, or whenever Lore starts feeling out of date. It is
+safe to repeat and exits zero even when it finds drift — drift is the answer, not a failure.

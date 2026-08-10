@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { errorMessage, isSagaError } from '@saga/shared';
 import { registerCommand, runCli } from './cli.js';
+import { checkEvidenceCommand } from './commands/check-evidence.js';
 import { connectCommand, parseFlags } from './commands/connect.js';
 import { doctorCommand } from './commands/doctor.js';
 import { statusCommand } from './commands/status.js';
@@ -13,6 +14,7 @@ import { detectWorkspace, findBinding, loadConfig } from './workspace.js';
 registerCommand('connect', connectCommand);
 registerCommand('status', statusCommand);
 registerCommand('doctor', doctorCommand);
+registerCommand('check-evidence', checkEvidenceCommand);
 registerCommand('update', updateCommand);
 
 registerCommand('mcp', async (argv) => {

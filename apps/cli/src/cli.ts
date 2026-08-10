@@ -11,6 +11,8 @@ Usage:
   saga connect              Bind this folder to a Saga project (guided)
   saga status               Show server, project, Quest and Party state
   saga doctor               Diagnose configuration and connectivity
+  saga check-evidence       Report which recorded evidence files have changed,
+                            marking the entries that read them stale
   saga mcp                  Run the MCP stdio server for this folder
   saga update               Install the CLI build this server is serving
   saga logout               Remove the stored credentials for this server
@@ -18,7 +20,11 @@ Usage:
 Options:
   -h, --help                Show this help
   -v, --version             Show the CLI version
-      --json                Machine-readable output (status, doctor, update)
+      --json                Machine-readable output (status, doctor, update,
+                            check-evidence)
+      --include-missing     Report an evidence file that is not in this folder
+                            as deleted, which marks its entries stale
+                            (check-evidence). Only from a complete checkout
       --check               Report the available version without installing it
                             (update)
       --force               Reinstall even when the versions already match

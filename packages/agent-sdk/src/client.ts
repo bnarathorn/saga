@@ -13,6 +13,7 @@ import type {
   EvidenceCheckRequest,
   EvidenceCheckResponse,
   HeartbeatResponse,
+  LoreEntryDto,
   LoreSearchRequest,
   LoreSearchResponse,
   MemoryUpdateDto,
@@ -285,6 +286,20 @@ export class SagaClient {
 
   async loreUpdate(updateId: string): Promise<{ update: MemoryUpdateDto }> {
     return this.request('GET', `/api/lore/updates/${updateId}`);
+  }
+
+  /**
+   * One page of Lore Entries. Cursor-paged, so a caller that needs all of them follows
+   * `next_cursor` until `has_more` is false.
+   *
+   * `checkEvidence` needs this: only the entries themselves say which files they were read out
+   * of, and the server never looks at the caller's filesystem.
+   */
+  async loreEntries(
+    projectRef: string,
+    query = '',
+  ): Promise<{ items: LoreEntryDto[]; next_cursor: string | null; has_more: boolean }> {
+    return this.request('GET', `/api/projects/${encodeURIComponent(projectRef)}/lore${query}`);
   }
 
   async checkEvidence(
