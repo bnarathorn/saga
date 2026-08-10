@@ -111,6 +111,8 @@ export class JobService {
     error: string,
     kind: 'retryable' | 'permanent',
     now: Date = new Date(),
+    /** A floor the handler asked for, when it knows how long it is waiting for. */
+    retryAfterMs?: number,
   ): Promise<'retrying' | 'failed'> {
     const exhausted = job.attempts >= job.maxAttempts;
     if (kind === 'permanent' || exhausted) {
@@ -133,7 +135,14 @@ export class JobService {
       return 'failed';
     }
 
-    const runAfter = nextRetryAt(now, job.attempts);
+    // The handler's floor never shortens the backoff, only lengthens it: a caller waiting on a
+    // slow dependency knows more than the curve does, but a curve that has already backed off
+    // further is responding to repeated failure and must not be overridden downwards.
+    const backoff = nextRetryAt(now, job.attempts);
+    const runAfter =
+      retryAfterMs === undefined
+        ? backoff
+        : new Date(Math.max(backoff.getTime(), now.getTime() + retryAfterMs));
     const ok = await this.deps.jobs.retry(this.deps.pool, job.id, job.claimToken, error, runAfter);
     if (!ok) {
       throw new SagaError('JOB_CLAIM_LOST', 'This job was reclaimed by another worker.', {

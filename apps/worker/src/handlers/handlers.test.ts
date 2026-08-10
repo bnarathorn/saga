@@ -293,6 +293,12 @@ describe('memory_validation handler', () => {
     );
     expect(error.message).toContain('Waiting for 1 embedding');
     expect(deps.lore.validate).not.toHaveBeenCalled();
+    // Named as a wait rather than a failure, and carrying a delay of its own. On the standard
+    // backoff the three attempts spanned 2-3 seconds against an embedding that takes 13 s on
+    // average, so in production every publish burned all three and gave up having waited for
+    // nothing — while logging two `job failed` lines on the way.
+    expect(error.waiting).toBe(true);
+    expect(error.retryAfterMs ?? 0).toBeGreaterThanOrEqual(8_000);
   });
 
   it('publishes text-only rather than blocking knowledge on an unavailable provider', async () => {

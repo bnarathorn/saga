@@ -183,6 +183,21 @@ export interface MemoryValidationDeps {
 const EMBEDDING_WAIT_ATTEMPTS = 3;
 
 /**
+ * How long to leave between those attempts.
+ *
+ * Stated in wall clock rather than left to the standard backoff, because the standard backoff
+ * is tuned for a dropped connection: one second, then two. Three attempts of it bought 2-3
+ * seconds to wait for a job that takes 13 s on average and 70 s at worst on the reference host,
+ * so every publish in production burned all three attempts and gave up — 16 out of 16, none of
+ * which ever got what it waited for while paying two spurious failures for it.
+ *
+ * Two waits of this length cover the average with room over. They do not cover the worst case,
+ * and are not meant to: publishing text-only is the designed fallback, the entry is still found
+ * by text search, and the embedding job writes the vector a moment later.
+ */
+const EMBEDDING_WAIT_MS = 8_000;
+
+/**
  * Drives an update from `draft` to `ready`, then publishes it when the project's approval
  * mode is `auto`. In `manual` mode it stops at `ready` and waits for Guild Hall.
  */
@@ -196,7 +211,7 @@ export function createMemoryValidationHandler(deps: MemoryValidationDeps): JobHa
       idempotency:
         'Re-running an already published or cancelled update is a no-op; validation itself is derived from stored candidates.',
       retryPolicy:
-        'Retries while embeddings are still queued, up to a bounded number of attempts, then proceeds text-only. Secret-policy rejection is permanent.',
+        'Waits while embeddings are still queued, up to a bounded number of attempts spaced by a wall-clock delay of its own rather than the standard backoff, then proceeds text-only. Those waits are recorded as waits, not failures. Secret-policy rejection is permanent.',
       sideEffects:
         'Moves the update through validating → ready, prepares a context snapshot, and in auto mode publishes and activates it.',
       result: '{ memory_update_id, state, memory_revision? }',
@@ -243,8 +258,9 @@ export function createMemoryValidationHandler(deps: MemoryValidationDeps): JobHa
       ).length;
 
       if (pending > 0 && job.attempts < EMBEDDING_WAIT_ATTEMPTS) {
-        throw JobHandlerError.retryable(
+        throw JobHandlerError.waiting(
           `Waiting for ${pending} embedding job(s) before the update is marked ready.`,
+          EMBEDDING_WAIT_MS,
         );
       }
       if (pending > 0) {

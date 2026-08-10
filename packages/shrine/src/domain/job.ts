@@ -59,16 +59,52 @@ export type JobFailureKind = 'retryable' | 'permanent';
 export class JobHandlerError extends Error {
   readonly kind: JobFailureKind;
   readonly detail: Record<string, unknown>;
+  /**
+   * Floor on the delay before the next attempt, when the handler knows how long it is waiting
+   * for. Absent for a real failure, which has no idea and takes the standard backoff.
+   */
+  readonly retryAfterMs?: number;
+  /** True when nothing went wrong and the handler is only waiting for something else. */
+  readonly waiting: boolean;
 
-  constructor(kind: JobFailureKind, message: string, detail: Record<string, unknown> = {}) {
+  constructor(
+    kind: JobFailureKind,
+    message: string,
+    detail: Record<string, unknown> = {},
+    options: { retryAfterMs?: number; waiting?: boolean } = {},
+  ) {
     super(message);
     this.name = 'JobHandlerError';
     this.kind = kind;
     this.detail = detail;
+    this.retryAfterMs = options.retryAfterMs;
+    this.waiting = options.waiting ?? false;
   }
 
   static retryable(message: string, detail?: Record<string, unknown>): JobHandlerError {
     return new JobHandlerError('retryable', message, detail);
+  }
+
+  /**
+   * Come back in `retryAfterMs`, because something this job depends on has not finished yet.
+   *
+   * Distinct from `retryable` in both halves of its behaviour, and both matter.
+   *
+   * The delay: the standard backoff starts at one second and doubles, which is right for a
+   * dropped connection and useless for waiting on work measured in tens of seconds. A handler
+   * that knows what it is waiting for should say so — `memory_validation` waited three attempts
+   * for an embedding and got 2-3 seconds of wall clock for it, so in production it burned every
+   * attempt and gave up, every single time, and the wait never once did what it was for.
+   *
+   * The name: a wait is not a failure. Logging it as one puts `job failed` in the log on the
+   * happy path, which is how an operator learns to scroll past the line that matters.
+   */
+  static waiting(
+    message: string,
+    retryAfterMs: number,
+    detail?: Record<string, unknown>,
+  ): JobHandlerError {
+    return new JobHandlerError('retryable', message, detail, { retryAfterMs, waiting: true });
   }
 
   static permanent(message: string, detail?: Record<string, unknown>): JobHandlerError {

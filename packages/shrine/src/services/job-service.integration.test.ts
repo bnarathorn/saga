@@ -233,6 +233,34 @@ describe('failure handling', () => {
     expect(job.lastError).toBe('provider timeout');
   });
 
+  it('honours a handler that asks to be left alone longer than the backoff would', async () => {
+    const enqueued = await jobs.enqueue({ jobType: 'noop', payload: {}, maxAttempts: 3 });
+    const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1 });
+
+    // The first backoff is one second, less jitter. A handler waiting on a job that takes tens
+    // of seconds has to be able to say so, or it spends every attempt inside the first two.
+    await jobs.recordFailure(claimed!, 'waiting for embeddings', 'retryable', new Date(), 8_000);
+
+    const job = await jobs.get(enqueued!.id);
+    expect(job.runAfter.getTime() - Date.now()).toBeGreaterThan(6_000);
+  });
+
+  it('never lets that floor shorten a backoff that has already grown past it', async () => {
+    await jobs.enqueue({ jobType: 'noop', payload: {}, maxAttempts: 9 });
+    let job: ClaimedJob | undefined;
+    for (let attempt = 1; attempt <= 6; attempt += 1) {
+      [job] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1 });
+      if (job === undefined) break;
+      await repo.retry(pool, job.id, job.claimToken, 'transient', new Date(Date.now() - 1_000));
+    }
+    [job] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1 });
+
+    // By attempt 7 the curve is well past a minute; a 1 ms floor must not drag it back.
+    await jobs.recordFailure(job!, 'waiting', 'retryable', new Date(), 1);
+
+    expect((await jobs.get(job!.id)).runAfter.getTime() - Date.now()).toBeGreaterThan(20_000);
+  });
+
   it('fails immediately on a permanent error, whatever the attempt count', async () => {
     await jobs.enqueue({ jobType: 'noop', payload: {}, maxAttempts: 5 });
     const [claimed] = await jobs.claim({ workerId: crypto.randomUUID(), limit: 1 });

@@ -160,12 +160,21 @@ export class Worker {
     } catch (error) {
       const kind = classifyFailure(error);
       const message = errorMessage(error);
+      const waiting = error instanceof JobHandlerError && error.waiting;
+      const retryAfterMs = error instanceof JobHandlerError ? error.retryAfterMs : undefined;
       try {
-        const outcome = await jobs.recordFailure(job, message, kind);
-        jobLogger.warn(
-          { latency_ms: Date.now() - startedAt, outcome, failure_kind: kind, reason: message },
-          'job failed',
-        );
+        const outcome = await jobs.recordFailure(job, message, kind, new Date(), retryAfterMs);
+        const fields = {
+          latency_ms: Date.now() - startedAt,
+          outcome,
+          failure_kind: kind,
+          reason: message,
+        };
+        // A handler that is waiting on purpose has not failed. Logging it as a failure is how
+        // `job failed` becomes a line nobody reads — and it is the line that reports the real
+        // ones. A wait that ran out of attempts is a genuine failure again, and says so.
+        if (waiting && outcome === 'retrying') jobLogger.info(fields, 'job waiting');
+        else jobLogger.warn(fields, 'job failed');
       } catch (recordError) {
         // Losing the claim here is expected after a lease recovery; anything else is a bug.
         jobLogger.error({ err: recordError }, 'could not record job failure');
