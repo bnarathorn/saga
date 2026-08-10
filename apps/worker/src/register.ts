@@ -75,8 +75,11 @@ export function registerHandlers(ctx: WorkerContext): void {
   ctx.handlers.register(
     createRelationInferenceHandler({
       relations: ctx.services.relations,
-      // A third of the lease, floored so a very short lease cannot spin the timer.
-      renewalIntervalMs: Math.max(5_000, (ctx.config.worker.jobLeaseSeconds * 1_000) / 3),
+      // A third of the lease, so two consecutive missed ticks still leave the claim alive. The
+      // floor only stops a pathological lease spinning the timer, and has to stay well under
+      // that third: a floor of 5 s made the interval *half* a 10 s lease, turning the margin
+      // this interval exists to provide into one missed tick.
+      renewalIntervalMs: Math.max(1_000, (ctx.config.worker.jobLeaseSeconds * 1_000) / 3),
     }),
   );
   ctx.handlers.register(createSessionReaperHandler({ sessions: ctx.services.sessions }));
