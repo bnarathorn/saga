@@ -218,7 +218,9 @@ export class LinkRepository {
    *
    * Deleting it instead would last exactly until the next publish: the job re-runs over the
    * same entries, the model proposes the same relation, and nothing remembers that somebody
-   * already said no. The row is what `insertInferred`'s `ON CONFLICT DO NOTHING` collides with.
+   * already said no. The row is what `insertInferred` collides with — and neither half of it
+   * revives a tombstone: the model's insert does nothing at all, and the deterministic one
+   * promotes `proposed` only. `create()` is the single way back, which is a person's decision.
    */
   async reject(tx: Queryable, id: string): Promise<MemoryLink | null> {
     const result = await tx.query<{ id: string }>(

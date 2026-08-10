@@ -38,6 +38,11 @@ export function presence(agent: { live: boolean; work_item_id: string | null }):
   return { tone: 'good', label: 'live' };
 }
 
+function PresenceBadge({ agent }: { agent: { live: boolean; work_item_id: string | null } }) {
+  const { tone, label } = presence(agent);
+  return <Badge tone={tone}>{label}</Badge>;
+}
+
 export function PartyPage() {
   const { projectRef = '' } = useParams();
 
@@ -107,7 +112,7 @@ export function PartyPage() {
                   {/* The instance id, not `client`: every MCP agent connects as the same client,
                       so two agents in one folder would otherwise be one indistinguishable row. */}
                   <span className="font-medium">{agent.agent_instance_id}</span>
-                  <Badge tone={presence(agent).tone}>{presence(agent).label}</Badge>
+                  <PresenceBadge agent={agent} />
                   <Badge tone="neutral">{agent.state}</Badge>
                   {agent.workspace_label !== null && (
                     <span className="break-all font-mono text-xs text-ink-500 dark:text-parchment-300/60">

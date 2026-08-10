@@ -213,7 +213,17 @@ describe('deterministic relations', () => {
     expect(outcome.confirmed).toBe(1);
     const graph = await links.listForProject(pool, project.id);
     expect(graph).toHaveLength(1);
-    expect(graph[0]).toMatchObject({ relation: 'relates_to', state: 'confirmed' });
+    // Promoted in place, not re-inserted: who suggested the relation stays true once something
+    // agrees with it, exactly as `confirm()` keeps `source` when a person accepts a proposal.
+    // Rewriting `source` here would also break `memory_links_confidence_source`, which allows a
+    // confidence only on a model row.
+    expect(graph[0]).toMatchObject({
+      relation: 'relates_to',
+      state: 'confirmed',
+      source: 'model',
+      confidence: 0.6,
+      rationale: 'They look related.',
+    });
     expect(await links.listForProject(pool, project.id, 'proposed')).toEqual([]);
   });
 
