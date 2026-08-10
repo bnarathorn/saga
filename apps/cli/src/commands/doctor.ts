@@ -265,9 +265,14 @@ export async function doctorCommand(argv: string[]): Promise<number> {
 /**
  * Report the session policy on disk, worst state first.
  *
- * An unterminated marker outranks a stale block, which outranks an absent one: the first is the
+ * An unterminated marker outranks a stale block, which outranks a missing one: the first is the
  * only state `saga connect` refuses to repair by itself, so it is the only one that needs the
  * user to do something other than re-run the command.
+ *
+ * Every file has to carry it, not merely one of them. The two exist because different hosts read
+ * different files — Claude Code reads CLAUDE.md and Codex reads AGENTS.md — so an `ok` earned by
+ * the other one still leaves a whole host with no policy, which is the exact failure this check
+ * was added to catch.
  */
 function sessionPolicyCheck(files: readonly AgentInstructionsFile[]): Check {
   const named = (state: AgentInstructionsState): string =>
@@ -292,11 +297,14 @@ function sessionPolicyCheck(files: readonly AgentInstructionsFile[]): Check {
       action: 'Run `saga connect` to refresh the block.',
     };
   }
-  if (named('current') === '') {
+  if (named('absent') !== '') {
+    const partial = named('current') !== '';
     return {
       name: 'session policy',
       status: 'warning',
-      message: 'No instruction file carries the Saga session policy.',
+      message: partial
+        ? `${named('absent')} does not carry the Saga session policy, though ${named('current')} does.`
+        : 'No instruction file carries the Saga session policy.',
       action:
         'Run `saga connect` to write it. An agent whose host ignores the MCP `instructions` ' +
         'string has nothing else to read.',

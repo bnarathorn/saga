@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -351,6 +352,26 @@ describe('saga doctor', () => {
     expect(policy?.status).toBe('warning');
     expect(policy?.message).toContain('No instruction file');
     // MCP still carries the policy to every host that surfaces it, so this cannot fail CI.
+    expect(code).toBe(0);
+  });
+
+  it('warns when only one instruction file carries the policy, since each serves its own host', async () => {
+    stubFetch(doctorRoutes);
+    await connectCommand(['--server', SERVER]);
+    // Claude Code reads CLAUDE.md and nothing else; an ok earned by AGENTS.md would leave it
+    // with no policy at all, which is the failure this check exists to catch.
+    rmSync(join(root, 'CLAUDE.md'));
+    stdout = '';
+
+    const code = await doctorCommand(['--json']);
+
+    const report = JSON.parse(stdout) as {
+      checks: { name: string; status: string; message: string }[];
+    };
+    const policy = report.checks.find((check) => check.name === 'session policy');
+    expect(policy?.status).toBe('warning');
+    expect(policy?.message).toContain('CLAUDE.md');
+    expect(policy?.message).toContain('AGENTS.md');
     expect(code).toBe(0);
   });
 
