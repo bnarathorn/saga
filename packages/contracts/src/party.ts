@@ -57,6 +57,14 @@ export const agentRunSchema = z.object({
   /** Derived from `lease_expires_at > now()`, not from `state` alone. */
   live: z.boolean(),
   heartbeat_at: nullableIsoTimestampSchema,
+  /**
+   * When the agent last called a Saga tool. `heartbeat_at` says a process is alive; this says
+   * work is moving, which is a different question and the one Guild Hall could not answer.
+   * Null on a run that has never reported one — unknown, not silent.
+   */
+  last_activity_at: nullableIsoTimestampSchema,
+  /** The tool called then, for a board that wants to say what the agent is doing. */
+  last_activity: z.string().nullable(),
   lease_expires_at: nullableIsoTimestampSchema,
   started_at: isoTimestampSchema,
   ended_at: nullableIsoTimestampSchema,
@@ -77,6 +85,12 @@ export const heartbeatRequestSchema = z.object({
   work_item_id: uuidSchema.nullable().optional(),
   /** Renews eligible claims alongside the run lease. */
   renew_claims: z.boolean().optional(),
+  /**
+   * The Saga tool the agent has just called, when this beat follows one. Omitted on a plain
+   * keep-alive, which is what lets an ageing `last_activity_at` mean silence rather than a gap
+   * in reporting. The caller reports it; the server never infers activity from a heartbeat.
+   */
+  activity: z.string().min(1).max(100).optional(),
 });
 export type HeartbeatRequest = z.infer<typeof heartbeatRequestSchema>;
 

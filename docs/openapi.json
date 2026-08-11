@@ -29024,6 +29024,19 @@
                           ],
                           "format": "date-time"
                         },
+                        "last_activity_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "last_activity": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "lease_expires_at": {
                           "type": [
                             "string",
@@ -29054,6 +29067,8 @@
                         "state",
                         "live",
                         "heartbeat_at",
+                        "last_activity_at",
+                        "last_activity",
                         "lease_expires_at",
                         "started_at",
                         "ended_at"
@@ -29638,6 +29653,11 @@
                   },
                   "renew_claims": {
                     "type": "boolean"
+                  },
+                  "activity": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 }
               }
@@ -29707,6 +29727,19 @@
                           ],
                           "format": "date-time"
                         },
+                        "last_activity_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "last_activity": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "lease_expires_at": {
                           "type": [
                             "string",
@@ -29737,6 +29770,8 @@
                         "state",
                         "live",
                         "heartbeat_at",
+                        "last_activity_at",
+                        "last_activity",
                         "lease_expires_at",
                         "started_at",
                         "ended_at"
@@ -32770,6 +32805,19 @@
                             ],
                             "format": "date-time"
                           },
+                          "last_activity_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "last_activity": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "lease_expires_at": {
                             "type": [
                               "string",
@@ -32971,6 +33019,8 @@
                           "state",
                           "live",
                           "heartbeat_at",
+                          "last_activity_at",
+                          "last_activity",
                           "lease_expires_at",
                           "started_at",
                           "ended_at",
@@ -49553,6 +49603,19 @@
                           ],
                           "format": "date-time"
                         },
+                        "last_activity_at": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "last_activity": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "lease_expires_at": {
                           "type": [
                             "string",
@@ -49583,6 +49646,8 @@
                         "state",
                         "live",
                         "heartbeat_at",
+                        "last_activity_at",
+                        "last_activity",
                         "lease_expires_at",
                         "started_at",
                         "ended_at"
@@ -50678,6 +50743,19 @@
                             ],
                             "format": "date-time"
                           },
+                          "last_activity_at": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "last_activity": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
                           "lease_expires_at": {
                             "type": [
                               "string",
@@ -50708,6 +50786,8 @@
                           "state",
                           "live",
                           "heartbeat_at",
+                          "last_activity_at",
+                          "last_activity",
                           "lease_expires_at",
                           "started_at",
                           "ended_at"

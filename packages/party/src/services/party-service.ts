@@ -110,11 +110,13 @@ export class PartyService {
     state?: 'active' | 'waiting';
     workItemId?: string | null;
     renewClaims?: boolean;
+    activity?: string;
   }): Promise<{ run: AgentRun; renewedClaims: number; overlaps: OverlapDto[] }> {
     const run = await this.deps.party.heartbeat(this.deps.pool, input.agentRunId, {
       state: input.state,
       workItemId: input.workItemId,
       leaseSeconds: this.deps.agentRunLeaseSeconds,
+      activity: input.activity,
     });
     if (run === null) {
       const existing = await this.deps.party.findRunById(this.deps.pool, input.agentRunId);

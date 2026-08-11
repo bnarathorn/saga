@@ -329,9 +329,15 @@ export class SagaClient {
     return this.request('GET', `/api/projects/${encodeURIComponent(projectRef)}/party/status`);
   }
 
-  async partyHeartbeat(runId: string, renewClaims = true): Promise<HeartbeatResponse> {
+  async partyHeartbeat(
+    runId: string,
+    renewClaims = true,
+    /** The tool the agent called since the last beat, when there was one. */
+    activity: string | null = null,
+  ): Promise<HeartbeatResponse> {
     return this.request('POST', `/api/party/runs/${runId}/heartbeat`, {
       renew_claims: renewClaims,
+      ...(activity === null ? {} : { activity }),
     });
   }
 

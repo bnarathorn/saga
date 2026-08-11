@@ -22,6 +22,15 @@ export interface HeartbeatOptions {
 
 export class SessionHeartbeat {
   private timer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * The tool called since the last beat, or `null` when nothing has happened.
+   *
+   * Reported once and then cleared, so `last_activity_at` on the server only moves when the
+   * agent actually did something. A beat that reported the previous call again would make an
+   * idle run indistinguishable from a busy one — which is the state this whole signal exists
+   * to separate, and exactly what `heartbeat_at` already fails to do.
+   */
+  private pendingActivity: string | null = null;
   private readonly intervalMs: number;
   private readonly start_: typeof setInterval;
   private readonly stop_: typeof clearInterval;
@@ -53,6 +62,17 @@ export class SessionHeartbeat {
     this.timer = null;
   }
 
+  /**
+   * Record that the agent just called a tool, to be reported on the next beat.
+   *
+   * Deliberately not a request of its own. The agent is mid-call when this runs, and spending
+   * a round trip on saying so would add latency to the very thing it is reporting; the timer is
+   * already going to the server within 30 seconds anyway.
+   */
+  noteActivity(tool: string): void {
+    this.pendingActivity = tool;
+  }
+
   /** Exposed for tests and for an immediate beat after a long call is known to have started. */
   async beat(): Promise<void> {
     const { agentRunId, sessionId } = this.session;
@@ -61,10 +81,15 @@ export class SessionHeartbeat {
       return;
     }
 
+    // Taken before the request and not restored on failure: a retry would report an old call as
+    // though it had just happened, and a stale activity time is worse than a missing one.
+    const activity = this.pendingActivity;
+    this.pendingActivity = null;
+
     try {
       // Renewing claims alongside the run lease is the point: a claim outliving its holder is
       // what makes another agent wait on a resource nobody is using.
-      if (agentRunId !== null) await this.client.partyHeartbeat(agentRunId, true);
+      if (agentRunId !== null) await this.client.partyHeartbeat(agentRunId, true, activity);
       if (sessionId !== null) await this.client.sessionHeartbeat(sessionId);
     } catch (error) {
       this.onError(

@@ -20,6 +20,8 @@ export function presentAgentRun(run: AgentRun, now: Date): AgentRunDto {
       run.leaseExpiresAt !== null &&
       run.leaseExpiresAt.getTime() > now.getTime(),
     heartbeat_at: toIso(run.heartbeatAt),
+    last_activity_at: toIso(run.lastActivityAt),
+    last_activity: run.lastActivity,
     lease_expires_at: toIso(run.leaseExpiresAt),
     started_at: toIsoRequired(run.startedAt),
     ended_at: toIso(run.endedAt),

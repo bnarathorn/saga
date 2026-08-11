@@ -31,8 +31,40 @@ describe('MCP session heartbeat', () => {
 
     // Renewing claims alongside the run is the point: a claim outliving its holder blocks
     // another agent on a resource nobody is using.
-    expect(client.partyHeartbeat).toHaveBeenCalledWith('run-1', true);
+    expect(client.partyHeartbeat).toHaveBeenCalledWith('run-1', true, null);
     expect(client.sessionHeartbeat).toHaveBeenCalledWith('session-1');
+  });
+
+  it('reports the tool the agent called, then stops reporting it', async () => {
+    // This is the whole background-progress signal: the agent composes nothing, the MCP server
+    // observes a dispatch and the timer carries it. Reporting it once is what makes an ageing
+    // `last_activity_at` mean silence — repeat it and an idle run looks busy for ever, which is
+    // the failure `heartbeat_at` already has.
+    const client = fakeClient();
+    const beat = new SessionHeartbeat(client as unknown as SagaClient, session());
+
+    beat.noteActivity('saga_search_lore');
+    await beat.beat();
+    await beat.beat();
+
+    expect(client.partyHeartbeat).toHaveBeenNthCalledWith(1, 'run-1', true, 'saga_search_lore');
+    expect(client.partyHeartbeat).toHaveBeenNthCalledWith(2, 'run-1', true, null);
+  });
+
+  it('does not resurrect an old tool call after a failed beat', async () => {
+    // A retry that replayed it would date the activity to the retry, not to the call, and a
+    // wrong timestamp here is worse than a missing one: it claims work that did not happen.
+    const client = fakeClient();
+    client.partyHeartbeat.mockRejectedValueOnce(new Error('connection reset'));
+    const beat = new SessionHeartbeat(client as unknown as SagaClient, session(), {
+      onError: () => {},
+    });
+
+    beat.noteActivity('saga_checkpoint');
+    await beat.beat();
+    await beat.beat();
+
+    expect(client.partyHeartbeat).toHaveBeenNthCalledWith(2, 'run-1', true, null);
   });
 
   it('beats on its own timer, because no Saga code runs between tool calls', () => {

@@ -147,10 +147,13 @@ one; its job is to hand the agent its Core Context.
 
 6. Create checkpoints at milestones and before context compaction, marking a plan step
    `in_progress` with `step_updates` when you start it and settling it when you finish it.
-7. Create one at least every 10 minutes while work continues, even when nothing has finished.
-   Guild Hall shows a Quest by when it last moved, and it cannot tell a long step from a dead
-   agent: an hour of silence from a working agent reads exactly like an hour of silence from a
-   crashed one. A checkpoint that only says what is being attempted is worth more than none.
+7. Do **not** checkpoint on a timer. Guild Hall used to need one, because a Quest that stopped
+   moving read exactly like an agent that had died, and the policy asked for a checkpoint every
+   ten minutes to rule that out. It no longer has to ask: the MCP server records each tool call
+   as it dispatches it and reports it on the next heartbeat, so `last_activity_at` on the agent
+   run answers "is work moving?" without the model composing anything. Party badges a run
+   holding a Quest as **working**, or **silent** once ten minutes pass with no tool call.
+   Checkpoint because something happened, not to prove you are alive.
 8. Use `saga_remember` only for durable project knowledge.
 9. Claim critical shared resources before risky operations.
 10. Refresh context when the project or parallel work changes materially.

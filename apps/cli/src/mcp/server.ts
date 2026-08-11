@@ -417,7 +417,7 @@ export const TOOLS: McpTool[] = [
   {
     name: 'saga_checkpoint',
     description:
-      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends — and at least every 10 minutes while work continues, even when nothing has finished yet, because a Quest that stops moving looks the same as an agent that died. Use step_updates to move the sub-tasks you declared with saga_plan_quest: in_progress when you start one, done when you finish it — settling the last one completes the Quest. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
+      'Record progress on the current Quest. Call at every milestone, before context compaction, when an important test finishes, before a risky operation, when work becomes blocked, and before the session ends. No timer: Saga reports your tool calls in the background, so Guild Hall separates a working agent from a stalled one without a checkpoint — call this because something happened worth recording, not to prove you are alive. Use step_updates to move the sub-tasks you declared with saga_plan_quest: in_progress when you start one, done when you finish it — settling the last one completes the Quest. Requires the expected Quest revision: a mismatch returns a conflict with the latest revision, and you must re-read before retrying.',
     inputSchema: z.object({
       kind: z.enum(['automatic', 'milestone', 'final_handoff']).default('automatic'),
       summary: z.string().min(1),

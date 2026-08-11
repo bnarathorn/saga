@@ -324,8 +324,14 @@ describe('server instructions', () => {
   // "At every milestone" is a judgement the agent makes, and an agent deep in one long step
   // decides it has not reached one — so the Quest stops moving in Guild Hall while the agent is
   // still alive. A wall-clock bound is the part that does not depend on that judgement.
-  it('bounds how long a working agent may go without checkpointing', () => {
-    expect(MCP_INSTRUCTIONS).toMatch(/at least every 10 minutes/);
+  it('asks for a checkpoint at milestones, not on a timer', () => {
+    // The policy used to demand one every ten minutes, purely so Guild Hall could tell a
+    // working agent from a dead one. The MCP server now reports each tool call on the
+    // heartbeat, so that question is answered without the agent stopping to compose anything —
+    // and a timer rule that outlived its reason would just be interruption for its own sake.
+    expect(MCP_INSTRUCTIONS).not.toMatch(/every 10 minutes/);
+    expect(MCP_INSTRUCTIONS).toMatch(/milestone/);
+    expect(MCP_INSTRUCTIONS).toMatch(/background/);
     expect(MCP_INSTRUCTIONS).toMatch(/in_progress/);
   });
 });

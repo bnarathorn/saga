@@ -90,6 +90,12 @@ export async function runMcpServer(clientName = 'saga-mcp'): Promise<void> {
       return toToolError(new Error(`Unknown tool: ${request.params.name}`));
     }
 
+    // A tool call is the one piece of progress this process can observe without asking the
+    // model anything. Recorded before the handler runs, not after, so a call that blocks for
+    // minutes still counts as activity the moment it starts — the long ones are exactly the
+    // stretches that used to look like silence.
+    heartbeat.noteActivity(tool.name);
+
     try {
       const parsed = tool.inputSchema.safeParse(request.params.arguments ?? {});
       if (!parsed.success) {

@@ -86,6 +86,7 @@ export function registerPartyRoutes(app: FastifyInstance, ctx: AppContext): void
       state: body.state,
       workItemId: body.work_item_id,
       renewClaims: body.renew_claims,
+      activity: body.activity,
     });
 
     // The durable session is kept alive alongside the live run.

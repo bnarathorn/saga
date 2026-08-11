@@ -77,7 +77,33 @@ describe('presence', () => {
       tone: 'neutral',
       label: 'idle',
     });
-    expect(presence({ live: true, work_item_id: 'w1' })).toEqual({ tone: 'good', label: 'live' });
+    expect(presence({ live: true, work_item_id: 'w1' })).toEqual({
+      tone: 'good',
+      label: 'working',
+    });
+  });
+
+  it('calls a run with recent tool activity working, and one without it silent', () => {
+    const now = Date.parse('2026-08-11T12:00:00Z');
+    const attached = { live: true, work_item_id: 'w1' };
+
+    expect(presence({ ...attached, last_activity_at: '2026-08-11T11:59:00Z' }, now)).toMatchObject({
+      label: 'working',
+    });
+    // Eleven minutes. This is the state a checkpoint-on-a-timer used to exist to rule out.
+    expect(presence({ ...attached, last_activity_at: '2026-08-11T11:49:00Z' }, now)).toMatchObject({
+      label: 'silent',
+      tone: 'warn',
+    });
+  });
+
+  it('does not accuse an older CLI of silence it cannot disprove', () => {
+    // A run from a build that never reports activity has `last_activity_at` null. Unknown is
+    // not the same as silent, and badging it "silent" would libel every agent mid-rollout.
+    expect(presence({ live: true, work_item_id: 'w1', last_activity_at: null })).toMatchObject({
+      label: 'working',
+    });
+    expect(presence({ live: true, work_item_id: 'w1' })).toMatchObject({ label: 'working' });
   });
 
   it('still reports an expired lease as expired, whether or not a Quest was attached', () => {
@@ -150,7 +176,7 @@ describe('Party page', () => {
     renderParty();
 
     expect(await screen.findByText('idle')).toBeInTheDocument();
-    expect(screen.getByText('live')).toBeInTheDocument();
+    expect(screen.getByText('working')).toBeInTheDocument();
     // Counted all the same: it is present, and hiding it would lose the coordination signal.
     expect(screen.getByText('No Quest attached yet')).toBeInTheDocument();
   });

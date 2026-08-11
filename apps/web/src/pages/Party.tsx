@@ -29,14 +29,34 @@ const SEVERITY_TONE: Record<string, BadgeTone> = {
  * (`PartyRepository.attachQuest`) and null until then — so an idle run is named as idle here and
  * still counted, because it is genuinely present.
  */
-export function presence(agent: { live: boolean; work_item_id: string | null }): {
+export function presence(
+  agent: { live: boolean; work_item_id: string | null; last_activity_at?: string | null },
+  now: number = Date.now(),
+): {
   tone: BadgeTone;
   label: string;
 } {
   if (!agent.live) return { tone: 'warn', label: 'lease expired' };
   if (agent.work_item_id === null) return { tone: 'neutral', label: 'idle' };
-  return { tone: 'good', label: 'live' };
+
+  const last = agent.last_activity_at ?? null;
+  // Absent means an older CLI that never reports activity, so it stays "working" rather than
+  // being accused of silence it has no way to disprove.
+  if (last !== null && now - new Date(last).getTime() > SILENT_AFTER_MS) {
+    return { tone: 'warn', label: 'silent' };
+  }
+  return { tone: 'good', label: 'working' };
 }
+
+/**
+ * How long a run may hold a Quest without calling a tool before the board says so.
+ *
+ * Ten minutes because that is what the session policy used to demand a checkpoint within, and
+ * the reason it demanded one was this exact question — a Quest that stopped moving looked like
+ * an agent that had died. Answering it from tool dispatch instead costs the agent nothing: it
+ * is observed by the CLI, not composed by the model.
+ */
+const SILENT_AFTER_MS = 10 * 60_000;
 
 function PresenceBadge({ agent }: { agent: { live: boolean; work_item_id: string | null } }) {
   const { tone, label } = presence(agent);

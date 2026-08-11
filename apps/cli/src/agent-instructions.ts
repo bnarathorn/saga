@@ -29,10 +29,11 @@ export const MCP_INSTRUCTIONS =
   'When that Quest has completed and the user asks for something else, call saga_activate_task ' +
   'again — new work becomes a new Quest in the same session. Reopen the finished one with ' +
   'saga_reopen_quest only when it was closed by mistake.\n' +
-  'Call saga_checkpoint at every milestone, before context compaction, and at least every 10 ' +
-  'minutes while you are still working — say what you are doing even when nothing has ' +
-  'finished, because a Quest that has not moved for longer is indistinguishable in Guild Hall ' +
-  'from an agent that died. Claim shared resources with saga_claim_resource before risky ' +
+  'Call saga_checkpoint at every milestone, before context compaction, when an important test ' +
+  'finishes, before a risky operation and when work becomes blocked. You do not need one on a ' +
+  'timer: Saga watches your tool calls in the background, so Guild Hall can already tell a ' +
+  'working agent from a stalled one without interrupting you. Checkpoint because something ' +
+  'happened worth recording. Claim shared resources with saga_claim_resource before risky ' +
   'operations. Record durable knowledge with saga_remember — never transient state, never ' +
   'credentials.\n' +
   'Call saga_end_session with a final handoff before you stop, so the next session can continue.';

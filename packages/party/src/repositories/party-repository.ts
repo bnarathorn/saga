@@ -20,6 +20,10 @@ export interface AgentRun {
   workspaceLabel: string | null;
   state: AgentRunState;
   heartbeatAt: Date | null;
+  /** When the agent last called a Saga tool, as distinct from when its timer last beat. */
+  lastActivityAt: Date | null;
+  /** The tool it called then. Null on a run that has never reported one. */
+  lastActivity: string | null;
   leaseExpiresAt: Date | null;
   startedAt: Date;
   endedAt: Date | null;
@@ -64,14 +68,16 @@ interface RunRow {
   workspace_label: string | null;
   state: string;
   heartbeat_at: Date | null;
+  last_activity_at: Date | null;
+  last_activity: string | null;
   lease_expires_at: Date | null;
   started_at: Date;
   ended_at: Date | null;
 }
 
 const RUN_COLUMNS = `id, project_id, session_id, work_item_id, agent_instance_id, client,
-                     workspace_key, workspace_label, state, heartbeat_at, lease_expires_at,
-                     started_at, ended_at`;
+                     workspace_key, workspace_label, state, heartbeat_at, last_activity_at,
+                     last_activity, lease_expires_at, started_at, ended_at`;
 
 function toRun(row: RunRow): AgentRun {
   return {
@@ -85,6 +91,8 @@ function toRun(row: RunRow): AgentRun {
     workspaceLabel: row.workspace_label,
     state: row.state as AgentRunState,
     heartbeatAt: row.heartbeat_at,
+    lastActivityAt: row.last_activity_at,
+    lastActivity: row.last_activity,
     leaseExpiresAt: row.lease_expires_at,
     startedAt: row.started_at,
     endedAt: row.ended_at,
@@ -198,7 +206,13 @@ export class PartyRepository {
   async heartbeat(
     q: Queryable,
     id: string,
-    input: { state?: 'active' | 'waiting'; workItemId?: string | null; leaseSeconds: number },
+    input: {
+      state?: 'active' | 'waiting';
+      workItemId?: string | null;
+      leaseSeconds: number;
+      /** The tool the agent just called. Absent on a plain keep-alive beat. */
+      activity?: string;
+    },
   ): Promise<AgentRun | null> {
     const assignments = [
       'heartbeat_at = now()',
@@ -212,6 +226,12 @@ export class PartyRepository {
     if (input.workItemId !== undefined) {
       values.push(input.workItemId);
       assignments.push(`work_item_id = $${values.length}`);
+    }
+    // Only a reported tool call moves the activity clock. A beat that carries nothing leaves it
+    // where it was, which is the whole point: silence has to be visible as an ageing timestamp.
+    if (input.activity !== undefined) {
+      values.push(input.activity);
+      assignments.push(`last_activity = $${values.length}`, 'last_activity_at = now()');
     }
 
     const result = await q.query<RunRow>(
