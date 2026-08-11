@@ -181,6 +181,46 @@ describe('section building', () => {
     expect(built.rendered).not.toContain('run.api.stale');
   });
 
+  it('ranks a stale entry below every fresh one, whatever its importance', () => {
+    // Core context carries stale entries so an agent can judge them, which is only safe while
+    // they cannot displace a claim nobody doubts. Importance is deliberately the weaker key:
+    // the entries an evidence check flags are usually the important ones.
+    const ordered = orderEntries([
+      entry({ memoryKey: 'stale.critical', importance: 92, state: 'stale', staleReason: 'moved' }),
+      entry({ memoryKey: 'fresh.minor', importance: 10 }),
+    ]);
+    expect(ordered.map((item) => item.memoryKey)).toEqual(['fresh.minor', 'stale.critical']);
+  });
+
+  it('spends the budget on fresh entries first and trims stale ones away', () => {
+    const long = 'word '.repeat(220);
+    const built = buildSections({
+      items: [
+        entry({
+          memoryKey: 'stale.important',
+          category: 'running',
+          importance: 95,
+          state: 'stale',
+          staleReason: 'moved',
+          currentVersion: { body: long } as MemoryItemWithVersion['currentVersion'],
+        }),
+        entry({
+          memoryKey: 'fresh.ordinary',
+          category: 'running',
+          importance: 20,
+          currentVersion: { body: long } as MemoryItemWithVersion['currentVersion'],
+        }),
+      ],
+      specs: CORE_SECTIONS,
+      tokenBudget: 400,
+      includeStale: true,
+    });
+
+    expect(built.rendered).toContain('fresh.ordinary');
+    expect(built.rendered).not.toContain('stale.important');
+    expect(built.omitted).toContain('stale.important');
+  });
+
   it('labels a stale entry explicitly when it is included', () => {
     const withStale = [
       entry({

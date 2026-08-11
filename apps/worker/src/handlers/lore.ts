@@ -354,6 +354,14 @@ export function createContextSnapshotHandler(deps: ContextSnapshotDeps): JobHand
           items,
           specs: CORE_SECTIONS,
           tokenBudget: deps.coreContextTokens,
+          // A stale entry is knowledge somebody has been asked to re-check, not knowledge that
+          // is wrong, so it is carried under a `STALE — <reason>` label rather than hidden.
+          // Dropping it made every false alarm cost the entry's place in the context each
+          // session reads first: one evidence check flagged the nine highest-ranked entries in
+          // this project and emptied the top of core context, and an agent that cannot see an
+          // entry cannot judge it either. `orderEntries` puts every stale entry below every
+          // fresh one, so they take only leftover budget and are trimmed first.
+          includeStale: true,
         });
 
         const snapshot = await deps.snapshots.createReady(tx, {

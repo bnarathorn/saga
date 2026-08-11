@@ -79,11 +79,22 @@ const VERIFICATION_RANK = { verified: 0, observed: 1, inferred: 2 } as const;
 
 /**
  * Deterministic ordering within a section:
- *   importance desc, verification rank asc, recency desc, memory key asc.
+ *   fresh before stale, importance desc, verification rank asc, recency desc, memory key asc.
  * The final key makes the order total, so the same inputs always render byte-identically.
+ *
+ * Stale outranks importance deliberately. A stale entry is a claim somebody has been asked to
+ * re-check, so it must never take budget from a claim nobody doubts, however important it once
+ * was. That is what makes it safe to carry stale entries in core context at all: they land in
+ * whatever room is left and are the first thing trimmed, so a false alarm costs a label and a
+ * demotion rather than the entry's place. The alternative — dropping them — was measured: one
+ * `saga check-evidence` run flagged nine entries and silently emptied the top of core context,
+ * five of the nine being files that had changed in a region the entry never described.
  */
 export function orderEntries(items: readonly MemoryItemWithVersion[]): MemoryItemWithVersion[] {
   return [...items].sort((a, b) => {
+    const staleA = a.state === 'stale' ? 1 : 0;
+    const staleB = b.state === 'stale' ? 1 : 0;
+    if (staleA !== staleB) return staleA - staleB;
     if (a.importance !== b.importance) return b.importance - a.importance;
     const rankA = VERIFICATION_RANK[a.currentVersion?.verificationState ?? 'inferred'];
     const rankB = VERIFICATION_RANK[b.currentVersion?.verificationState ?? 'inferred'];
@@ -99,7 +110,11 @@ export interface BuildSectionsInput {
   items: readonly MemoryItemWithVersion[];
   specs: readonly SectionSpec[];
   tokenBudget: number;
-  /** Stale entries are excluded from ordinary core context unless explicitly allowed. */
+  /**
+   * Carry entries marked stale, ranked below every fresh one by `orderEntries` and labelled by
+   * `renderSections`. Off by default so a caller that wants only unquestioned knowledge — a
+   * digest, an export — still gets it.
+   */
   includeStale?: boolean;
 }
 
