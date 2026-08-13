@@ -159,9 +159,10 @@ export async function checkEvidenceCommand(argv: string[]): Promise<number> {
   report.marked_stale = [...new Set(report.marked_stale)].sort();
   if (report.marked_stale.length > 0) {
     report.notes.push(
-      'A stale entry drops out of Core Context — the context every session reads first — until ' +
-        'it is re-recorded. It is still searched, and still shown in task context under a STALE ' +
-        'label, so nothing is lost. Re-record it with saga_remember to put it back.',
+      'A stale entry keeps its place in Core Context but loses its rank: it is ordered below ' +
+        'every fresh entry, labelled STALE with its reason, and is the first thing trimmed when ' +
+        'the budget runs out. It is still searched, and still shown in task context under the ' +
+        'same label. Re-record it with saga_remember to clear the flag.',
     );
   }
   // Drift is the answer, not a failure: an entry going stale is this command working.
