@@ -367,6 +367,7 @@ its lease cannot overwrite the replacement worker's result.
 | `event_projection`   | Repair gaps in the Shrine feed (see below)           |
 | `session_reaper`     | Mark silent sessions abandoned                       |
 | `party_reaper`       | Expire agent runs and release their claims           |
+| `quest_plan_sweeper` | Complete a Quest whose plan is finished, no session  |
 | `cleanup`            | Retention                                            |
 | `noop`               | A deterministic probe for operators                  |
 
