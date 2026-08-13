@@ -39,9 +39,11 @@ export default defineConfig({
           hookTimeout: 60_000,
           testTimeout: 60_000,
           // One fork for the whole project: these suites truncate shared tables between
-          // tests, so two files running at once would wipe each other's fixtures.
+          // tests, so two files running at once would wipe each other's fixtures. A single
+          // fork runs its files one after another, which is the whole guarantee. Do not add
+          // `fileParallelism: false` next to this — it is a root-only option, so on a project
+          // it fails the typecheck and is dropped before the run ever sees it.
           poolOptions: { forks: { singleFork: true } },
-          fileParallelism: false,
         },
       },
       {
@@ -54,9 +56,11 @@ export default defineConfig({
           hookTimeout: 60_000,
           testTimeout: 60_000,
           // One fork for the whole project: these suites truncate shared tables between
-          // tests, so two files running at once would wipe each other's fixtures.
+          // tests, so two files running at once would wipe each other's fixtures. A single
+          // fork runs its files one after another, which is the whole guarantee. Do not add
+          // `fileParallelism: false` next to this — it is a root-only option, so on a project
+          // it fails the typecheck and is dropped before the run ever sees it.
           poolOptions: { forks: { singleFork: true } },
-          fileParallelism: false,
         },
       },
       './apps/web/vite.config.ts',

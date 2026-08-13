@@ -647,11 +647,16 @@ async function main(): Promise<number> {
     );
     check('releasing a claim frees the resource', released.body.claim.state === 'released');
 
-    const afterRelease = await api.post<{ claim: { state: string } }>('/api/party/claims', {
-      ...claimBody,
-      agent_run_id: agentB.body.agent_run_id,
-      work_item_id: questB.body.quest.id,
-    });
+    // `claim` is optional because the body is whatever came back: a conflict answers with an
+    // error envelope and no claim at all, which is exactly what the guards below defend against.
+    const afterRelease = await api.post<{ claim?: { id: string; state: string } }>(
+      '/api/party/claims',
+      {
+        ...claimBody,
+        agent_run_id: agentB.body.agent_run_id,
+        work_item_id: questB.body.quest.id,
+      },
+    );
     check(
       'the other agent can now take the resource',
       afterRelease.body.claim?.state === 'active',
@@ -659,7 +664,7 @@ async function main(): Promise<number> {
     );
 
     const revoked = await api.post<{ claim: { state: string } }>(
-      `/api/party/claims/${afterRelease.body.claim === undefined ? 'missing' : (afterRelease.body as { claim: { id: string } }).claim.id}/revoke`,
+      `/api/party/claims/${afterRelease.body.claim?.id ?? 'missing'}/revoke`,
       { reason: 'verification run', confirm: true },
     );
     check(
