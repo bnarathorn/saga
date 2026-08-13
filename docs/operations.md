@@ -590,13 +590,21 @@ It reads the project's active entries, hashes each evidence path it finds under 
 root, and posts the observations. Entries whose evidence moved come back stale, named, with the
 file that changed.
 
-**Marking an entry stale takes it out of Core Context.** `buildSections` filters `state === 'stale'`
-unless asked otherwise, and the `context_snapshot` job does not ask, so a stale entry disappears
-from the context every session reads first. It is still returned by search — down-ranked, with a
-warning on the response — and still appears in task context carrying a `STALE — <reason>` label,
-so nothing is lost. But the entry is out of the front page until somebody re-records it, and on a
-project whose Lore is ranked by importance that can be most of the top of the list at once. Run
-this when you are able to act on what it finds.
+**Marking an entry stale demotes it in Core Context rather than removing it.** `buildSections`
+takes `includeStale`, and the `context_snapshot` job asks for it, so the entry stays in the
+context every session reads first — but `orderEntries` sorts fresh before stale ahead of
+importance, so it lands below every unquestioned claim, renders under a `STALE — <reason>` label,
+and is the first thing dropped when the section runs out of budget. It is still returned by
+search — down-ranked, with a warning on the response — and still appears in task context under
+the same label.
+
+That ordering is the point: a claim somebody has been asked to re-check must never take budget
+from a claim nobody doubts, however important it once was. It is also what makes this command
+cheap to run. Dropping stale entries outright was the previous behaviour and was measured — one
+run flagged nine entries and silently emptied the top of core context, five of the nine being
+files that had changed in a region the entry never described. An agent that cannot see an entry
+cannot judge it either, which is the wrong way round for a flag whose whole purpose is to ask
+somebody to look.
 
 Three things it deliberately does **not** do. A path that resolves outside the workspace is
 never read, because evidence is written by whoever recorded the entry and is not trusted input.
