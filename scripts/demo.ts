@@ -293,16 +293,23 @@ async function main(): Promise<number> {
   detail('blockers', resumed.context.continuation?.blockers.map((b) => b.description) ?? []);
 
   heading('Start another agent on another Quest, in the same folder');
+  // A second agent means a second session, and in real use that is a second process with a
+  // context of its own. Here both live in one process, so this one is built field by field
+  // rather than spread from the first: `openSession` memoises the in-flight call on
+  // `session.opening`, and a spread carried that settled promise across, so the second
+  // `saga_start_session` returned the first agent's session without ever opening its own and
+  // left `sessionId` null for everything after it.
   const second: McpToolContext = {
     ...context,
     client: new SagaClient({ baseUrl: BASE_URL, token: token.body.raw_token, client: 'codex' }),
     session: {
-      ...context.session,
       sessionId: null,
       agentRunId: null,
       questId: null,
       questRevision: 0,
+      projectRef: context.session.projectRef,
       client: 'codex',
+      bootstrapRequired: false,
     },
   };
   await tool('saga_start_session').handler({ agent: 'codex' }, second);

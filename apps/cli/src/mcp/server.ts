@@ -33,6 +33,11 @@ export interface McpSession {
    * A promise rather than the response, because `initialize` and the agent's own
    * `saga_start_session` can both reach `openSession` before either finishes; two checks of a
    * settled value would open two sessions for one agent. See `openSession`.
+   *
+   * It belongs to one agent and must never be copied onto another's session. Building a second
+   * session by spreading the first carries this promise across, and `openSession` then hands
+   * back the first agent's response without opening anything — leaving `sessionId` null for
+   * every call that follows. `scripts/demo.ts` did exactly that.
    */
   opening?: Promise<StartSessionResponse> | null;
 }
