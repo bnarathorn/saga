@@ -104,25 +104,39 @@ pnpm exec tsx scripts/verify.ts   # 78 assertions across every slice
 pnpm demo                          # the full section-25 demonstration
 ```
 
-Both scripts write, so `scripts/verify.ts` refuses a target whose `/health/ready` reports
-`environment: production`, and refuses any server old enough not to report an environment at
-all. That check exists because the default target is a port rather than a deployment:
-`SAGA_API_PORT` is 4319 in a developer's `.env` and 4319 in the systemd reference deployment
-too, so on a host running both, a verification with no stack up reached production, signed in
-as the bootstrap administrator and left three projects behind. Point `SAGA_VERIFY_URL` at the
-stack you mean; `SAGA_VERIFY_ALLOW_PRODUCTION=1` overrides the refusal deliberately.
+Both scripts write, and both share `scripts/lib/live-target.ts`, which resolves the target and
+the credentials for each of them from one definition.
 
-The administrator password is **not** required in `.env`. `scripts/verify.ts` takes
-`SAGA_VERIFY_ADMIN_PASSWORD` for a deliberate inline or CI run, falls back to
-`SAGA_BOOTSTRAP_ADMIN_PASSWORD` for anyone who does keep it there, and otherwise prompts on the
-terminal with the echo turned off. Without a TTY it says which variable to set rather than
-hanging. `SAGA_VERIFY_ADMIN_EMAIL` overrides the account the same way. A credential sitting on
-disk next to `SAGA_API_PORT` is half of what made the 2026-08-13 run possible — the guard stops
-it reaching production, and this stops the password being there for the next one.
+Both therefore refuse a target whose `/health/ready` reports `environment: production`, and
+refuse any server old enough not to report an environment at all. That check exists because
+the default target is a port rather than a deployment: `SAGA_API_PORT` is 4319 in a
+developer's `.env` and 4319 in the systemd reference deployment too, so on a host running
+both, a verification with no stack up reached production, signed in as the bootstrap
+administrator and left three projects behind. Point `SAGA_VERIFY_URL` at the stack you mean;
+`SAGA_VERIFY_ALLOW_PRODUCTION=1` overrides the refusal deliberately.
 
-The verification now archives every project it creates, in a `finally` so a run that threw
+The administrator password is **not** required in `.env` by either script.
+`SAGA_VERIFY_ADMIN_PASSWORD` comes first, for a deliberate inline or CI run; then
+`SAGA_BOOTSTRAP_ADMIN_PASSWORD`, for anyone who does keep it there; otherwise they prompt on
+the terminal with the echo turned off. Without a TTY they say which variable to set rather
+than hanging. `SAGA_VERIFY_ADMIN_EMAIL` overrides the account the same way. A credential
+sitting on disk next to `SAGA_API_PORT` is half of what made the 2026-08-13 run possible — the
+guard stops it reaching production, and this stops the password being there for the next one.
+
+`SAGA_BOOTSTRAP_ADMIN_PASSWORD` still has one real job: the server creates the bootstrap
+administrator at startup only when the email and password are both set, so a **fresh**
+database needs it for one boot. Pass it inline for that boot rather than leaving it in the
+file.
+
+The helpers in `live-target.ts` are functions rather than module-level constants on purpose.
+Imports are evaluated before the importing module's body, so a constant would read
+`process.env` before the caller's `loadDotEnv()` had populated it.
+
+The verification archives every project it creates, in a `finally` so a run that threw
 half-way cleans up too. Archiving is as far as it can go — there is no delete endpoint, by
 design — so anything it created before this guard existed has to be removed in the database.
+`pnpm demo` does **not** clean up: its whole output is a project you are meant to go and look
+at in Guild Hall. That is the one behavioural difference left between the two scripts.
 
 `scripts/demo.ts` drives the **real MCP tool handlers** from a temporary plain folder with no
 version control — the same code path an agent takes through `saga mcp`. It found a real defect

@@ -7,21 +7,22 @@
  * It is intentionally independent of the test suite so it can also be run against a
  * deployed instance.
  */
-import { createInterface } from 'node:readline/promises';
-import { Writable } from 'node:stream';
 import { loadDotEnv } from '@saga/shared/dotenv';
 import { check, ScriptClient, section, summarize } from './lib/http-client.js';
+import {
+  assertDisposableTarget,
+  resolveAdminEmail,
+  resolveAdminPassword,
+  resolveBaseUrl,
+} from './lib/live-target.js';
 
 loadDotEnv();
 
-const BASE_URL =
-  process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
-const ADMIN_EMAIL =
-  process.env.SAGA_VERIFY_ADMIN_EMAIL ??
-  process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ??
-  'admin@saga.local';
+const BASE_URL = resolveBaseUrl();
+const ADMIN_EMAIL = resolveAdminEmail();
 
-const ALLOW_PRODUCTION = process.env.SAGA_VERIFY_ALLOW_PRODUCTION === '1';
+/** What a run against production would leave behind, named in the refusal. */
+const LEAVES_BEHIND = 'projects, agent tokens and jobs that it can only archive, never remove';
 
 const unique = Date.now().toString(36);
 
@@ -30,82 +31,6 @@ const unique = Date.now().toString(36);
  * endpoint by design — archiving is what keeps them out of Guild Hall's project list.
  */
 const createdProjects: string[] = [];
-
-/**
- * Reads a secret without echoing it. `terminal: true` makes readline echo each keystroke to
- * its output, so the output here is a sink that forwards the prompt and then drops everything
- * — which is the echo.
- */
-async function readSecret(prompt: string): Promise<string> {
-  let muted = false;
-  const output = new Writable({
-    write(chunk: Buffer | string, encoding, callback) {
-      if (!muted) process.stdout.write(chunk, typeof chunk === 'string' ? encoding : undefined);
-      callback();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output, terminal: true });
-  try {
-    const answer = rl.question(prompt);
-    muted = true;
-    return await answer;
-  } finally {
-    rl.close();
-    process.stdout.write('\n');
-  }
-}
-
-/**
- * The administrator password is a credential, so this script does not require it to sit in
- * `.env`. A password on disk beside `SAGA_API_PORT` is what let an accidental run authenticate
- * against production on 2026-08-13; the guard below stops that run reaching production at all,
- * and this stops the credential being lying around for the next one.
- *
- * Order: `SAGA_VERIFY_ADMIN_PASSWORD` for a deliberate inline or CI run, then
- * `SAGA_BOOTSTRAP_ADMIN_PASSWORD` for anyone who does keep it in `.env`, then an interactive
- * prompt. Without a TTY there is nothing to prompt, so say what to set instead.
- */
-async function resolveAdminPassword(): Promise<string> {
-  const fromEnv =
-    process.env.SAGA_VERIFY_ADMIN_PASSWORD ?? process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
-  if (fromEnv.length > 0) return fromEnv;
-
-  if (!process.stdin.isTTY) {
-    throw new Error(
-      `No administrator password and no terminal to ask for one. Set ` +
-        `SAGA_VERIFY_ADMIN_PASSWORD for ${ADMIN_EMAIL} on ${BASE_URL}, or run this from a terminal.`,
-    );
-  }
-
-  const entered = await readSecret(`Password for ${ADMIN_EMAIL} on ${BASE_URL}: `);
-  if (entered.length === 0) throw new Error('No password entered.');
-  return entered;
-}
-
-/**
- * This script writes to whatever it is pointed at, and its default target is a port, not a
- * deployment: `SAGA_API_PORT` is 4319 in a developer's `.env` and 4319 in the systemd
- * reference deployment too. On a host running both, a verification with no stack up reaches
- * production, signs in with the bootstrap administrator and leaves its fixtures behind —
- * which is exactly what happened on 2026-08-13. The readiness probe names the deployment, so
- * refuse before the first write rather than after.
- */
-function assertDisposableTarget(readiness: { environment?: string }): void {
-  if (readiness.environment === undefined) {
-    throw new Error(
-      `${BASE_URL} does not report an environment on /health/ready, so this script cannot tell ` +
-        'a scratch stack from production. Update the server, or set ' +
-        'SAGA_VERIFY_ALLOW_PRODUCTION=1 if you accept that it will leave fixtures behind.',
-    );
-  }
-  if (readiness.environment === 'production' && !ALLOW_PRODUCTION) {
-    throw new Error(
-      `${BASE_URL} is a production deployment. This script creates projects, agent tokens and ` +
-        'jobs that it can only archive, never remove. Point SAGA_VERIFY_URL at a scratch stack, ' +
-        'or set SAGA_VERIFY_ALLOW_PRODUCTION=1 to override deliberately.',
-    );
-  }
-}
 
 /**
  * Best-effort teardown. Runs even when a check threw, because a half-finished run leaks just
@@ -138,12 +63,12 @@ async function verify(api: ScriptClient): Promise<void> {
   check('/health/live is ok', live.status === 200 && live.body.status === 'ok', live.body);
   const ready = await api.get<{ status: string; environment?: string }>('/health/ready');
   check('/health/ready reports ready', ready.body.status === 'ready', ready.body);
-  assertDisposableTarget(ready.body);
+  assertDisposableTarget(BASE_URL, ready.body, LEAVES_BEHIND);
   const anonymous = await api.get('/api/projects');
   check('anonymous callers are rejected', anonymous.status === 401, anonymous.body);
 
   section('Security — administrator login');
-  await api.login(ADMIN_EMAIL, await resolveAdminPassword());
+  await api.login(ADMIN_EMAIL, await resolveAdminPassword(BASE_URL, ADMIN_EMAIL));
   const me = await api.get<{ authenticated: boolean; user: { role: string } | null }>(
     '/api/auth/me',
   );
