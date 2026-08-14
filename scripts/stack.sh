@@ -11,13 +11,56 @@ mkdir -p "$RUN_DIR"
 
 api_port="${SAGA_API_PORT:-4319}"
 
+# Is this pid something this checkout started, and therefore something `down` may kill?
+#
+# The default API port is 4319 in a developer's `.env` and 4319 in the systemd reference
+# deployment as well, so on a host running both, `down` aims straight at the production
+# `saga-api`. It has never landed because that unit runs as another user and the `kill` fails —
+# which is luck, not a guard: the same command under `sudo`, or as the service user, would stop
+# production. Ownership is therefore checked rather than relied upon.
+#
+# Two questions, both of which must answer yes:
+#   - is the process ours? another user's process is never ours to stop;
+#   - was it started from this checkout? `start_one` cds to $ROOT, so a stack this script
+#     started has $ROOT as its cwd. A systemd unit lives under /system.slice and does not.
+owned_by_this_checkout() {
+  local pid="$1" owner cgroup cwd
+  owner="$(ps -o user= -p "$pid" 2>/dev/null | tr -d '[:space:]')"
+  [[ -n "$owner" && "$owner" == "$(id -un)" ]] || return 1
+  cgroup="$(cat "/proc/$pid/cgroup" 2>/dev/null || true)"
+  [[ "$cgroup" == *"/system.slice/"* ]] && return 1
+  # No /proc (non-Linux) leaves the cwd unknown; the ownership check above still stands.
+  cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+  [[ -z "$cwd" || "$cwd" == "$ROOT" ]]
+}
+
 # Kill whatever is listening on the API port. Used by `down` so an orphan from a crashed or
-# externally started run cannot keep answering health checks with stale code.
+# externally started run cannot keep answering health checks with stale code. It stops only
+# processes this checkout started — anything else is reported and left running.
 kill_port_holder() {
   local port="$1"
+  ss -ltnH "sport = :$port" 2>/dev/null | grep -q . || return 0
+
   local pids
   pids="$(ss -ltnpH "sport = :$port" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | sort -u || true)"
-  [[ -z "$pids" ]] && return 0
+  if [[ -z "$pids" ]]; then
+    # `ss` reports the pid only for sockets this user owns, so an unnamed holder is someone
+    # else's — the production unit, most likely. Say so instead of failing to bind later.
+    echo "port $port is held by a process this user cannot see, so it is not ours to stop." >&2
+    echo "Leaving it alone. Set SAGA_API_PORT to a port this checkout owns." >&2
+    return 0
+  fi
+
+  local pid
+  for pid in $pids; do
+    if ! owned_by_this_checkout "$pid"; then
+      echo "port $port is held by pid $pid ($(ps -o user= -p "$pid" 2>/dev/null | tr -d '[:space:]')," \
+        "$(ps -o args= -p "$pid" 2>/dev/null | cut -c1-60)), which this checkout did not start." >&2
+      echo "Leaving it alone. Set SAGA_API_PORT to a port this checkout owns." >&2
+      return 0
+    fi
+  done
+
   for pid in $pids; do
     echo "stopping stale process $pid holding port $port"
     kill -TERM "$pid" 2>/dev/null || true
@@ -35,6 +78,14 @@ stop_one() {
   if [[ -f "$pidfile" ]]; then
     local pid
     pid="$(cat "$pidfile")"
+    # A pidfile outlives the process it names, and the kernel reuses pids — so a stale file can
+    # name something else entirely by the time `down` reads it. The kill below signals the whole
+    # process group, which makes guessing wrong expensive.
+    if kill -0 "$pid" 2>/dev/null && ! owned_by_this_checkout "$pid"; then
+      echo "$pidfile names pid $pid, which this checkout did not start; leaving it alone" >&2
+      rm -f "$pidfile"
+      return 0
+    fi
     if kill -0 "$pid" 2>/dev/null; then
       # `setsid` makes the child a process-group leader, so signalling the negative pid
       # reaches the node process too. Killing only the pid would leave a grandchild holding
