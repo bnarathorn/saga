@@ -61,7 +61,7 @@ bundle. `eslint.config.js` enforces it. Types are fine.
 | `pnpm openapi:check`                    | Fails if `docs/openapi.json` is stale               |
 | `pnpm db:migrate` / `:status` / `:seed` | Schema management (`db:reset` is dev and test only) |
 | `scripts/stack.sh up`                   | Background API + worker                             |
-| `pnpm exec tsx scripts/verify.ts`       | 75 assertions against a live stack                  |
+| `pnpm exec tsx scripts/verify.ts`       | 78 assertions against a live stack                  |
 | `pnpm demo`                             | The full agent flow through the real MCP handlers   |
 
 Integration, API and e2e tests need `SAGA_TEST_DATABASE_URL` pointing at a database you are willing
@@ -126,7 +126,7 @@ Measured 2026-08-06, not copied forward — re-measure rather than trust this ta
 | `pnpm lint` / `typecheck`            | clean                      |
 | `pnpm openapi:check`                 | up to date (73 paths)      |
 | unit / integration / api / web / e2e | 488 / 136 / 152 / 139 / 8  |
-| `scripts/verify.ts`                  | 75/75 against a live stack |
+| `scripts/verify.ts`                  | 78/78 against a live stack |
 
 ---
 

@@ -1019,7 +1019,64 @@
         "description": "Checks database connectivity, schema version and required configuration.",
         "responses": {
           "200": {
-            "description": "Ready to serve."
+            "description": "Ready to serve.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "not_ready"
+                      ]
+                    },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "development",
+                        "test",
+                        "production"
+                      ],
+                      "description": "The deployment that answered. Local tooling that writes to the server reads this to refuse a production target.",
+                      "example": "production"
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "detail": {},
+                          "duration_ms": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status",
+                          "duration_ms"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "environment",
+                    "checks"
+                  ]
+                }
+              }
+            }
           },
           "401": {
             "description": "Authentication is required.",
@@ -1438,7 +1495,64 @@
             }
           },
           "503": {
-            "description": "Not ready."
+            "description": "Not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "not_ready"
+                      ]
+                    },
+                    "environment": {
+                      "type": "string",
+                      "enum": [
+                        "development",
+                        "test",
+                        "production"
+                      ],
+                      "description": "The deployment that answered. Local tooling that writes to the server reads this to refuse a production target.",
+                      "example": "production"
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "detail": {},
+                          "duration_ms": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "status",
+                          "duration_ms"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "environment",
+                    "checks"
+                  ]
+                }
+              }
+            }
           }
         }
       }

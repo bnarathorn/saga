@@ -18,6 +18,10 @@ export function registerHealthRoutes(app: FastifyInstance, ctx: AppContext): voi
     void reply.status(ready ? 200 : 503);
     return {
       status: ready ? ('ready' as const) : ('not_ready' as const),
+      // Which deployment answered, so a destructive local script can refuse a production
+      // target before it writes anything. `scripts/verify.ts` used to trust the port alone,
+      // and 127.0.0.1:4319 is the reference deployment's port as well as the dev default.
+      environment: ctx.config.nodeEnv,
       checks: report.checks.map((check) => ({
         name: check.name,
         status: check.status,

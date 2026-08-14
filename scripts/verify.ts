@@ -17,7 +17,56 @@ const BASE_URL =
 const ADMIN_EMAIL = process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ?? 'admin@saga.local';
 const ADMIN_PASSWORD = process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
 
+const ALLOW_PRODUCTION = process.env.SAGA_VERIFY_ALLOW_PRODUCTION === '1';
+
 const unique = Date.now().toString(36);
+
+/**
+ * Projects this run created, so it can archive them on the way out. There is no delete
+ * endpoint by design — archiving is what keeps them out of Guild Hall's project list.
+ */
+const createdProjects: string[] = [];
+
+/**
+ * This script writes to whatever it is pointed at, and its default target is a port, not a
+ * deployment: `SAGA_API_PORT` is 4319 in a developer's `.env` and 4319 in the systemd
+ * reference deployment too. On a host running both, a verification with no stack up reaches
+ * production, signs in with the bootstrap administrator and leaves its fixtures behind —
+ * which is exactly what happened on 2026-08-13. The readiness probe names the deployment, so
+ * refuse before the first write rather than after.
+ */
+function assertDisposableTarget(readiness: { environment?: string }): void {
+  if (readiness.environment === undefined) {
+    throw new Error(
+      `${BASE_URL} does not report an environment on /health/ready, so this script cannot tell ` +
+        'a scratch stack from production. Update the server, or set ' +
+        'SAGA_VERIFY_ALLOW_PRODUCTION=1 if you accept that it will leave fixtures behind.',
+    );
+  }
+  if (readiness.environment === 'production' && !ALLOW_PRODUCTION) {
+    throw new Error(
+      `${BASE_URL} is a production deployment. This script creates projects, agent tokens and ` +
+        'jobs that it can only archive, never remove. Point SAGA_VERIFY_URL at a scratch stack, ' +
+        'or set SAGA_VERIFY_ALLOW_PRODUCTION=1 to override deliberately.',
+    );
+  }
+}
+
+/**
+ * Best-effort teardown. Runs even when a check threw, because a half-finished run leaks just
+ * as much as a finished one. Failures here are reported, not thrown: they must never mask the
+ * verification result.
+ */
+async function archiveCreatedProjects(api: ScriptClient): Promise<void> {
+  if (createdProjects.length === 0) return;
+  section('Cleanup — archiving the projects this run created');
+  for (const ref of createdProjects) {
+    const archived = await api.post(`/api/projects/${encodeURIComponent(ref)}/archive`, {
+      reason: 'Fixture created by scripts/verify.ts',
+    });
+    check(`archived ${ref}`, archived.status === 200, archived.body);
+  }
+}
 
 interface JobBody {
   job: {
@@ -28,14 +77,13 @@ interface JobBody {
   };
 }
 
-async function main(): Promise<number> {
-  const api = new ScriptClient(BASE_URL);
-
+async function verify(api: ScriptClient): Promise<void> {
   section('Shrine — health before authentication');
   const live = await api.get<{ status: string }>('/health/live');
   check('/health/live is ok', live.status === 200 && live.body.status === 'ok', live.body);
-  const ready = await api.get<{ status: string }>('/health/ready');
+  const ready = await api.get<{ status: string; environment?: string }>('/health/ready');
   check('/health/ready reports ready', ready.body.status === 'ready', ready.body);
+  assertDisposableTarget(ready.body);
   const anonymous = await api.get('/api/projects');
   check('anonymous callers are rejected', anonymous.status === 401, anonymous.body);
 
@@ -61,6 +109,7 @@ async function main(): Promise<number> {
   });
   check('project created with only a name', created.status === 201, created.body);
   const projectId = created.body.project.id;
+  createdProjects.push(projectId);
 
   const renamed = `Verify Renamed ${unique}`;
   const afterRename = await api.patch<{ project: { id: string; aliases: string[] } }>(
@@ -100,6 +149,7 @@ async function main(): Promise<number> {
     { name: `Idempotent ${unique}` },
     { 'idempotency-key': key },
   );
+  createdProjects.push(first.body.project.id);
   check(
     'replaying a key returns the same resource',
     first.body.project.id === replay.body.project.id,
@@ -709,6 +759,7 @@ async function main(): Promise<number> {
   const otherProject = await api.post<{ project: { id: string } }>('/api/projects', {
     name: `Other Project ${unique}`,
   });
+  createdProjects.push(otherProject.body.project.id);
   const crossProject = await agent.get(`/api/projects/${otherProject.body.project.id}`);
   check(
     'a project-scoped token cannot reach another project',
@@ -718,7 +769,15 @@ async function main(): Promise<number> {
 
   const agentOperate = await agent.post('/api/shrine/jobs/probe', {});
   check('an agent token cannot operate Shrine', agentOperate.status === 403, agentOperate.body);
+}
 
+async function main(): Promise<number> {
+  const api = new ScriptClient(BASE_URL);
+  try {
+    await verify(api);
+  } finally {
+    await archiveCreatedProjects(api);
+  }
   return summarize();
 }
 
