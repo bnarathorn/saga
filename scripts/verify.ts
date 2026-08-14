@@ -7,6 +7,8 @@
  * It is intentionally independent of the test suite so it can also be run against a
  * deployed instance.
  */
+import { createInterface } from 'node:readline/promises';
+import { Writable } from 'node:stream';
 import { loadDotEnv } from '@saga/shared/dotenv';
 import { check, ScriptClient, section, summarize } from './lib/http-client.js';
 
@@ -14,8 +16,10 @@ loadDotEnv();
 
 const BASE_URL =
   process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
-const ADMIN_EMAIL = process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ?? 'admin@saga.local';
-const ADMIN_PASSWORD = process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
+const ADMIN_EMAIL =
+  process.env.SAGA_VERIFY_ADMIN_EMAIL ??
+  process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ??
+  'admin@saga.local';
 
 const ALLOW_PRODUCTION = process.env.SAGA_VERIFY_ALLOW_PRODUCTION === '1';
 
@@ -26,6 +30,57 @@ const unique = Date.now().toString(36);
  * endpoint by design — archiving is what keeps them out of Guild Hall's project list.
  */
 const createdProjects: string[] = [];
+
+/**
+ * Reads a secret without echoing it. `terminal: true` makes readline echo each keystroke to
+ * its output, so the output here is a sink that forwards the prompt and then drops everything
+ * — which is the echo.
+ */
+async function readSecret(prompt: string): Promise<string> {
+  let muted = false;
+  const output = new Writable({
+    write(chunk: Buffer | string, encoding, callback) {
+      if (!muted) process.stdout.write(chunk, typeof chunk === 'string' ? encoding : undefined);
+      callback();
+    },
+  });
+  const rl = createInterface({ input: process.stdin, output, terminal: true });
+  try {
+    const answer = rl.question(prompt);
+    muted = true;
+    return await answer;
+  } finally {
+    rl.close();
+    process.stdout.write('\n');
+  }
+}
+
+/**
+ * The administrator password is a credential, so this script does not require it to sit in
+ * `.env`. A password on disk beside `SAGA_API_PORT` is what let an accidental run authenticate
+ * against production on 2026-08-13; the guard below stops that run reaching production at all,
+ * and this stops the credential being lying around for the next one.
+ *
+ * Order: `SAGA_VERIFY_ADMIN_PASSWORD` for a deliberate inline or CI run, then
+ * `SAGA_BOOTSTRAP_ADMIN_PASSWORD` for anyone who does keep it in `.env`, then an interactive
+ * prompt. Without a TTY there is nothing to prompt, so say what to set instead.
+ */
+async function resolveAdminPassword(): Promise<string> {
+  const fromEnv =
+    process.env.SAGA_VERIFY_ADMIN_PASSWORD ?? process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
+  if (fromEnv.length > 0) return fromEnv;
+
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      `No administrator password and no terminal to ask for one. Set ` +
+        `SAGA_VERIFY_ADMIN_PASSWORD for ${ADMIN_EMAIL} on ${BASE_URL}, or run this from a terminal.`,
+    );
+  }
+
+  const entered = await readSecret(`Password for ${ADMIN_EMAIL} on ${BASE_URL}: `);
+  if (entered.length === 0) throw new Error('No password entered.');
+  return entered;
+}
 
 /**
  * This script writes to whatever it is pointed at, and its default target is a port, not a
@@ -88,10 +143,7 @@ async function verify(api: ScriptClient): Promise<void> {
   check('anonymous callers are rejected', anonymous.status === 401, anonymous.body);
 
   section('Security — administrator login');
-  if (ADMIN_PASSWORD.length === 0) {
-    throw new Error('Set SAGA_BOOTSTRAP_ADMIN_PASSWORD in .env before running the verification.');
-  }
-  await api.login(ADMIN_EMAIL, ADMIN_PASSWORD);
+  await api.login(ADMIN_EMAIL, await resolveAdminPassword());
   const me = await api.get<{ authenticated: boolean; user: { role: string } | null }>(
     '/api/auth/me',
   );

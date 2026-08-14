@@ -112,6 +112,14 @@ too, so on a host running both, a verification with no stack up reached producti
 as the bootstrap administrator and left three projects behind. Point `SAGA_VERIFY_URL` at the
 stack you mean; `SAGA_VERIFY_ALLOW_PRODUCTION=1` overrides the refusal deliberately.
 
+The administrator password is **not** required in `.env`. `scripts/verify.ts` takes
+`SAGA_VERIFY_ADMIN_PASSWORD` for a deliberate inline or CI run, falls back to
+`SAGA_BOOTSTRAP_ADMIN_PASSWORD` for anyone who does keep it there, and otherwise prompts on the
+terminal with the echo turned off. Without a TTY it says which variable to set rather than
+hanging. `SAGA_VERIFY_ADMIN_EMAIL` overrides the account the same way. A credential sitting on
+disk next to `SAGA_API_PORT` is half of what made the 2026-08-13 run possible — the guard stops
+it reaching production, and this stops the password being there for the next one.
+
 The verification now archives every project it creates, in a `finally` so a run that threw
 half-way cleans up too. Archiving is as far as it can go — there is no delete endpoint, by
 design — so anything it created before this guard existed has to be removed in the database.
