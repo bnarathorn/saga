@@ -185,6 +185,23 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
       },
     },
   });
+  const readinessSchema = z.object({
+    status: z.enum(['ready', 'not_ready']),
+    environment: z.enum(['development', 'test', 'production']).openapi({
+      description:
+        'The deployment that answered. Local tooling that writes to the server reads this to refuse a production target.',
+      example: 'production',
+    }),
+    checks: z.array(
+      z.object({
+        name: z.string(),
+        status: z.string(),
+        message: z.string().optional(),
+        detail: z.unknown().optional(),
+        duration_ms: z.number(),
+      }),
+    ),
+  });
   route({
     method: 'get',
     path: '/health/ready',
@@ -193,8 +210,8 @@ export function buildOpenApiDocument(version = '0.1.0'): Record<string, unknown>
     description: 'Checks database connectivity, schema version and required configuration.',
     secured: false,
     responses: {
-      200: { description: 'Ready to serve.' },
-      503: { description: 'Not ready.' },
+      200: { description: 'Ready to serve.', schema: readinessSchema },
+      503: { description: 'Not ready.', schema: readinessSchema },
     },
   });
 

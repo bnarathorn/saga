@@ -100,9 +100,21 @@ hide:
 
 ```bash
 scripts/stack.sh up
-pnpm exec tsx scripts/verify.ts   # 75 assertions across every slice
+pnpm exec tsx scripts/verify.ts   # 78 assertions across every slice
 pnpm demo                          # the full section-25 demonstration
 ```
+
+Both scripts write, so `scripts/verify.ts` refuses a target whose `/health/ready` reports
+`environment: production`, and refuses any server old enough not to report an environment at
+all. That check exists because the default target is a port rather than a deployment:
+`SAGA_API_PORT` is 4319 in a developer's `.env` and 4319 in the systemd reference deployment
+too, so on a host running both, a verification with no stack up reached production, signed in
+as the bootstrap administrator and left three projects behind. Point `SAGA_VERIFY_URL` at the
+stack you mean; `SAGA_VERIFY_ALLOW_PRODUCTION=1` overrides the refusal deliberately.
+
+The verification now archives every project it creates, in a `finally` so a run that threw
+half-way cleans up too. Archiving is as far as it can go — there is no delete endpoint, by
+design — so anything it created before this guard existed has to be removed in the database.
 
 `scripts/demo.ts` drives the **real MCP tool handlers** from a temporary plain folder with no
 version control — the same code path an agent takes through `saga mcp`. It found a real defect
