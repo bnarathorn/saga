@@ -18,13 +18,20 @@ import { loadDotEnv } from '@saga/shared/dotenv';
 import { TOOLS, type McpToolContext } from '../apps/cli/src/mcp/server.js';
 import { detectWorkspace } from '../apps/cli/src/workspace.js';
 import { ScriptClient } from './lib/http-client.js';
+import {
+  assertDisposableTarget,
+  resolveAdminEmail,
+  resolveAdminPassword,
+  resolveBaseUrl,
+} from './lib/live-target.js';
 
 loadDotEnv();
 
-const BASE_URL =
-  process.env.SAGA_VERIFY_URL ?? `http://127.0.0.1:${process.env.SAGA_API_PORT ?? 4319}`;
-const ADMIN_EMAIL = process.env.SAGA_BOOTSTRAP_ADMIN_EMAIL ?? 'admin@saga.local';
-const ADMIN_PASSWORD = process.env.SAGA_BOOTSTRAP_ADMIN_PASSWORD ?? '';
+const BASE_URL = resolveBaseUrl();
+const ADMIN_EMAIL = resolveAdminEmail();
+
+/** What a run against production would leave behind, named in the refusal. */
+const LEAVES_BEHIND = 'a project, a Quest and Lore entries that it never removes';
 
 const out = process.stdout;
 let step = 0;
@@ -46,10 +53,6 @@ function tool(name: string) {
 }
 
 async function main(): Promise<number> {
-  if (ADMIN_PASSWORD.length === 0) {
-    throw new Error('Set SAGA_BOOTSTRAP_ADMIN_PASSWORD in .env, then run `scripts/stack.sh up`.');
-  }
-
   const unique = Date.now().toString(36);
   const projectName = `ERP Backoffice ${unique}`;
 
@@ -58,11 +61,17 @@ async function main(): Promise<number> {
   if (live === null || !live.ok) {
     throw new Error(`Saga is not running at ${BASE_URL}. Run: scripts/stack.sh up`);
   }
-  detail('api', `${BASE_URL} is live`);
+  // This demonstration writes as much as the verification does, and reaches its target the
+  // same way — by port. Refuse a production deployment before the first write.
+  const ready = await fetch(`${BASE_URL}/health/ready`).catch(() => null);
+  const readiness =
+    ready === null ? {} : ((await ready.json()) as { environment?: string; status?: string });
+  assertDisposableTarget(BASE_URL, readiness, LEAVES_BEHIND);
+  detail('api', `${BASE_URL} is live (${readiness.environment ?? 'environment unknown'})`);
 
   heading('Sign in as the administrator');
   const console_ = new ScriptClient(BASE_URL);
-  await console_.login(ADMIN_EMAIL, ADMIN_PASSWORD);
+  await console_.login(ADMIN_EMAIL, await resolveAdminPassword(BASE_URL, ADMIN_EMAIL));
   detail('signed in as', ADMIN_EMAIL);
 
   heading(`Create the project "${projectName}" in Guild Hall`);
@@ -284,16 +293,23 @@ async function main(): Promise<number> {
   detail('blockers', resumed.context.continuation?.blockers.map((b) => b.description) ?? []);
 
   heading('Start another agent on another Quest, in the same folder');
+  // A second agent means a second session, and in real use that is a second process with a
+  // context of its own. Here both live in one process, so this one is built field by field
+  // rather than spread from the first: `openSession` memoises the in-flight call on
+  // `session.opening`, and a spread carried that settled promise across, so the second
+  // `saga_start_session` returned the first agent's session without ever opening its own and
+  // left `sessionId` null for everything after it.
   const second: McpToolContext = {
     ...context,
     client: new SagaClient({ baseUrl: BASE_URL, token: token.body.raw_token, client: 'codex' }),
     session: {
-      ...context.session,
       sessionId: null,
       agentRunId: null,
       questId: null,
       questRevision: 0,
+      projectRef: context.session.projectRef,
       client: 'codex',
+      bootstrapRequired: false,
     },
   };
   await tool('saga_start_session').handler({ agent: 'codex' }, second);
