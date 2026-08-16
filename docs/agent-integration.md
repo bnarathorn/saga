@@ -109,22 +109,30 @@ per-user install (`~/.local/bin/saga`) are the two ways forward.
 ### Signing out
 
 ```bash
-saga logout                            # credentials, and the session policy on disk
-saga logout --no-agent-instructions    # credentials only, leave the policy in place
+saga logout                            # credentials, session policy, MCP registration
+saga logout --no-agent-instructions    # keep the policy in AGENTS.md and CLAUDE.md
+saga logout --keep-mcp                 # keep the saga MCP server registered
 ```
 
-`saga logout` undoes both halves of what `connect` put on this machine. It clears the stored
-credentials for the server, and it takes the managed block back out of `AGENTS.md` and
-`CLAUDE.md` — the same region between the markers that `connect` writes, with the rest of each
-file untouched, and the file itself deleted when the block was all it held. Left behind, that
-block keeps telling every agent that opens the folder to call `saga_start_session` against a
-server it can no longer authenticate to, which surfaces as a failed tool call rather than as a
-signed-out folder. These are shared project files, so the removal is worth committing —
-otherwise the next checkout still carries the policy.
+`saga logout` undoes everything `connect` put on this machine, because a half-undone sign-out is
+what leaves an agent confused:
 
-The MCP registration is reported, never removed: `.mcp.json` may define the team's own servers
-and the Codex configuration is user-global, so the `saga` entry is yours to delete. Until it
-goes, the tools stay available to an agent that reaches for them — nothing tells it to.
+1. the stored credentials for the server;
+2. the managed block in `AGENTS.md` and `CLAUDE.md` — the same region between the markers that
+   `connect` writes, the rest of each file untouched, and the file itself deleted when the block
+   was all it held;
+3. the `saga` entry in `.mcp.json` and in Codex's `config.toml`, with every other MCP server left
+   exactly as it was, and the file deleted when Saga was the only thing it configured.
+
+Keep either of the last two and an agent still reaches for a server it can no longer
+authenticate to: the policy is what tells it to call `saga_start_session`, and the registration
+is what gives it the tools to call. A failed tool call is a worse answer than no Saga at all.
+
+The instruction files are shared project files, so that removal is worth committing — otherwise
+the next checkout still carries the policy. Codex's configuration is **user-global**: removing
+the entry there removes it for every project on the machine, and `logout` says so when it does.
+`--keep-mcp` declines the whole step; a file Saga cannot edit safely — `.mcp.json` that no longer
+parses, or an inline `mcp_servers = { … }` table — is reported and left alone.
 
 ---
 

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mcpConfigStatus, renderMcpConfig, writeMcpConfig } from './mcp-config.js';
+import { mcpConfigStatus, removeMcpConfig, renderMcpConfig, writeMcpConfig } from './mcp-config.js';
 import {
   detectWorkspace,
   findBinding,
@@ -309,5 +309,106 @@ describe('MCP configuration', () => {
       projectRef: 'p',
     });
     expect(JSON.parse(rendered).mcpServers.saga.args).toEqual(['mcp']);
+  });
+
+  describe('removeMcpConfig', () => {
+    it('undoes the write: both files stop registering Saga', () => {
+      writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+
+      const result = removeMcpConfig(root);
+
+      expect(mcpConfigStatus(root).every((entry) => !entry.configured)).toBe(true);
+      // `.mcp.json` configured nothing else, so it goes; Codex's file is user-global and stays.
+      expect(result.deleted).toEqual([join(root, '.mcp.json')]);
+      expect(result.removed).toEqual([join(codexHome, 'config.toml')]);
+      expect(existsSync(join(root, '.mcp.json'))).toBe(false);
+    });
+
+    it('keeps every other MCP server the files define', () => {
+      writeFileSync(
+        join(root, '.mcp.json'),
+        JSON.stringify({ mcpServers: { other: { command: 'other' } } }),
+      );
+      writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-5"\n\n[mcp_servers.other]\n');
+      writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+
+      removeMcpConfig(root);
+
+      const claude = JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8'));
+      expect(claude.mcpServers).toEqual({ other: { command: 'other' } });
+
+      const codex = readFileSync(join(codexHome, 'config.toml'), 'utf8');
+      expect(codex).toBe('model = "gpt-5"\n\n[mcp_servers.other]\n');
+    });
+
+    it('takes the `[mcp_servers.saga.env]` sub-table with the entry, and nothing after it', () => {
+      writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-5"\n');
+      writeMcpConfig({ root, serverUrl: 'https://saga.test', projectRef: 'p' });
+      writeFileSync(
+        join(codexHome, 'config.toml'),
+        `${readFileSync(join(codexHome, 'config.toml'), 'utf8')}\n[mcp_servers.later]\ncommand = "later"\n`,
+      );
+
+      removeMcpConfig(root);
+
+      const codex = readFileSync(join(codexHome, 'config.toml'), 'utf8');
+      expect(codex).not.toContain('saga');
+      expect(codex).toBe('model = "gpt-5"\n\n[mcp_servers.later]\ncommand = "later"\n');
+    });
+
+    it('removes a Codex entry the user edited by hand, which is what removal means', () => {
+      writeFileSync(
+        join(codexHome, 'config.toml'),
+        '[mcp_servers.saga]\ncommand = "/opt/saga/bin/saga"\nargs = ["mcp"]\n',
+      );
+
+      const result = removeMcpConfig(root);
+
+      expect(readFileSync(join(codexHome, 'config.toml'), 'utf8')).toBe('');
+      expect(result.removed).toContain(join(codexHome, 'config.toml'));
+    });
+
+    it('reports a file that never registered Saga as absent, and leaves it alone', () => {
+      writeFileSync(join(root, '.mcp.json'), JSON.stringify({ mcpServers: { other: {} } }));
+      writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-5"\n');
+
+      const result = removeMcpConfig(root);
+
+      expect(result.absent).toEqual([join(root, '.mcp.json'), join(codexHome, 'config.toml')]);
+      expect(result.removed).toEqual([]);
+      expect(readFileSync(join(codexHome, 'config.toml'), 'utf8')).toBe('model = "gpt-5"\n');
+    });
+
+    it('refuses a `.mcp.json` that no longer parses rather than discarding what it defines', () => {
+      const original = '{ "mcpServers": { "saga": ';
+      writeFileSync(join(root, '.mcp.json'), original);
+
+      const result = removeMcpConfig(root);
+
+      expect(readFileSync(join(root, '.mcp.json'), 'utf8')).toBe(original);
+      expect(result.skipped[0]?.path).toBe(join(root, '.mcp.json'));
+      expect(result.skipped[0]?.reason).toContain('not valid JSON');
+    });
+
+    it('refuses an inline Codex table, which it cannot edit without a TOML parser', () => {
+      const original = 'mcp_servers = { saga = { command = "saga" } }\n';
+      writeFileSync(join(codexHome, 'config.toml'), original);
+
+      const result = removeMcpConfig(root);
+
+      expect(readFileSync(join(codexHome, 'config.toml'), 'utf8')).toBe(original);
+      expect(result.skipped[0]?.path).toBe(join(codexHome, 'config.toml'));
+      expect(result.skipped[0]?.reason).toContain('inline table');
+    });
+
+    it('leaves a commented-out Codex entry alone, because Codex never read it', () => {
+      const original = '# [mcp_servers.saga]\n# command = "saga"\n';
+      writeFileSync(join(codexHome, 'config.toml'), original);
+
+      const result = removeMcpConfig(root);
+
+      expect(readFileSync(join(codexHome, 'config.toml'), 'utf8')).toBe(original);
+      expect(result.absent).toContain(join(codexHome, 'config.toml'));
+    });
   });
 });

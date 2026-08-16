@@ -1,21 +1,23 @@
 import { removeAgentInstructions } from '../agent-instructions.js';
 import { CredentialStore } from '../credentials.js';
-import { mcpConfigStatus } from '../mcp-config.js';
+import { codexConfigPath, removeMcpConfig } from '../mcp-config.js';
 import { detectWorkspace, findBinding, loadConfig } from '../workspace.js';
 import { parseFlags } from './connect.js';
 
 /**
  * `saga logout` — undo what `saga connect` put on this machine for this server.
  *
- * Two things, because `connect` wrote two. The credentials are the sign-out itself. The session
- * policy in `AGENTS.md` and `CLAUDE.md` is the other half: it is what tells an agent to call
- * Saga before it does anything else, and a folder that keeps it after signing out sends every
- * agent that opens it at a server it can no longer authenticate to — a failed tool call, not a
- * signed-out folder. `--no-agent-instructions` keeps the block, matching the flag that declines
- * to write it in the first place; they are shared project files either way.
+ * Everything `connect` wrote, because a half-undone sign-out is what leaves an agent confused.
+ * The credentials are the sign-out itself. The session policy in `AGENTS.md` and `CLAUDE.md` is
+ * what tells an agent to call Saga before it does anything else, and the MCP registration is
+ * what gives it the tools to call: keep either and the agent still reaches for a server it can
+ * no longer authenticate to, which surfaces as a failed tool call rather than as a signed-out
+ * folder.
  *
- * The MCP registration is only reported, never removed: `.mcp.json` is a file the team may have
- * its own servers in, and Codex's is user-global and shared by every project on the machine.
+ * Each half can be declined, because each lands somewhere that is not only Saga's:
+ * `--no-agent-instructions` keeps the policy in those shared project files, and `--keep-mcp`
+ * keeps the registration — Codex's configuration is user-global, so removing the entry there
+ * removes it for every project on the machine.
  */
 export async function logoutCommand(argv: string[]): Promise<number> {
   const out = process.stdout;
@@ -42,39 +44,51 @@ export async function logoutCommand(argv: string[]): Promise<number> {
 
   if (flags.agentInstructions === false) {
     out.write('Session policy: left in place (--no-agent-instructions).\n');
+  } else {
+    const instructions = removeAgentInstructions(workspace.root);
+    for (const file of instructions.removed) {
+      out.write(
+        `Session policy removed: ${file} (the \`saga:begin\` block; the rest is intact).\n`,
+      );
+    }
+    for (const file of instructions.deleted) {
+      out.write(`Session policy removed: ${file} (deleted — it held nothing else).\n`);
+    }
+    for (const file of instructions.skipped) {
+      out.write(`Session policy NOT removed: ${file.path} — ${file.reason}.\n`);
+    }
+    if (instructions.removed.length === 0 && instructions.deleted.length === 0) {
+      out.write('Session policy: no `saga:begin` block to remove.\n');
+    } else {
+      out.write(
+        '  These are project files the whole team shares: commit the removal, or the next\n' +
+          '  checkout still carries the policy.\n',
+      );
+    }
+  }
+
+  if (flags.mcp === false) {
+    out.write('MCP configuration: left in place (--keep-mcp).\n');
     return 0;
   }
 
-  const instructions = removeAgentInstructions(workspace.root);
-  for (const file of instructions.removed) {
-    out.write(`Session policy removed: ${file} (the \`saga:begin\` block; the rest is intact).\n`);
+  const mcp = removeMcpConfig(workspace.root);
+  for (const file of mcp.removed) {
+    out.write(`MCP configuration removed: ${file} (the \`saga\` entry; other servers kept).\n`);
   }
-  for (const file of instructions.deleted) {
-    out.write(`Session policy removed: ${file} (deleted — it held nothing else).\n`);
+  for (const file of mcp.deleted) {
+    out.write(`MCP configuration removed: ${file} (deleted — it configured nothing else).\n`);
   }
-  for (const file of instructions.skipped) {
-    out.write(`Session policy NOT removed: ${file.path} — ${file.reason}.\n`);
+  for (const file of mcp.skipped) {
+    out.write(`MCP configuration NOT removed: ${file.path} — ${file.reason}.\n`);
   }
-  if (instructions.removed.length === 0 && instructions.deleted.length === 0) {
-    out.write('Session policy: no `saga:begin` block to remove.\n');
-  } else {
+  if (mcp.removed.length === 0 && mcp.deleted.length === 0) {
+    out.write('MCP configuration: no `saga` entry to remove.\n');
+  } else if (mcp.removed.includes(codexConfigPath()) || mcp.deleted.includes(codexConfigPath())) {
+    // Codex has no project-level MCP configuration, so its entry was never this folder's alone.
     out.write(
-      '  These are project files the whole team shares: commit the removal, or the next\n' +
-        '  checkout still carries the policy.\n',
-    );
-  }
-
-  // Removing the policy stops an agent being *told* to use Saga; the tools stay registered until
-  // these are edited, and this command will not edit them on the user's behalf.
-  const registered = mcpConfigStatus(workspace.root)
-    .filter((entry) => entry.configured)
-    .map((entry) => entry.path);
-  if (registered.length > 0) {
-    out.write(
-      `Saga is still registered as an MCP server in:\n` +
-        registered.map((path) => `    ${path}\n`).join('') +
-        '  The tools remain available to an agent that reaches for them. Remove the `saga`\n' +
-        '  entry by hand to take them away entirely.\n',
+      `  ${codexConfigPath()} is user-global: any other Saga folder on this machine has lost\n` +
+        '  its Codex tools too, until `saga connect` runs there again.\n',
     );
   }
 
