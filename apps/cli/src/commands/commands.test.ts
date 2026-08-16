@@ -16,6 +16,7 @@ import { detectWorkspace, loadConfig } from '../workspace.js';
 import { checkEvidenceCommand } from './check-evidence.js';
 import { connectCommand, matchesProject } from './connect.js';
 import { doctorCommand, guildHallUrl } from './doctor.js';
+import { logoutCommand } from './logout.js';
 import { statusCommand } from './status.js';
 import { updateCommand } from './update.js';
 
@@ -589,6 +590,69 @@ describe('saga doctor', () => {
     // A plain-HTTP server URL is a warning; it must not fail the command.
     expect(report.warnings).toBeGreaterThan(0);
     expect(code).toBe(0);
+  });
+});
+
+describe('saga logout', () => {
+  it('takes the session policy back off disk, so no agent is told to call a signed-out server', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    expect(existsSync(join(root, 'CLAUDE.md'))).toBe(true);
+    stdout = '';
+
+    const code = await logoutCommand([]);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain('Removed the stored credentials');
+    expect(stdout).toContain('Session policy removed');
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(false);
+    expect(existsSync(join(root, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it("keeps the team's own instructions, and only cuts the managed block out of them", async () => {
+    stubFetch(connectRoutes);
+    writeFileSync(join(root, 'AGENTS.md'), '# House rules\n\nRun the linter.\n');
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    await logoutCommand([]);
+
+    expect(readFileSync(join(root, 'AGENTS.md'), 'utf8')).toBe(
+      '# House rules\n\nRun the linter.\n',
+    );
+    expect(existsSync(join(root, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('leaves the files alone with --no-agent-instructions, as connect does', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    const before = readFileSync(join(root, 'CLAUDE.md'), 'utf8');
+    stdout = '';
+
+    await logoutCommand(['--no-agent-instructions']);
+
+    expect(readFileSync(join(root, 'CLAUDE.md'), 'utf8')).toBe(before);
+    expect(stdout).toContain('left in place');
+  });
+
+  it('reports the MCP registration it will not remove for the user', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    await logoutCommand([]);
+
+    // The policy is what tells an agent to use Saga; the tools stay registered until these are
+    // edited, and neither file is Saga's to rewrite on the way out.
+    expect(stdout).toContain('still registered as an MCP server');
+    expect(stdout).toContain(join(root, '.mcp.json'));
+  });
+
+  it('fails without touching anything when no server is configured for this folder', async () => {
+    const code = await logoutCommand([]);
+
+    expect(code).toBe(1);
+    expect(stderr).toContain('No server is configured');
   });
 });
 

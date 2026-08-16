@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { noteLocalChange } from './local-changes.js';
 
@@ -177,11 +177,80 @@ export function writeAgentInstructions(root: string): AgentInstructionsResult {
   return result;
 }
 
-/** Why a file with a half-written marker is left alone, in both `connect` and `doctor`. */
-const UNTERMINATED_REASON =
+/** Why a file with a half-written marker is left alone, in `connect`, `logout` and `doctor`. */
+const UNTERMINATED =
   'it contains a `<!-- saga:begin` marker with no matching `<!-- saga:end -->`. Saga ' +
-  'left it untouched rather than guessing where the managed block stops. Close the ' +
-  'marker, or delete it, and re-run `saga connect`';
+  'left it untouched rather than guessing where the managed block stops. ';
+
+const UNTERMINATED_REASON = `${UNTERMINATED}Close the marker, or delete it, and re-run \`saga connect\``;
+
+const UNTERMINATED_REMOVAL_REASON = `${UNTERMINATED}Delete the marker and the policy under it by hand`;
+
+/** What `removeAgentInstructions` did to each instruction file. */
+export interface AgentInstructionsRemoval {
+  /** Files whose managed block was cut out; every other byte kept. */
+  removed: string[];
+  /** Files deleted along with the block, because the block was all they held. */
+  deleted: string[];
+  /** Files with no managed block in them — nothing to remove. May not even exist. */
+  absent: string[];
+  /** Files left alone because removing the block would damage them, with the reason why. */
+  skipped: { path: string; reason: string }[];
+}
+
+/**
+ * Take the policy back out of this workspace's instruction files — the other half of
+ * `writeAgentInstructions`, run by `saga logout`.
+ *
+ * Signing out has to reach the files too. The MCP `instructions` string leaves with the server,
+ * but the managed block is on disk: left behind, it keeps telling every agent that opens this
+ * folder to call `saga_start_session` against a server it no longer has credentials for, and
+ * the failure surfaces as a broken tool call rather than as "this folder is signed out".
+ *
+ * Symmetric with the write, and for the same reason: only the region between the markers was
+ * ever Saga's, so the rest of a team's `AGENTS.md` survives untouched. A file that holds nothing
+ * but the block is deleted rather than left empty — `saga connect` created it, and an empty
+ * `CLAUDE.md` is a file a host still opens.
+ */
+export function removeAgentInstructions(root: string): AgentInstructionsRemoval {
+  const result: AgentInstructionsRemoval = { removed: [], deleted: [], absent: [], skipped: [] };
+
+  // A stale block written by an older CLI is removed exactly like a current one: the comparison
+  // that separates them is about what the block *says*, and neither belongs here any more.
+  for (const found of locateAll(root, renderAgentInstructions())) {
+    const { path, existing } = found;
+
+    if (existing === null || found.state === 'absent') {
+      result.absent.push(path);
+      continue;
+    }
+
+    if (found.state === 'unterminated') {
+      // Same guard as the write: from an unterminated marker there is no way to tell the rest of
+      // the block from what the user wrote after it, and cutting to the end of the file guesses.
+      result.skipped.push({ path, reason: UNTERMINATED_REMOVAL_REASON });
+      continue;
+    }
+
+    const before = existing.slice(0, found.begin).replace(/\s+$/, '');
+    const after = existing.slice(found.end).replace(/^\s+/, '');
+
+    if (before === '' && after === '') {
+      rmSync(path);
+      noteLocalChange(path);
+      result.deleted.push(path);
+      continue;
+    }
+
+    // The blank lines that separated the block from its neighbours went with it, so what was
+    // above and what was below are rejoined by exactly one blank line.
+    const rest = before === '' ? after : after === '' ? before : `${before}\n\n${after}`;
+    writeFile(path, rest.replace(/\n*$/, '\n'));
+    result.removed.push(path);
+  }
+
+  return result;
+}
 
 /**
  * What each instruction file currently says, for `saga doctor`.
