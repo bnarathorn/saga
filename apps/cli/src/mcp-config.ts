@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { noteLocalChange } from './local-changes.js';
@@ -78,6 +78,116 @@ export function writeMcpConfig(input: McpConfigInput): McpConfigResult {
 
   return { written, skipped, unchanged };
 }
+
+/** What `removeMcpConfig` did to each configuration file. */
+export interface McpConfigRemoval {
+  /** Files the `saga` entry was taken out of; every other server left as it was. */
+  removed: string[];
+  /** Files deleted with it, because Saga was the only thing they configured. */
+  deleted: string[];
+  /** Files that did not register Saga at all — nothing to remove. May not even exist. */
+  absent: string[];
+  /** Files left alone because removing the entry would damage them, with the reason why. */
+  skipped: { path: string; reason: string }[];
+}
+
+/**
+ * Take the `saga` MCP server back out of Claude Code's and Codex's configuration.
+ *
+ * The inverse of `writeMcpConfig`, run by `saga logout`. Leaving the registration behind after
+ * signing out leaves an agent holding a full set of Saga tools it cannot authenticate with, and
+ * a tool that fails on every call is worse than one that is not offered.
+ *
+ * Both files keep everything else they define. **Codex's is user-global**, so removing the entry
+ * removes it for every project on the machine — `logout` says so, and `--keep-mcp` declines.
+ */
+export function removeMcpConfig(root: string): McpConfigRemoval {
+  const result: McpConfigRemoval = { removed: [], deleted: [], absent: [], skipped: [] };
+
+  const claudePath = join(root, '.mcp.json');
+  const claude = readJson(claudePath);
+  if (claude === 'unparseable') {
+    result.skipped.push({
+      path: claudePath,
+      reason:
+        'it exists but is not valid JSON. Saga left it untouched rather than discarding the ' +
+        'servers it defines. Remove the `saga` entry by hand',
+    });
+  } else if (claude === null) {
+    result.absent.push(claudePath);
+  } else {
+    const servers = claude.mcpServers as Record<string, unknown> | undefined;
+    if (servers === undefined || servers === null || !('saga' in servers)) {
+      result.absent.push(claudePath);
+    } else {
+      const { saga: _removed, ...rest } = servers;
+      const keys = Object.keys(claude);
+      // A file that configured nothing but Saga is one `saga connect` created; deleting it is
+      // the honest end state, where `{ "mcpServers": {} }` reads like a file someone emptied.
+      if (Object.keys(rest).length === 0 && keys.length === 1 && keys[0] === 'mcpServers') {
+        rmSync(claudePath);
+        noteLocalChange(claudePath);
+        result.deleted.push(claudePath);
+      } else {
+        writeJson(claudePath, { ...claude, mcpServers: rest });
+        result.removed.push(claudePath);
+      }
+    }
+  }
+
+  const codexPath = codexConfigPath();
+  const codex = removeCodexEntry(codexPath);
+  if (codex === 'removed') result.removed.push(codexPath);
+  else if (codex === 'absent') result.absent.push(codexPath);
+  else
+    result.skipped.push({
+      path: codexPath,
+      reason:
+        'it defines `mcp_servers` as an inline table, which Saga will not rewrite without a TOML ' +
+        'parser. Remove any `saga` key from that table by hand',
+    });
+
+  return result;
+}
+
+/**
+ * Delete the `[mcp_servers.saga]` table and its sub-tables, and nothing else.
+ *
+ * Line-based for the same reason the write is append-only: a TOML round-trip through a parser
+ * would reformat a file Saga does not own and drop its comments. A table runs until the next
+ * table header, so dropping from the `saga` header to the next non-`saga` header is exactly the
+ * entry — including the `[mcp_servers.saga.env]` block, which is one of its sub-tables.
+ */
+function removeCodexEntry(path: string): 'removed' | 'absent' | 'skipped' {
+  if (!existsSync(path)) return 'absent';
+  const existing = readFileSync(path, 'utf8');
+  // Checked before the table header, and reported rather than passed over: an inline
+  // `mcp_servers = { saga = … }` does register Saga, and calling that "nothing to remove" would
+  // claim a sign-out Codex has not had.
+  if (CODEX_INLINE_TABLE.test(existing)) return 'skipped';
+  if (!CODEX_SERVER_TABLE.test(existing)) return 'absent';
+
+  let dropping = false;
+  const kept = existing.split('\n').filter((line) => {
+    if (CODEX_TABLE_HEADER.test(line)) dropping = CODEX_SAGA_TABLE.test(line);
+    return !dropping;
+  });
+
+  // The blank line that separated the entry from its neighbours went with it.
+  const rest = kept
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimStart();
+  writeFileSync(path, rest.length === 0 ? '' : `${rest.replace(/\n*$/, '')}\n`);
+  noteLocalChange(path);
+  return 'removed';
+}
+
+/** Any table header, which is where the table above it ends. A commented-out one is not one. */
+const CODEX_TABLE_HEADER = /^[^\S\n]*\[/;
+
+/** `[mcp_servers.saga]` itself, or one of its sub-tables such as `[mcp_servers.saga.env]`. */
+const CODEX_SAGA_TABLE = /^[^\S\n]*\[mcp_servers\.saga(?:\.[^\]]+)?\]/;
 
 /** Render the same configuration for a user to paste elsewhere. */
 export function renderMcpConfig(input: McpConfigInput): string {

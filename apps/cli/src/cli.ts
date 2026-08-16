@@ -15,8 +15,9 @@ Usage:
                             marking the entries that read them stale
   saga mcp                  Run the MCP stdio server for this folder
   saga update               Install the CLI build this server is serving
-  saga logout               Remove the stored credentials for this server, and
-                            the Saga session policy from AGENTS.md and CLAUDE.md
+  saga logout               Sign this machine out: the stored credentials, the
+                            Saga session policy in AGENTS.md and CLAUDE.md, and
+                            the saga MCP server registration
 
 Options:
   -h, --help                Show this help
@@ -45,6 +46,10 @@ Options:
                             take it back out (logout). They are project files the
                             whole team shares; the block between the saga:begin
                             and saga:end markers is the only part Saga owns
+      --keep-mcp            Keep the saga MCP server registered in .mcp.json and
+                            the Codex configuration (logout). Codex's file is
+                            user-global, so removing the entry there removes it
+                            for every project on this machine
       --debug               Print stack traces
 `;
 

@@ -635,17 +635,62 @@ describe('saga logout', () => {
     expect(stdout).toContain('left in place');
   });
 
-  it('reports the MCP registration it will not remove for the user', async () => {
+  it('unregisters the MCP server, so a signed-out agent is not left holding the tools', async () => {
     stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    const codexConfig = join(home, 'codex', 'config.toml');
+    expect(existsSync(join(root, '.mcp.json'))).toBe(true);
+    expect(readFileSync(codexConfig, 'utf8')).toContain('[mcp_servers.saga]');
+    stdout = '';
+
+    await logoutCommand([]);
+
+    expect(stdout).toContain('MCP configuration removed');
+    expect(existsSync(join(root, '.mcp.json'))).toBe(false);
+    expect(readFileSync(codexConfig, 'utf8')).not.toContain('saga');
+    // Codex has no project-level configuration, so its entry was never this folder's alone.
+    expect(stdout).toContain('user-global');
+  });
+
+  it('keeps the registration with --keep-mcp, and still signs out', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    const code = await logoutCommand(['--keep-mcp']);
+
+    expect(code).toBe(0);
+    expect(stdout).toContain('Removed the stored credentials');
+    expect(stdout).toContain('left in place (--keep-mcp)');
+    expect(existsSync(join(root, '.mcp.json'))).toBe(true);
+  });
+
+  it('removes the registration even when the policy is kept: the two flags are independent', async () => {
+    stubFetch(connectRoutes);
+    await connectCommand(['--server', SERVER]);
+    stdout = '';
+
+    await logoutCommand(['--no-agent-instructions']);
+
+    expect(existsSync(join(root, 'CLAUDE.md'))).toBe(true);
+    expect(existsSync(join(root, '.mcp.json'))).toBe(false);
+  });
+
+  it("leaves another team's MCP servers in place", async () => {
+    stubFetch(connectRoutes);
+    writeFileSync(
+      join(root, '.mcp.json'),
+      JSON.stringify({ mcpServers: { other: { command: 'other' } } }),
+    );
     await connectCommand(['--server', SERVER]);
     stdout = '';
 
     await logoutCommand([]);
 
-    // The policy is what tells an agent to use Saga; the tools stay registered until these are
-    // edited, and neither file is Saga's to rewrite on the way out.
-    expect(stdout).toContain('still registered as an MCP server');
-    expect(stdout).toContain(join(root, '.mcp.json'));
+    const claude = JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8')) as {
+      mcpServers: Record<string, unknown>;
+    };
+    expect(claude.mcpServers).toEqual({ other: { command: 'other' } });
   });
 
   it('fails without touching anything when no server is configured for this folder', async () => {

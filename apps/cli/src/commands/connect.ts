@@ -348,6 +348,8 @@ export interface CliFlags {
   debug?: boolean;
   /** `false` only when `--no-agent-instructions` was passed; absent means write them. */
   agentInstructions?: boolean;
+  /** `false` only when `--keep-mcp` was passed; absent means remove the entry (logout). */
+  mcp?: boolean;
   /** Report an evidence file that is not here as deleted (check-evidence). */
   includeMissing?: boolean;
 }
@@ -361,6 +363,7 @@ export function parseFlags(argv: readonly string[]): CliFlags {
     else if (arg === '--project') flags.project = argv[++index];
     else if (arg === '--reauth') flags.reauth = true;
     else if (arg === '--no-agent-instructions') flags.agentInstructions = false;
+    else if (arg === '--keep-mcp') flags.mcp = false;
     else if (arg === '--include-missing') flags.includeMissing = true;
     else if (arg === '--json') flags.json = true;
     else if (arg === '--debug') flags.debug = true;
