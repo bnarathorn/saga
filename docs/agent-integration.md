@@ -106,6 +106,26 @@ It needs no token; the endpoint is public. If the CLI lives somewhere the user c
 `/usr/local/bin`, say — the command says so and changes nothing, and elevated privileges or a
 per-user install (`~/.local/bin/saga`) are the two ways forward.
 
+### Signing out
+
+```bash
+saga logout                            # credentials, and the session policy on disk
+saga logout --no-agent-instructions    # credentials only, leave the policy in place
+```
+
+`saga logout` undoes both halves of what `connect` put on this machine. It clears the stored
+credentials for the server, and it takes the managed block back out of `AGENTS.md` and
+`CLAUDE.md` — the same region between the markers that `connect` writes, with the rest of each
+file untouched, and the file itself deleted when the block was all it held. Left behind, that
+block keeps telling every agent that opens the folder to call `saga_start_session` against a
+server it can no longer authenticate to, which surfaces as a failed tool call rather than as a
+signed-out folder. These are shared project files, so the removal is worth committing —
+otherwise the next checkout still carries the policy.
+
+The MCP registration is reported, never removed: `.mcp.json` may define the team's own servers
+and the Codex configuration is user-global, so the `saga` entry is yours to delete. Until it
+goes, the tools stay available to an agent that reaches for them — nothing tells it to.
+
 ---
 
 ## 2. The integration policy
@@ -125,7 +145,8 @@ Neither is `instructions` alone: not every host surfaces it. Codex does not, and
 opened sessions, never called `saga_activate_task`, and heartbeated in `awaiting_task` while the
 Quest board stayed empty. The file is what those hosts read. Only the region between the markers
 is Saga's — the rest of a team's own `AGENTS.md` is never touched — and `saga connect
---no-agent-instructions` declines the write. `saga doctor` reports the block as `session policy`.
+--no-agent-instructions` declines the write. `saga doctor` reports the block as `session policy`,
+and `saga logout` removes it again.
 
 **When starting**
 

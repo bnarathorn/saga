@@ -15,7 +15,8 @@ Usage:
                             marking the entries that read them stale
   saga mcp                  Run the MCP stdio server for this folder
   saga update               Install the CLI build this server is serving
-  saga logout               Remove the stored credentials for this server
+  saga logout               Remove the stored credentials for this server, and
+                            the Saga session policy from AGENTS.md and CLAUDE.md
 
 Options:
   -h, --help                Show this help
@@ -39,8 +40,9 @@ Options:
                             by name or id (connect)
       --reauth              Discard stored credentials and authorize again (connect)
       --no-agent-instructions
-                            Do not write the Saga session policy into AGENTS.md
-                            and CLAUDE.md (connect). They are project files the
+                            Leave AGENTS.md and CLAUDE.md alone: do not write the
+                            Saga session policy into them (connect), and do not
+                            take it back out (logout). They are project files the
                             whole team shares; the block between the saga:begin
                             and saga:end markers is the only part Saga owns
       --debug               Print stack traces

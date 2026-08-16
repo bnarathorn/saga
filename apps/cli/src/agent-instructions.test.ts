@@ -1,9 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   MCP_INSTRUCTIONS,
+  removeAgentInstructions,
   renderAgentInstructions,
   writeAgentInstructions,
 } from './agent-instructions.js';
@@ -121,6 +122,87 @@ describe('writeAgentInstructions', () => {
     expect(result.written).not.toContain(join(root, 'AGENTS.md'));
     expect(result.skipped[0]?.path).toBe(join(root, 'AGENTS.md'));
     expect(result.skipped[0]?.reason).toMatch(/saga:end/);
+  });
+});
+
+describe('removeAgentInstructions', () => {
+  it('deletes a file `saga connect` created, because the block was all it held', () => {
+    writeAgentInstructions(root);
+
+    const result = removeAgentInstructions(root);
+
+    expect(result.deleted).toEqual([join(root, 'AGENTS.md'), join(root, 'CLAUDE.md')]);
+    expect(result.removed).toEqual([]);
+    expect(existsSync(join(root, 'AGENTS.md'))).toBe(false);
+    expect(existsSync(join(root, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it("keeps every byte of a team's own file, block and its blank lines aside", () => {
+    writeFileSync(join(root, 'AGENTS.md'), '# Project rules\n\nRun the linter before pushing.\n');
+    writeAgentInstructions(root);
+
+    const result = removeAgentInstructions(root);
+
+    expect(result.removed).toContain(join(root, 'AGENTS.md'));
+    expect(read('AGENTS.md')).toBe('# Project rules\n\nRun the linter before pushing.\n');
+  });
+
+  it('rejoins what surrounded the block with a single blank line', () => {
+    writeFileSync(join(root, 'AGENTS.md'), '# Rules\n\nRun the linter.\n');
+    writeAgentInstructions(root);
+    // The block went to the end of AGENTS.md, so put content after it as well.
+    writeFileSync(join(root, 'AGENTS.md'), `${read('AGENTS.md')}\n## Afterwards\n`);
+
+    removeAgentInstructions(root);
+
+    expect(read('AGENTS.md')).toBe('# Rules\n\nRun the linter.\n\n## Afterwards\n');
+  });
+
+  it('removes a stale block an older CLI wrote, which no longer belongs here either', () => {
+    writeFileSync(
+      join(root, 'AGENTS.md'),
+      '# Rules\n\n<!-- saga:begin — managed by `saga connect` -->\nold policy\n<!-- saga:end -->\n\nRun the linter.\n',
+    );
+
+    const result = removeAgentInstructions(root);
+
+    expect(result.removed).toContain(join(root, 'AGENTS.md'));
+    expect(read('AGENTS.md')).toBe('# Rules\n\nRun the linter.\n');
+  });
+
+  it('refuses an unterminated marker rather than cutting to the end of the file', () => {
+    const existing = '<!-- saga:begin -->\nhalf a block\n\n# Everything after it\n';
+    writeFileSync(join(root, 'AGENTS.md'), existing);
+
+    const result = removeAgentInstructions(root);
+
+    expect(read('AGENTS.md')).toBe(existing);
+    expect(result.skipped[0]?.path).toBe(join(root, 'AGENTS.md'));
+    expect(result.skipped[0]?.reason).toMatch(/saga:end/);
+  });
+
+  it('reports a file with no block as absent, and leaves a file it never wrote alone', () => {
+    writeFileSync(join(root, 'AGENTS.md'), '# Rules only\n');
+
+    const result = removeAgentInstructions(root);
+
+    expect(result.absent).toEqual([join(root, 'AGENTS.md'), join(root, 'CLAUDE.md')]);
+    expect(read('AGENTS.md')).toBe('# Rules only\n');
+    expect(existsSync(join(root, 'CLAUDE.md'))).toBe(false);
+  });
+
+  it('undoes the write exactly, so connect and logout can alternate', () => {
+    const existing = '# Project rules\n\nRun the linter before pushing.\n';
+    writeFileSync(join(root, 'AGENTS.md'), existing);
+
+    writeAgentInstructions(root);
+    removeAgentInstructions(root);
+    writeAgentInstructions(root);
+    const afterSecondWrite = read('AGENTS.md');
+    removeAgentInstructions(root);
+
+    expect(afterSecondWrite).toContain('saga_activate_task');
+    expect(read('AGENTS.md')).toBe(existing);
   });
 });
 

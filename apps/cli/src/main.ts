@@ -2,11 +2,11 @@
 import { errorMessage, isSagaError } from '@saga/shared';
 import { registerCommand, runCli } from './cli.js';
 import { checkEvidenceCommand } from './commands/check-evidence.js';
-import { connectCommand, parseFlags } from './commands/connect.js';
+import { connectCommand } from './commands/connect.js';
 import { doctorCommand } from './commands/doctor.js';
+import { logoutCommand } from './commands/logout.js';
 import { statusCommand } from './commands/status.js';
 import { updateCommand } from './commands/update.js';
-import { CredentialStore } from './credentials.js';
 import { describeLocalChanges } from './local-changes.js';
 import { renderMcpConfig } from './mcp-config.js';
 import { detectWorkspace, findBinding, loadConfig } from './workspace.js';
@@ -16,6 +16,7 @@ registerCommand('status', statusCommand);
 registerCommand('doctor', doctorCommand);
 registerCommand('check-evidence', checkEvidenceCommand);
 registerCommand('update', updateCommand);
+registerCommand('logout', logoutCommand);
 
 registerCommand('mcp', async (argv) => {
   // `saga connect` points here when it refuses to rewrite a malformed config file, so the
@@ -42,30 +43,6 @@ registerCommand('mcp', async (argv) => {
   await runMcpServer(process.env.SAGA_MCP_CLIENT ?? 'saga-mcp');
   // The stdio transport keeps the process alive until the host closes it.
   return new Promise<number>(() => {});
-});
-
-registerCommand('logout', async (argv) => {
-  const flags = parseFlags(argv);
-  const workspace = detectWorkspace();
-  const config = loadConfig();
-  const serverUrl =
-    flags.server ?? findBinding(config, workspace.root)?.serverUrl ?? config.serverUrl;
-  if (serverUrl === null || serverUrl === undefined) {
-    process.stderr.write('No server is configured for this folder.\n');
-    return 1;
-  }
-  const credentials = new CredentialStore();
-  await credentials.clear(serverUrl);
-  process.stdout.write(`Removed the stored credentials for ${serverUrl}.\n`);
-  // Clearing storage does not clear the environment, and `get` prefers the environment: without
-  // this line the next command still authenticates and logout looks like it failed.
-  if ((await credentials.backend()) === 'environment') {
-    process.stdout.write(
-      'SAGA_TOKEN is still set in this shell, and it takes precedence over stored credentials.\n' +
-        '  Run `unset SAGA_TOKEN` to finish signing out of this session.\n',
-    );
-  }
-  return 0;
 });
 
 runCli(process.argv.slice(2)).then(
